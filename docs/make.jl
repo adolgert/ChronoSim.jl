@@ -39,23 +39,22 @@ for readfile in jlfiles
     output_file = joinpath(src_dir, replace(readfile, ".jl" => ".md"))
     if fresh || !isfile(output_file) || mtime(input_file) > mtime(output_file)
         println("Processing Literate file: $readfile")
-        Literate.markdown(input_file, src_dir; 
-                            postprocess=postprocess_markdown,
-                            execute=true)
-        
+        Literate.markdown(input_file, src_dir; postprocess=postprocess_markdown, execute=true)
+
         # Move any generated images to the literate subdirectory
         for img_file in readdir(src_dir)
-            if endswith(img_file, ".png") || endswith(img_file, ".jpg") || endswith(img_file, ".svg")
+            if endswith(img_file, ".png") ||
+                endswith(img_file, ".jpg") ||
+                endswith(img_file, ".svg")
                 src_path = joinpath(src_dir, img_file)
                 dst_path = joinpath(literate_dir, img_file)
                 if isfile(src_path)
-                    mv(src_path, dst_path, force=true)
+                    mv(src_path, dst_path; force=true)
                 end
             end
         end
     end
 end
-
 
 makedocs(;
     modules=[ChronoSim],
@@ -69,15 +68,7 @@ makedocs(;
         edit_link="main",
         assets=String[],
     ),
-    pages=[
-        "Home" => "index.md",
-        "Examples" => [
-            "Getting Started" => "getting_started.md",
-        ],
-    ],
+    pages=["Home" => "index.md", "Examples" => ["Getting Started" => "getting_started.md"]],
 )
 
-deploydocs(;
-    repo="github.com/adolgert/ChronoSim.jl",
-    devbranch="main",
-)
+deploydocs(; repo="github.com/adolgert/ChronoSim.jl", devbranch="main")
