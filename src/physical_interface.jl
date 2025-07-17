@@ -1,7 +1,6 @@
 export PhysicalState, isconsistent
 public over_tracked_physical_state, capture_state_changes, capture_state_reads
 
-
 """
 `PhysicalState` is an abstract type from which to inherit the state of a simulation.
 A `PhysicalState` should put all mutable values, the values upon which events
@@ -30,7 +29,6 @@ The `PhysicalState` may contain other properties, but those defined with
 """
 abstract type PhysicalState end
 
-
 """
     isconsistent(physical_state)
 
@@ -39,14 +37,12 @@ Override this to verify the physical state of your simulation.
 """
 isconsistent(::PhysicalState) = true
 
-
 """
     over_tracked_physical_state(fcallback::Function, physical::PhysicalState)
 
 Iterate over all tracked vectors in the physical state.
 """
-function over_tracked_physical_state(fcallback::Function, physical::T) where {T <: PhysicalState} end
-
+function over_tracked_physical_state(fcallback::Function, physical::T) where {T<:PhysicalState} end
 
 """
     capture_state_changes(f::Function, physical_state)
@@ -56,7 +52,6 @@ records which parts of the state were modified. The callback should have
 no arguments and may return a result.
 """
 function capture_state_changes(f::Function, physical) end
-
 
 """
     capture_state_reads(f::Function, physical_state)
