@@ -5,11 +5,9 @@
 
 using Pkg
 
-# Get the repository root
 repo_root = dirname(dirname(@__DIR__))
 cd(repo_root)
 
-# Activate test environment if it exists, otherwise use main project
 test_project = joinpath(repo_root, "test", "Project.toml")
 if isfile(test_project)
     Pkg.activate(joinpath(repo_root, "test"))
@@ -17,7 +15,6 @@ else
     Pkg.activate(repo_root)
 end
 
-# Ensure JuliaFormatter is available
 try
     using JuliaFormatter
 catch
@@ -26,31 +23,25 @@ catch
     using JuliaFormatter
 end
 
-# Get list of staged Julia files
-staged_files = String[]
-for line in readlines(`git diff --cached --name-only --diff-filter=ACM`)
-    if endswith(line, ".jl")
-        push!(staged_files, line)
+function over_staged(callback::Function)
+    formatted_any = false
+    for maybe_file in readlines(`git diff --cached --name-only --diff-filter=ACM`)
+        if endswith(maybe_file, ".jl")
+            formatted_any |= callback(maybe_file)
+        end
     end
+    return formatted_any
 end
 
-if isempty(staged_files)
-    exit(0)
-end
-
-# Format staged files
-println("Formatting Julia files...")
-formatted_any = false
-
-for file in staged_files
-    if isfile(file)
-        if !format_file(file)
-            println("  ✓ $file (already formatted)")
+formatted_any = over_staged() do toformat
+    if isfile(toformat)
+        if !format_file(toformat)
+            println("  ✓ $toformat (already formatted)")
         else
-            println("  ✔ $file (formatted)")
+            println("  ✔ $toformat (formatted)")
             formatted_any = true
             # Re-stage the formatted file
-            run(`git add $file`)
+            run(`git add $toformat`)
         end
     end
 end

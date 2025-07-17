@@ -7,5 +7,5 @@ using Aqua
     Aqua.test_all(
         ChronoSim;
         stale_deps=(ignore=[:JuliaFormatter, :Distributions, :CompetingClocks, :Logging],),
-        )
+    )
 end

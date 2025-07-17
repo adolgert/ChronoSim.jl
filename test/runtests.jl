@@ -6,14 +6,14 @@ function parse_commandline()
     s = ArgParseSettings()
     @add_arg_table! s begin
         "--long"
-            help = "Run long tests"
-            action = :store_true
+        help = "Run long tests"
+        action = :store_true
         "--verbose", "-v"
-            help = "Enable verbose output"
-            action = :store_true
+        help = "Enable verbose output"
+        action = :store_true
         "pattern"
-            help = "Test pattern to match"
-            required = false
+        help = "Test pattern to match"
+        required = false
     end
     return parse_args(s)
 end
