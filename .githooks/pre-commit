@@ -5,15 +5,19 @@
 
 using Pkg
 
-repo_root = dirname(dirname(@__DIR__))
-cd(repo_root)
-
-test_project = joinpath(repo_root, "test", "Project.toml")
-if isfile(test_project)
-    Pkg.activate(joinpath(repo_root, "test"))
-else
-    Pkg.activate(repo_root)
+root_list = readlines(`git rev-parse --show-toplevel`)
+if length(root_list) == 0
+    exit(1)
 end
+repo_root = root_list[1]
+if !isdir(repo_root)
+    println("Expected the repo root to be a directory $repo_root")
+    exit(2)
+end
+cd(repo_root)
+test_project = joinpath(repo_root, "test")
+println("Activating $test_project")
+Pkg.activate(test_project)
 
 try
     using JuliaFormatter
@@ -23,11 +27,11 @@ catch
     using JuliaFormatter
 end
 
-function over_staged(callback::Function)
+function over_staged(cbfun::Function)
     formatted_any = false
     for maybe_file in readlines(`git diff --cached --name-only --diff-filter=ACM`)
         if endswith(maybe_file, ".jl")
-            formatted_any |= callback(maybe_file)
+            formatted_any |= cbfun(maybe_file)
         end
     end
     return formatted_any
@@ -41,8 +45,10 @@ formatted_any = over_staged() do toformat
             println("  ✔ $toformat (formatted)")
             # Re-stage the formatted file
             run(`git add $toformat`)
+            return true
         end
     end
+    return false
 end
 
 if formatted_any

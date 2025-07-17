@@ -11,3 +11,8 @@ To enable formatting hooks:
 ```bash
 git config core.hooksPath .githooks
 ```
+
+To build docs:
+```bash
+julia --project=docs docs/make.jl
+```

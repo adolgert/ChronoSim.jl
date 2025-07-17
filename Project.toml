@@ -6,12 +6,10 @@ version = "0.1.0-DEV"
 [deps]
 CompetingClocks = "5bb9b785-358c-4fee-af0f-b94a146244a8"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
-JuliaFormatter = "98e50ef6-434e-11e9-1051-2b60c6c9e899"
 Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
 
 [compat]
 CompetingClocks = "0.1.0"
 Distributions = "0.25.120"
-JuliaFormatter = "2.1.2"
 Logging = "1.11.0"
 julia = "1.11.6"
