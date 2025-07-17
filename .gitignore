@@ -1,2 +1,4 @@
 /docs/Manifest*.toml
 /docs/build/
+/docs/src/getting_started.md
+/test/Manifest.toml

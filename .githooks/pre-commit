@@ -1,0 +1,58 @@
+#!/usr/bin/env julia
+
+# Pre-commit hook to format Julia files using JuliaFormatter
+# Uses the test/Project.toml environment if it exists
+
+using Pkg
+
+root_list = readlines(`git rev-parse --show-toplevel`)
+if length(root_list) == 0
+    exit(1)
+end
+repo_root = root_list[1]
+if !isdir(repo_root)
+    println("Expected the repo root to be a directory $repo_root")
+    exit(2)
+end
+cd(repo_root)
+test_project = joinpath(repo_root, "test")
+println("Activating $test_project")
+Pkg.activate(test_project)
+
+try
+    using JuliaFormatter
+catch
+    println("Installing JuliaFormatter...")
+    Pkg.add("JuliaFormatter")
+    using JuliaFormatter
+end
+
+function over_staged(cbfun::Function)
+    formatted_any = false
+    for maybe_file in readlines(`git diff --cached --name-only --diff-filter=ACM`)
+        if endswith(maybe_file, ".jl")
+            formatted_any |= cbfun(maybe_file)
+        end
+    end
+    return formatted_any
+end
+
+formatted_any = over_staged() do toformat
+    if isfile(toformat)
+        if !format_file(toformat)
+            println("  ✓ $toformat (already formatted)")
+        else
+            println("  ✔ $toformat (formatted)")
+            # Re-stage the formatted file
+            run(`git add $toformat`)
+            return true
+        end
+    end
+    return false
+end
+
+if formatted_any
+    println("\nFiles were formatted and re-staged. Please review the changes.")
+end
+
+exit(0)

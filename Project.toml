@@ -3,5 +3,13 @@ uuid = "3d4a2042-d4c0-4032-96bb-6b9d4a3cae87"
 authors = ["Andrew Dolgert <github@dolgert.com>"]
 version = "0.1.0-DEV"
 
+[deps]
+CompetingClocks = "5bb9b785-358c-4fee-af0f-b94a146244a8"
+Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
+Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
+
 [compat]
-julia = "1.11.6"
+CompetingClocks = "^0.1.0"
+Distributions = "^0.25.120"
+Logging = "^1.11.0"
+julia = "^1.11.6"
