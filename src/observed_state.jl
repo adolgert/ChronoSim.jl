@@ -25,7 +25,7 @@ Base.eachindex(v::ObservedArray) = eachindex(v.arr)
 Base.iterate(v::ObservedArray) = iterate(v.arr)
 Base.axes(v::ObservedArray) = axes(v.arr)
 
-function Base.getindex(v::ObservedArray{T,1}, i::Int) where T
+function Base.getindex(v::ObservedArray{T,1}, i::Int) where {T}
     element = v.arr[i]
     setfield!(element, :_container, v)
     setfield!(element, :_index, i)
@@ -48,7 +48,7 @@ end
 
 Base.IndexStyle(v::ObservedArray) = Base.IndexStyle(v.arr)
 
-function Base.setindex!(v::ObservedArray{T,1}, x, i::Int) where T
+function Base.setindex!(v::ObservedArray{T,1}, x, i::Int) where {T}
     v.arr[i] = x
     setfield!(x, :_container, v)
     setfield!(x, :_index, i)
