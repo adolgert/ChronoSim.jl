@@ -1,5 +1,6 @@
 module ChronoSim
 
-# Write your package code here.
+include("physical_interface.jl")
+include("generator_interface.jl")
 
 end
