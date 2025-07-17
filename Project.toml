@@ -1,0 +1,13 @@
+name = "ChronoSim"
+uuid = "3d4a2042-d4c0-4032-96bb-6b9d4a3cae87"
+authors = ["Andrew Dolgert <github@dolgert.com>"]
+version = "1.0.0-DEV"
+
+[compat]
+julia = "1.11.6"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
