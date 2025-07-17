@@ -39,7 +39,6 @@ formatted_any = over_staged() do toformat
             println("  ✓ $toformat (already formatted)")
         else
             println("  ✔ $toformat (formatted)")
-            formatted_any = true
             # Re-stage the formatted file
             run(`git add $toformat`)
         end
