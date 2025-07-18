@@ -80,3 +80,9 @@ end
 # Other useful methods
 Base.empty!(d::ObservedDict) = (empty!(d.dict); d)
 Base.sizehint!(d::ObservedDict, n) = (sizehint!(d.dict, n); d)
+
+function observed_notify(v::ObservedDict, changed, readwrite)
+    if isdefined(v, :owner)
+        observed_notify(getfield(v, :owner), (getfield(v, :array_name), changed...), readwrite)
+    end
+end

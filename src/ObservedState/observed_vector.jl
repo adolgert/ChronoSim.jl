@@ -13,7 +13,7 @@ function ObservedArray{T}(::UndefInitializer, dims...) where {T}
     ObservedArray{T,N}(arr)
 end
 
-Base.eltype(v::ObservedArray{T}) where {T} = T
+Base.eltype(::ObservedArray{T}) where {T} = T
 Base.ndims(v::ObservedArray) = ndims(v.arr)
 Base.size(v::ObservedArray) = size(v.arr)
 Base.size(v::ObservedArray, n) = size(v.arr, n)
@@ -64,4 +64,10 @@ function Base.setindex!(v::ObservedArray, x, i::Vararg{Int})
     setfield!(x, :_container, v)
     setfield!(x, :_index, i)
     return x
+end
+
+function observed_notify(v::ObservedArray, changed, readwrite)
+    if isdefined(v, :owner)
+        observed_notify(getfield(v, :owner), (getfield(v, :array_name), changed...), readwrite)
+    end
 end

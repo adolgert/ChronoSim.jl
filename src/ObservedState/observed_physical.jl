@@ -1,4 +1,5 @@
 using Base: Base
+using OrderedCollections
 using ..ChronoSim: PhysicalState
 
 export @observedphysical, ObservedPhysical
@@ -129,4 +130,41 @@ macro observedphysical(struct_name, struct_block)
     end
 
     return esc(struct_def)
+end
+
+"""
+    capture_state_changes(f::Function, physical_state)
+
+The callback function `f` will modify the physical state. This function
+records which parts of the state were modified. The callback should have
+no arguments and may return a result.
+"""
+function capture_state_changes(f::Function, physical::ObservedPhysical)
+    empty!(physical.obs_modified)
+    result = f()
+    # Use ordered set here so that list is deterministic.
+    changes = OrderedSet(physical.obs_modified)
+    return (;result, changes)
+end
+
+"""
+    capture_state_reads(f::Function, physical_state)
+
+The callback function `f` will read the physical state. This function
+records which parts of the state were read. The callback should have
+no arguments and may return a result.
+"""
+function capture_state_reads(f::Function, physical::ObservedPhysical)
+    empty!(physical.obs_read)
+    result = f()
+    reads = OrderedSet(physical.obs_read)
+    return (;result, reads)
+end
+
+function observed_notify(physical::ObservedPhysical, changed, readwrite)
+    if readwrite == :read
+        push!(physical.obs_read, changed)
+    else
+        push!(physical.obs_modified, changed)
+    end
 end

@@ -39,15 +39,18 @@ macro keyedby(struct_name, index_type, struct_block)
 
     # Parse fields from the block
     user_fields = []
+    field_names = Symbol[]
     for stmt in struct_block.args
         if isa(stmt, Expr) && stmt.head == :(::)
             push!(user_fields, stmt)
+            push!(field_names, stmt.args[1])
         elseif isa(stmt, LineNumberNode)
             # Skip line number nodes
             continue
         elseif isa(stmt, Symbol)
             # Handle untyped fields
             push!(user_fields, stmt)
+            push!(field_names, stmt)
         end
     end
 
@@ -73,5 +76,52 @@ macro keyedby(struct_name, index_type, struct_block)
         end
     end
 
-    return esc(struct_def)
+    getprop_def = quote
+        function Base.getproperty(obj::$struct_name, field::Symbol)
+            if field ∉ (:_container, :_index) && isdefined(obj, :_container)
+                container = getfield(obj, :_container)
+                ChronoSim.ObservedState.observed_notify(container, (getfield(obj, :_index), field), :read)
+            end
+            return getfield(obj, field)
+        end
+    end
+
+    setprop_def = quote
+        function Base.setproperty!(obj::$struct_name, field::Symbol, value)
+            if field ∉ (:_container, :_index) && isdefined(obj, :_container)
+                container = getfield(obj, :_container)
+                ChronoSim.ObservedState.observed_notify(container, (getfield(obj, :_index), field), :write)
+            end
+            return setfield!(obj, field, value)
+        end
+    end
+    
+    propnames_def = quote
+        function Base.propertynames(obj::$struct_name, private::Bool=false)
+            if private
+                return fieldnames($struct_name)
+            else
+                return $(Tuple(field_names))
+            end
+        end
+    end
+    
+    # Create equality comparison
+    field_comparisons = [:(getproperty(a, $(QuoteNode(fname))) == getproperty(b, $(QuoteNode(fname)))) for fname in field_names]
+    eq_expr = length(field_comparisons) > 0 ? Expr(:&&, field_comparisons...) : true
+    
+    eq_def = quote
+        function Base.:(==)(a::$struct_name, b::$struct_name)
+            $eq_expr
+        end
+    end
+    
+    # Return all definitions together
+    return esc(quote
+        $struct_def
+        $getprop_def
+        $setprop_def
+        $propnames_def
+        $eq_def
+    end)
 end
