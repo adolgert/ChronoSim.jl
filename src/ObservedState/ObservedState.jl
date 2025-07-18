@@ -12,5 +12,6 @@ include("observed_physical.jl")
 include("observed_vector.jl")
 include("observed_dict.jl")
 include("keyed.jl")
+include("observe_macro.jl")
 
 end

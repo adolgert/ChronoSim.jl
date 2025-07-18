@@ -9,6 +9,7 @@ continuous_integration() = get(ENV, "CI", "false") == "true"
 include("test_static.jl")
 include("test_observed_state.jl")
 include("test_observed_physical.jl")
+include("test_observe.jl")
 
 retest(args...; kwargs...) = ReTest.retest(args...; kwargs...)
 
