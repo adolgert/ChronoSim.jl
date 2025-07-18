@@ -147,13 +147,13 @@ end
     @test "third" in keys(dict)
 
     # Test with symbol keys
-    @keyedby SymbolElement Symbol begin
+    @keyedby SymbolData Symbol begin
         data::Float64
     end
 
-    symdict = ObservedDict{Symbol,SymbolElement}()
-    symdict[:alpha] = SymbolElement(1.5)
-    symdict[:beta] = SymbolElement(2.5)
+    symdict = ObservedDict{Symbol,SymbolData}()
+    symdict[:alpha] = SymbolData(1.5)
+    symdict[:beta] = SymbolData(2.5)
 
     elem_sym = symdict[:alpha]
     @test elem_sym.data == 1.5

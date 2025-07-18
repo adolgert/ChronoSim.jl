@@ -2,7 +2,7 @@ using Base: Base
 using OrderedCollections
 using ..ChronoSim: PhysicalState
 
-export @observedphysical, ObservedPhysical
+export @observedphysical, ObservedPhysical, capture_state_reads, capture_state_changes
 
 # Base type for observed physical states
 abstract type ObservedPhysical <: PhysicalState end
