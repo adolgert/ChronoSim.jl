@@ -80,7 +80,9 @@ macro keyedby(struct_name, index_type, struct_block)
         function Base.getproperty(obj::$struct_name, field::Symbol)
             if field ∉ (:_container, :_index) && isdefined(obj, :_container)
                 container = getfield(obj, :_container)
-                ChronoSim.ObservedState.observed_notify(container, (getfield(obj, :_index), field), :read)
+                ChronoSim.ObservedState.observed_notify(
+                    container, (getfield(obj, :_index), field), :read
+                )
             end
             return getfield(obj, field)
         end
@@ -90,12 +92,14 @@ macro keyedby(struct_name, index_type, struct_block)
         function Base.setproperty!(obj::$struct_name, field::Symbol, value)
             if field ∉ (:_container, :_index) && isdefined(obj, :_container)
                 container = getfield(obj, :_container)
-                ChronoSim.ObservedState.observed_notify(container, (getfield(obj, :_index), field), :write)
+                ChronoSim.ObservedState.observed_notify(
+                    container, (getfield(obj, :_index), field), :write
+                )
             end
             return setfield!(obj, field, value)
         end
     end
-    
+
     propnames_def = quote
         function Base.propertynames(obj::$struct_name, private::Bool=false)
             if private
@@ -105,17 +109,18 @@ macro keyedby(struct_name, index_type, struct_block)
             end
         end
     end
-    
+
     # Create equality comparison
-    field_comparisons = [:(getproperty(a, $(QuoteNode(fname))) == getproperty(b, $(QuoteNode(fname)))) for fname in field_names]
+    field_comparisons = [
+        :(getproperty(a, $(QuoteNode(fname))) == getproperty(b, $(QuoteNode(fname)))) for
+        fname in field_names
+    ]
     eq_expr = length(field_comparisons) > 0 ? Expr(:&&, field_comparisons...) : true
-    
+
     eq_def = quote
-        function Base.:(==)(a::$struct_name, b::$struct_name)
-            $eq_expr
-        end
+        Base.:(==)(a::$struct_name, b::$struct_name) = $eq_expr
     end
-    
+
     # Return all definitions together
     return esc(quote
         $struct_def

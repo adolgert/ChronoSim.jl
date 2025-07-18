@@ -144,7 +144,7 @@ function capture_state_changes(f::Function, physical::ObservedPhysical)
     result = f()
     # Use ordered set here so that list is deterministic.
     changes = OrderedSet(physical.obs_modified)
-    return (;result, changes)
+    return (; result, changes)
 end
 
 """
@@ -158,7 +158,7 @@ function capture_state_reads(f::Function, physical::ObservedPhysical)
     empty!(physical.obs_read)
     result = f()
     reads = OrderedSet(physical.obs_read)
-    return (;result, reads)
+    return (; result, reads)
 end
 
 function observed_notify(physical::ObservedPhysical, changed, readwrite)
