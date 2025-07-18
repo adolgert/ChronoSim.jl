@@ -53,3 +53,48 @@ end
     @test size(arr, 2) == dims[2]
     @test size(arr) == dims
 end
+
+@testset "@keyedby macro" begin
+    using ChronoSim.ObservedState
+    
+    # Test 1D indexing
+    @keyedby MyElement1D Int64 begin
+        val::Int64
+        name::String
+    end
+    
+    arr1d = ObservedArray{MyElement1D}(undef, 5)
+    for i in 1:5
+        arr1d[i] = MyElement1D(i * 10, "item$i")
+    end
+    
+    # Test that fields are properly set
+    elem = arr1d[3]
+    @test elem.val == 30
+    @test elem.name == "item3"
+    @test elem._index == 3
+    @test elem._container === arr1d
+    
+    # Test 2D indexing
+    @keyedby MyElement2D NTuple{2,Int64} begin
+        value::Float64
+        active::Bool
+    end
+    
+    arr2d = ObservedArray{MyElement2D}(undef, 2, 3)
+    for j in 1:3, i in 1:2
+        arr2d[i, j] = MyElement2D(i + j * 0.1, iseven(i + j))
+    end
+    
+    # Test Cartesian indexing
+    elem2d = arr2d[2, 3]
+    @test elem2d.value ≈ 2.3
+    @test elem2d.active == true
+    @test elem2d._index == (2, 3)
+    @test elem2d._container === arr2d
+    
+    # Test linear indexing on 2D array
+    elem2d_linear = arr2d[4]  # Linear index 4 corresponds to [2, 2] in column-major order
+    @test elem2d_linear._index == (2, 2)
+    @test elem2d_linear.value ≈ 2.2
+end
