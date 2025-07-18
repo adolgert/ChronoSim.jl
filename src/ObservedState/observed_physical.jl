@@ -1,4 +1,10 @@
 using Base: Base
+using ..ChronoSim: PhysicalState
+
+export @observedphysical, ObservedPhysical
+
+# Base type for observed physical states
+abstract type ObservedPhysical <: PhysicalState end
 
 """
     @observedphysical <typename> <definition block>
@@ -49,3 +55,72 @@ two observed containers: `(:board, (2,2), :grass)` and
 constructor that initializes `obs_modified` and `obs_read` to empty
 vectors.
 """
+macro observedphysical(struct_name, struct_block)
+    # Validate inputs
+    if !isa(struct_name, Symbol)
+        error("@observedphysical expects a struct name as the first argument")
+    end
+
+    if !isa(struct_block, Expr) || struct_block.head != :block
+        error("@observedphysical expects a begin...end block with struct fields")
+    end
+
+    # Parse fields from the block
+    user_fields = []
+    observed_fields = []  # Track which fields are ObservedArray or ObservedDict
+    for stmt in struct_block.args
+        if isa(stmt, Expr) && stmt.head == :(::)
+            push!(user_fields, stmt)
+            # Check if this is an observed field
+            field_name = stmt.args[1]
+            field_type = stmt.args[2]
+            if isa(field_type, Expr) && field_type.head == :curly
+                type_name = field_type.args[1]
+                if type_name == :ObservedArray || type_name == :ObservedDict
+                    push!(observed_fields, field_name)
+                end
+            end
+        elseif isa(stmt, LineNumberNode)
+            # Skip line number nodes
+            continue
+        elseif isa(stmt, Symbol)
+            # Handle untyped fields
+            push!(user_fields, stmt)
+        end
+    end
+
+    # Build constructor arguments (just the user fields)
+    constructor_args = []
+    for field in user_fields
+        if isa(field, Expr) && field.head == :(::)
+            push!(constructor_args, field.args[1])
+        else
+            push!(constructor_args, field)
+        end
+    end
+
+    # Create the struct definition
+    struct_def = quote
+        mutable struct $struct_name <: ObservedPhysical
+            $(user_fields...)
+            obs_modified::Vector{Tuple}
+            obs_read::Vector{Tuple}
+
+            # Constructor that takes user fields and initializes tracking vectors
+            function $struct_name($(constructor_args...))
+                instance = new($(constructor_args...), Vector{Tuple}(), Vector{Tuple}())
+                
+                # Set up owner references for observed fields
+                $([:(begin
+                    field = getfield(instance, $(QuoteNode(fname)))
+                    field.array_name = $(QuoteNode(fname))
+                    field.owner = instance
+                end) for fname in observed_fields]...)
+                
+                return instance
+            end
+        end
+    end
+
+    return esc(struct_def)
+end

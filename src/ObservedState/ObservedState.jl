@@ -1,8 +1,8 @@
 module ObservedState
 
 using Base: Base
-export ObservedArray, ObservedDict
-export @keyedby
+export ObservedArray, ObservedDict, ObservedPhysical
+export @keyedby, @observedphysical
 
 include("observed_vector.jl")
 include("observed_dict.jl")
