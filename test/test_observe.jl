@@ -32,32 +32,34 @@ using ChronoSim.ObservedState
     end
 end
 
-# @testset "observe macro read" begin
-#     mutable struct OMRContained
-#         fval::Float64
-#     end
-#     @observedphysical OMRPhysical begin
-#         vals::ObservedArray{OMRContained,1}
-#         cnt::Int64
-#     end
+@testset "observe macro read" begin
+    @keyedby OMRContained Int begin
+        fval::Float64
+    end
+    @observedphysical OMRPhysical begin
+        vals::ObservedArray{OMRContained,1}
+        cnt::Int64
+    end
 
-#     physical = OMRPhysical([OMRContained(x) for x in 1:10], 10)
-#     output = []
-#     what_read = capture_state_reads(physical) do 
-#         push!(output, @observe physical.cnt)
-#         push!(output, @observe physical.vals[3].fval)
-#     end
-#     @test output[1] == physical.cnt
-#     @test output[2] == physical.vals[3].fval
-#     @test length(what_read.reads) == 2
-#     @test (:cnt,) in what_read.reads[1]
-#     @test (:vals, 3, :fval) in what_read.reads[2]
+    physical = OMRPhysical(ObservedArray{OMRContained,1}([OMRContained(x) for x in 1:10]), 10)
+    output = []
+    what_read = capture_state_reads(physical) do 
+        push!(output, @observe physical.cnt)
+        fv = @observe physical.vals[3].fval
+        push!(output, fv)
+    end
+    @test output[1] == physical.cnt
+    @test output[2] == physical.vals[3].fval
+    @test length(what_read.reads) == 2
+    @test (:cnt,) in what_read.reads
+    @test (:vals, 3, :fval) in what_read.reads
 
-#     wrote = capture_state_changes(physical) do 
-#         @observe physical.cnt = 12
-#         @observe physical.vals[7].fval = 0.125
-#     end
-#     @test length(wrote.changes) == 2
-#     @test (:cnt,) in wrote.changes
-#     @test (:vals, 7, :fval) in wrote.changes
-# end
+    wrote = capture_state_changes(physical) do
+        incr = 0.125
+        @observe physical.cnt = 12
+        @observe physical.vals[7].fval = incr
+    end
+    @test length(wrote.changes) == 2
+    @test (:cnt,) in wrote.changes
+    @test (:vals, 7, :fval) in wrote.changes
+end
