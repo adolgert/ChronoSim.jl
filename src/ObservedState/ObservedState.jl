@@ -7,5 +7,6 @@ export @keyedby
 include("observed_vector.jl")
 include("observed_dict.jl")
 include("keyed.jl")
+include("observed_physical.jl")
 
 end
