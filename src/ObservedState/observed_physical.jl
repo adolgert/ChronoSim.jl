@@ -109,14 +109,20 @@ macro observedphysical(struct_name, struct_block)
             # Constructor that takes user fields and initializes tracking vectors
             function $struct_name($(constructor_args...))
                 instance = new($(constructor_args...), Vector{Tuple}(), Vector{Tuple}())
-                
+
                 # Set up owner references for observed fields
-                $([:(begin
-                    field = getfield(instance, $(QuoteNode(fname)))
-                    field.array_name = $(QuoteNode(fname))
-                    field.owner = instance
-                end) for fname in observed_fields]...)
-                
+                $(
+                    [
+                        :(
+                            begin
+                                field = getfield(instance, $(QuoteNode(fname)))
+                                field.array_name = $(QuoteNode(fname))
+                                field.owner = instance
+                            end
+                        ) for fname in observed_fields
+                    ]...
+                )
+
                 return instance
             end
         end
