@@ -30,7 +30,7 @@ end
 function over_staged(cbfun::Function)
     formatted_any = false
     for maybe_file in readlines(`git diff --cached --name-only --diff-filter=ACM`)
-        if endswith(maybe_file, ".jl")
+        if endswith(maybe_file, ".jl") && isfile(maybe_file)
             formatted_any |= cbfun(maybe_file)
         end
     end
@@ -38,17 +38,15 @@ function over_staged(cbfun::Function)
 end
 
 formatted_any = over_staged() do toformat
-    if isfile(toformat)
-        if !format_file(toformat)
-            println("  ✓ $toformat (already formatted)")
-        else
-            println("  ✔ $toformat (formatted)")
-            # Re-stage the formatted file
-            run(`git add $toformat`)
-            return true
-        end
+    if !format_file(toformat)
+        println("  ✓ $toformat (already formatted)")
+        return false
+    else
+        println("  ✔ $toformat (formatted)")
+        # Re-stage the formatted file
+        run(`git add $toformat`)
+        return true
     end
-    return false
 end
 
 if formatted_any
