@@ -43,7 +43,7 @@ end
 
     physical = OMRPhysical(ObservedArray{OMRContained,1}([OMRContained(x) for x in 1:10]), 10)
     output = []
-    what_read = capture_state_reads(physical) do 
+    what_read = capture_state_reads(physical) do
         push!(output, @observe physical.cnt)
         fv = @observe physical.vals[3].fval
         push!(output, fv)

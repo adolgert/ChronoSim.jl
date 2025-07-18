@@ -43,10 +43,10 @@ macro observe(expr)
         # Handle assignment (write)
         lhs = expr.args[1]
         rhs = expr.args[2]
-        
+
         # Get the placekey from the left-hand side
         placekey_expr = access_to_placekey(lhs)
-        
+
         # Extract the physical state object (first part of the access chain)
         current = lhs
         while current isa Expr && (current.head == :. || current.head == :ref)
@@ -57,7 +57,7 @@ macro observe(expr)
             end
         end
         physical_obj = current
-        
+
         return quote
             local _physical = $(esc(physical_obj))
             local _placekey = $placekey_expr
@@ -67,7 +67,7 @@ macro observe(expr)
     else
         # Handle read
         placekey_expr = access_to_placekey(expr)
-        
+
         # Extract the physical state object
         current = expr
         while current isa Expr && (current.head == :. || current.head == :ref)
@@ -78,7 +78,7 @@ macro observe(expr)
             end
         end
         physical_obj = current
-        
+
         return quote
             local _physical = $(esc(physical_obj))
             local _placekey = $placekey_expr
