@@ -1,7 +1,7 @@
 function access_to_placekey(expr::Expr)
     parts = []
     current = expr
-    
+
     while current isa Expr
         if current.head == :.
             push!(parts, current.args[2])
@@ -17,16 +17,16 @@ function access_to_placekey(expr::Expr)
             break
         end
     end
-    
+
     if current isa Symbol
         push!(parts, current)
     end
-    
+
     reverse!(parts)
-    
+
     if length(parts) > 1
         parts = parts[2:end]
     end
-    
+
     return Expr(:tuple, parts...)
 end

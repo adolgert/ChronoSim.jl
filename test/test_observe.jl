@@ -18,11 +18,14 @@ using ChronoSim.ObservedState
         (:(sim.board[ione].fval), :(:board, ione, :fval)),
         (:(state.board[ione, itwo].fval), :(:board, (ione, itwo), :fval)),
         (:(sim.agent[sone].arrow), :(:agent, sone, :arrow)),
-        (:(sim.chess.board[ione, ithree, itwo].qval), :(:chess, :board, (ione, ithree, itwo), :qval)),
+        (
+            :(sim.chess.board[ione, ithree, itwo].qval),
+            :(:chess, :board, (ione, ithree, itwo), :qval),
+        ),
         (:(pstate.flip[(sone, itwo)]), :(:flip, (sone, itwo))),
         (:(pstate.flip[tone]), :(:flip, tone)),
         (:(state.jug.places[tone]), :(:jug, :places, tone)),
-        (:(sim.cnt), :((:cnt,)))
+        (:(sim.cnt), :((:cnt,))),
     ]
     for (expr, expected) in testset
         @test ChronoSim.ObservedState.access_to_placekey(expr) == expected
