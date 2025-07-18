@@ -68,19 +68,9 @@ macro observedphysical(struct_name, struct_block)
 
     # Parse fields from the block
     user_fields = []
-    observed_fields = []  # Track which fields are ObservedArray or ObservedDict
     for stmt in struct_block.args
         if isa(stmt, Expr) && stmt.head == :(::)
             push!(user_fields, stmt)
-            # Check if this is an observed field
-            field_name = stmt.args[1]
-            field_type = stmt.args[2]
-            if isa(field_type, Expr) && field_type.head == :curly
-                type_name = field_type.args[1]
-                if type_name == :ObservedArray || type_name == :ObservedDict
-                    push!(observed_fields, field_name)
-                end
-            end
         elseif isa(stmt, LineNumberNode)
             # Skip line number nodes
             continue
@@ -111,18 +101,18 @@ macro observedphysical(struct_name, struct_block)
             function $struct_name($(constructor_args...))
                 instance = new($(constructor_args...), Vector{Tuple}(), Vector{Tuple}())
 
-                # Set up owner references for observed fields
-                $(
-                    [
-                        :(
-                            begin
-                                field = getfield(instance, $(QuoteNode(fname)))
-                                field.array_name = $(QuoteNode(fname))
-                                field.owner = instance
-                            end
-                        ) for fname in observed_fields
-                    ]...
-                )
+                # Set up owner references for observed fields at runtime.
+                for fname in fieldnames(typeof(instance))
+                    # These are the fields this macro adds.
+                    if fname in (:obs_modified, :obs_read)
+                        continue
+                    end
+                    field_val = getfield(instance, fname)
+                    if ChronoSim.ObservedState.is_observed_container(field_val)
+                        field_val.field_name = fname
+                        field_val.owner = instance
+                    end
+                end
 
                 return instance
             end

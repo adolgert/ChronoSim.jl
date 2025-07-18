@@ -1,6 +1,6 @@
 mutable struct ObservedDict{K,V} <: AbstractDict{K,V}
     const dict::Dict{K,V}
-    array_name::Symbol
+    field_name::Symbol
     owner::Any
     ObservedDict{K,V}(dict) where {K,V} = new{K,V}(dict)
 end
@@ -8,6 +8,8 @@ end
 # Constructors
 ObservedDict{K,V}() where {K,V} = ObservedDict{K,V}(Dict{K,V}())
 ObservedDict() = ObservedDict{Any,Any}()
+
+is_observed_container(v::ObservedDict) = true
 
 # Required AbstractDict interface methods
 Base.length(d::ObservedDict) = length(d.dict)
@@ -83,6 +85,6 @@ Base.sizehint!(d::ObservedDict, n) = (sizehint!(d.dict, n); d)
 
 function observed_notify(v::ObservedDict, changed, readwrite)
     if isdefined(v, :owner)
-        observed_notify(getfield(v, :owner), (getfield(v, :array_name), changed...), readwrite)
+        observed_notify(getfield(v, :owner), (getfield(v, :field_name), changed...), readwrite)
     end
 end

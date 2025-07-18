@@ -2,7 +2,7 @@ using Base: Base
 
 mutable struct ObservedArray{T,N} <: DenseArray{T,N}
     const arr::Array{T,N}
-    array_name::Symbol
+    field_name::Symbol
     owner::Any
     ObservedArray{T,N}(arr) where {T,N} = new{T,N}(arr)
 end
@@ -12,6 +12,8 @@ function ObservedArray{T}(::UndefInitializer, dims...) where {T}
     arr = Array{T}(undef, dims...)
     ObservedArray{T,N}(arr)
 end
+
+is_observed_container(v::ObservedArray) = true
 
 Base.eltype(::ObservedArray{T}) where {T} = T
 Base.ndims(v::ObservedArray) = ndims(v.arr)
@@ -68,6 +70,6 @@ end
 
 function observed_notify(v::ObservedArray, changed, readwrite)
     if isdefined(v, :owner)
-        observed_notify(getfield(v, :owner), (getfield(v, :array_name), changed...), readwrite)
+        observed_notify(getfield(v, :owner), (getfield(v, :field_name), changed...), readwrite)
     end
 end
