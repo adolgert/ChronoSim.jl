@@ -66,7 +66,7 @@ end
 function Base.setindex!(v::ObservedArray, x, i::Vararg{Int})
     v.arr[i...] = x
     setfield!(x, :_container, v)
-    setfield!(x, :_index, Tuple(CartesianIndices(v.arr)[i]))
+    setfield!(x, :_index, i)
     return x
 end
 
@@ -114,22 +114,20 @@ function Base.delete!(d::ObservedDict, key)
     return d
 end
 
-function Base.get(d::ObservedDict, key, default)
+Base.get(d::ObservedDict, key, default) =
     if haskey(d.dict, key)
         return d[key]  # This will update _container and _index
     else
         return default
     end
-end
 
-function Base.get!(d::ObservedDict, key, default)
+Base.get!(d::ObservedDict, key, default) =
     if haskey(d.dict, key)
         return d[key]
     else
         d[key] = default
         return default
     end
-end
 
 # Iteration interface
 function Base.iterate(d::ObservedDict)
