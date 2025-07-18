@@ -70,7 +70,6 @@ function Base.setindex!(v::ObservedArray, x, i::Vararg{Int})
     return x
 end
 
-
 """
     @keyedby StructName IndexType begin
         field1::Type1
@@ -105,11 +104,11 @@ macro keyedby(struct_name, index_type, struct_block)
     if !isa(struct_name, Symbol)
         error("@keyedby expects a struct name as the first argument")
     end
-    
+
     if !isa(struct_block, Expr) || struct_block.head != :block
         error("@keyedby expects a begin...end block with struct fields")
     end
-    
+
     # Parse fields from the block
     user_fields = []
     for stmt in struct_block.args
@@ -123,7 +122,7 @@ macro keyedby(struct_name, index_type, struct_block)
             push!(user_fields, stmt)
         end
     end
-    
+
     # Build constructor arguments (just the user fields)
     constructor_args = []
     for field in user_fields
@@ -133,19 +132,19 @@ macro keyedby(struct_name, index_type, struct_block)
             push!(constructor_args, field)
         end
     end
-    
+
     # Create the struct definition
     struct_def = quote
         mutable struct $struct_name
             $(user_fields...)
             _container::Any
             _index::$index_type
-            
+
             # Constructor that only takes user fields
             $struct_name($(constructor_args...)) = new($(constructor_args...))
         end
     end
-    
+
     return esc(struct_def)
 end
 
