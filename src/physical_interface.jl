@@ -73,3 +73,5 @@ struct Member
 end
 
 Base.show(io::IO, m::Member) = print(io, m.name)
+Base.Symbol(m::Member) = m.name
+Base.convert(::Type{Symbol}, m::Member) = m.name
