@@ -20,7 +20,7 @@ function access_to_placekey(expr::Expr)
 
     while current isa Expr
         if current.head == :.
-            push!(parts, current.args[2])
+            push!(parts, :(Member($(current.args[2]))))
             current = current.args[1]
         elseif current.head == :ref
             if length(current.args) == 2

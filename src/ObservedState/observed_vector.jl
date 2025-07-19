@@ -70,6 +70,6 @@ end
 
 function observed_notify(v::ObservedArray, changed, readwrite)
     if isdefined(v, :owner)
-        observed_notify(getfield(v, :owner), (getfield(v, :field_name), changed...), readwrite)
+        observed_notify(getfield(v, :owner), (Member(getfield(v, :field_name)), changed...), readwrite)
     end
 end

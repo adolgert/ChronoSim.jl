@@ -214,12 +214,12 @@ using ChronoSim.ObservedState
 
             # Convert to set for easier testing (order doesn't matter)
             reads_set = Set(reads)
-            @test (:grid1d, 2, :value) in reads_set
-            @test (:grid2d, (1, 2), :label) in reads_set
-            @test (:grid2d, (2, 1), :value) in reads_set
-            @test (:sym_dict, :alpha, :value) in reads_set
-            @test (:sym_dict, :beta, :label) in reads_set
-            @test (:int_dict, 100, :value) in reads_set
+            @test (Member(:grid1d), 2, Member(:value)) in reads_set
+            @test (Member(:grid2d), (1, 2), Member(:label)) in reads_set
+            @test (Member(:grid2d), (2, 1), Member(:value)) in reads_set
+            @test (Member(:sym_dict), :alpha, Member(:value)) in reads_set
+            @test (Member(:sym_dict), :beta, Member(:label)) in reads_set
+            @test (Member(:int_dict), 100, Member(:value)) in reads_set
         end
 
         # Test capture_state_changes
@@ -254,12 +254,12 @@ using ChronoSim.ObservedState
 
             # Convert to set for easier testing
             changes_set = Set(changes)
-            @test (:grid1d, 1, :value) in changes_set
-            @test (:grid1d, 3, :label) in changes_set
-            @test (:grid2d, (2, 2), :value) in changes_set
-            @test (:sym_dict, :alpha, :label) in changes_set
-            @test (:sym_dict, :gamma, :value) in changes_set
-            @test (:int_dict, 200, :value) in changes_set
+            @test (Member(:grid1d), 1, Member(:value)) in changes_set
+            @test (Member(:grid1d), 3, Member(:label)) in changes_set
+            @test (Member(:grid2d), (2, 2), Member(:value)) in changes_set
+            @test (Member(:sym_dict), :alpha, Member(:label)) in changes_set
+            @test (Member(:sym_dict), :gamma, Member(:value)) in changes_set
+            @test (Member(:int_dict), 200, Member(:value)) in changes_set
 
             # Verify the actual values were changed
             @test state.grid1d[1].value ≈ 99.0
@@ -291,8 +291,8 @@ using ChronoSim.ObservedState
             changes = changes_result.changes
             @test length(changes) == 2
             changes_set = Set(changes)
-            @test (:grid1d, 4, :value) in changes_set
-            @test (:sym_dict, :beta, :value) in changes_set
+            @test (Member(:grid1d), 4, Member(:value)) in changes_set
+            @test (Member(:sym_dict), :beta, Member(:value)) in changes_set
 
             # Test that writes don't interfere with reads tracking
             reads_result = capture_state_reads(state) do
@@ -305,8 +305,8 @@ using ChronoSim.ObservedState
             reads = reads_result.reads
             @test length(reads) == 2
             reads_set = Set(reads)
-            @test (:grid2d, (1, 3), :value) in reads_set
-            @test (:int_dict, 100, :label) in reads_set
+            @test (Member(:grid2d), (1, 3), Member(:value)) in reads_set
+            @test (Member(:int_dict), 100, Member(:label)) in reads_set
         end
     end
 end

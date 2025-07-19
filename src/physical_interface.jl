@@ -1,5 +1,6 @@
 export PhysicalState, isconsistent
 public over_tracked_physical_state, capture_state_changes, capture_state_reads
+export Member
 
 """
 `PhysicalState` is an abstract type from which to inherit the state of a simulation.
@@ -64,6 +65,8 @@ function capture_state_reads(f::Function, physical) end
 
 """
 This represents a field in a struct. It is a wrapper around Symbol.
+We wrap the Symbol so that it doesn't conflict with dictionary keys that
+are symbols.
 """
 struct Member
     name::Symbol
