@@ -1,4 +1,4 @@
-import Logging
+using Logging: Logging
 
 ##### Helpers for events
 
@@ -40,7 +40,6 @@ end
 matches_event(eg::EventGenerator) = eg.match_what == ToEvent
 matches_place(eg::EventGenerator) = eg.match_what == ToPlace
 
-
 """
     generators(::Type{SimEvent})::Vector{EventGenerator}
 
@@ -50,13 +49,11 @@ function as part of the interface of each transition.
 """
 generators(::Type{<:SimEvent}) = EventGenerator[]
 
-
 struct GeneratorSearch
     event_to_event::Dict{Symbol,Vector{Function}}
     # Think of this as a two-level trie.
     byarray::Dict{Symbol,Dict{Symbol,Vector{Function}}}
 end
-
 
 function Base.show(io::IO, generators::GeneratorSearch)
     by_event = [(sym, length(funcs)) for (sym, funcs) in generators.event_to_event]
@@ -70,7 +67,6 @@ function Base.show(io::IO, generators::GeneratorSearch)
     println(io, "OnPlace: $(on_place)")
 end
 
-
 function over_generated_events(f::Function, generators, physical, event_key, changed_places)
     event_args = event_key[2:end]
     for from_event in get(generators.event_to_event, event_key[1], Function[])
@@ -79,12 +75,13 @@ function over_generated_events(f::Function, generators, physical, event_key, cha
     # Every place is (arrayname, integer index in array, struct member)
     for place in changed_places
         place_idx = place[2]
-        for genfunc in get(get(generators.byarray, place[1], Dict{Symbol,Vector{Function}}()), place[3], Function[])
+        for genfunc in get(
+            get(generators.byarray, place[1], Dict{Symbol,Vector{Function}}()), place[3], Function[]
+        )
             genfunc(f, physical, place_idx)
         end
     end
 end
-
 
 function GeneratorSearch(generators::Vector{EventGenerator})
     from_event = Dict{Symbol,Vector{Function}}()
