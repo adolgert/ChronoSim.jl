@@ -68,7 +68,8 @@ makedocs(;
         edit_link="main",
         assets=String[],
     ),
-    pages=["Home" => "index.md", "Examples" => ["Getting Started" => "getting_started.md"]],
+    pages=["Home" => "index.md", "Examples" => ["Getting Started" => "getting_started.md"], "Manual" => ["Simulation State" => "simulation_state.md"], "Reference" => "reference.md"],
+    warnonly = true,
 )
 
 deploydocs(; repo="github.com/adolgert/ChronoSim.jl", devbranch="main")
