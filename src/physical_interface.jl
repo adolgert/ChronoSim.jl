@@ -61,3 +61,12 @@ records which parts of the state were read. The callback should have
 no arguments and may return a result.
 """
 function capture_state_reads(f::Function, physical) end
+
+"""
+This represents a field in a struct. It is a wrapper around Symbol.
+"""
+struct Member
+    name::Symbol
+end
+
+Base.show(io::IO, m::Member) = print(io, m.name)
