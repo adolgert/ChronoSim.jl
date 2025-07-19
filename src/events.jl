@@ -34,7 +34,7 @@ isimmediate(::Type{<:SimEvent}) = false
 All `SimEvent` objects are immutable structs that represent events but
 don't carry any mutable state. A clock key is a tuple version of an event.
 """
-@generated function clock_key(event::T) where T <: SimEvent
+@generated function clock_key(event::T) where {T<:SimEvent}
     type_symbol = QuoteNode(nameof(T))
     field_exprs = [:(event.$field) for field in fieldnames(T)]
     return :($type_symbol, $(field_exprs...))
@@ -49,16 +49,16 @@ We pass in the list of datatypes because, if we didn't, then instantiation
 of a type from a symbol would need to search for the correct constructor
 in the correct module, and that would be both wrong and slow.
 """
-function key_clock(key::Tuple, event_dict::Dict{Symbol, DataType})
+function key_clock(key::Tuple, event_dict::Dict{Symbol,DataType})
     if !isa(key[1], Symbol)
         error("First element of tuple must be a Symbol")
     end
-    
+
     type_symbol = key[1]
     if !haskey(event_dict, type_symbol)
         error("Type $type_symbol not found in event dictionary")
     end
-    
+
     struct_type = event_dict[type_symbol]
     field_args = key[2:end]
     return struct_type(field_args...)
