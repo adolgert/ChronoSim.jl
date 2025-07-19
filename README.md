@@ -26,5 +26,5 @@ julia --project=. -e "using Pkg; Pkg.test()"
 If you want to run specific tests, then use `runtests.jl` as a script.
 The "Board" argument will run only tests that have "Board" in the testset name.
 ```julia
-julia --project=. test/runtests.jl "Board"
+julia --project=test test/runtests.jl "Board"
 ```
