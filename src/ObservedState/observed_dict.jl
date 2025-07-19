@@ -85,6 +85,8 @@ Base.sizehint!(d::ObservedDict, n) = (sizehint!(d.dict, n); d)
 
 function observed_notify(v::ObservedDict, changed, readwrite)
     if isdefined(v, :owner)
-        observed_notify(getfield(v, :owner), (Member(getfield(v, :field_name)), changed...), readwrite)
+        observed_notify(
+            getfield(v, :owner), (Member(getfield(v, :field_name)), changed...), readwrite
+        )
     end
 end
