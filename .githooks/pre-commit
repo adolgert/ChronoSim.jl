@@ -38,7 +38,7 @@ function over_staged(cbfun::Function)
 end
 
 formatted_any = over_staged() do toformat
-    if !format_file(toformat)
+    if format_file(toformat)
         println("  ✓ $toformat (already formatted)")
         return false
     else
