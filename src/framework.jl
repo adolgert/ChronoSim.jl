@@ -74,11 +74,11 @@ checksim(sim::SimulationFSM) = @assert keys(sim.enabled_events) == keys(sim.depn
 function rate_reenable(sim::SimulationFSM, event, clock_key)
     first_enable = sim.enabling_times[clock_key]
     reads_result = capture_state_reads(sim.physical) do
-        distwhen = reenable(event, sim.physical, first_enable, sim.when)
-        if !isnothing(distwhen)
-            (dist, enable_time) = distwhen
-            enable!(sim.sampler, clock_key, dist, enable_time, sim.when, sim.rng)
-        end
+        return reenable(event, sim.physical, first_enable, sim.when)
+    end
+    if !isnothing(reads_result.result)
+        (dist, enable_time) = distwhen
+        enable!(sim.sampler, clock_key, dist, enable_time, sim.when, sim.rng)
     end
     return reads_result.reads
 end
@@ -86,11 +86,13 @@ end
 
 function process_generated_events_from_changes(sim::SimulationFSM, fired_event_key, changed_places)
     over_generated_events(sim.eventgen, sim.physical, fired_event_key, changed_places) do newevent
-        resetread(sim.physical)
-        if precondition(newevent, sim.physical)
-            input_places = wasread(sim.physical)
-            evtkey = clock_key(newevent)
-            if evtkey ∉ keys(sim.enabled_events)
+        evtkey = clock_key(newevent)
+        if evtkey ∉ keys(sim.enabled_events)
+            precond = capture_state_reads(sim.physical) do
+                precondition(newevent, sim.physical)
+            end
+            if precond.result
+                input_places = precond.reads
                 sim.enabled_events[evtkey] = newevent
                 sim.enabling_times[evtkey] = sim.when
                 reads_result = capture_state_reads(sim.physical) do
@@ -170,9 +172,6 @@ function deal_with_changes(
         # will depend on different board places after the piece has moved.
         disable_clocks!(sim, clock_toremove)
     end
-
-    process_generated_events_from_changes(sim, clock_key(fired_event), changed_places)
-    checksim(sim)
 end
 
 
@@ -215,6 +214,8 @@ function fire!(sim::SimulationFSM, when, what)
     changed_places = modify_state!(sim, event)
     disable_clocks!(sim, [what])
     deal_with_changes(sim, event, changed_places)
+    process_generated_events_from_changes(sim, clock_key(fired_event), changed_places)
+    checksim(sim)
     # Invariant for states and events is restored, so show the result.
     sim.observer(sim.physical, when, event, changed_places)
 end
