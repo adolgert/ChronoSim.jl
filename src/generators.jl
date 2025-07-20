@@ -7,6 +7,21 @@ export over_generated_events
 
 @enum GenMatches ToEvent ToPlace
 
+
+const MEMBERINDEX = Member(:_index)
+
+function placekey_mask_index(placekey)
+    mvec = Vector{Member}(undef, length(placekey))
+    for i in eachindex(placekey)
+        if isa(placekey[i], Member)
+            mvec[i] = placekey[i]
+        else
+            mvec[i] = MEMBERINDEX
+        end
+    end
+    return Tuple(mvec)
+end
+
 """
     EventGenerator{TransitionType}(matchstr, generator::Function)
 
@@ -33,7 +48,7 @@ function should look at the physical state and call `f(transition)` where
 """
 struct EventGenerator
     match_what::GenMatches
-    matchstr::Vector{Symbol}
+    matchstr::Vector{Any} # This is a specification data structure.
     generator::Function
 end
 
@@ -49,21 +64,16 @@ function as part of the interface of each transition.
 """
 generators(::Type{<:SimEvent}) = EventGenerator[]
 
-struct GeneratorSearch
+struct GeneratorSearch{DictType}
     event_to_event::Dict{Symbol,Vector{Function}}
     # Think of this as a two-level trie.
-    byarray::Dict{Symbol,Dict{Symbol,Vector{Function}}}
+    byarray::DictType
 end
 
 function Base.show(io::IO, generators::GeneratorSearch)
     by_event = [(sym, length(funcs)) for (sym, funcs) in generators.event_to_event]
     println(io, "OnEvent: $(by_event)")
-    on_place = Tuple{Symbol,Symbol,Int}[]
-    for arrkey in keys(generators.byarray)
-        for propkey in keys(generators.byarray[arrkey])
-            push!(on_place, (arrkey, propkey, length(generators.byarray[arrkey][propkey])))
-        end
-    end
+    on_place = collect(keys(generators.byarray))
     println(io, "OnPlace: $(on_place)")
 end
 
@@ -74,34 +84,208 @@ function over_generated_events(f::Function, generators, physical, event_key, cha
     end
     # Every place is (arrayname, integer index in array, struct member)
     for place in changed_places
-        place_idx = place[2]
-        for genfunc in get(
-            get(generators.byarray, place[1], Dict{Symbol,Vector{Function}}()), place[3], Function[]
-        )
-            genfunc(f, physical, place_idx)
+        key = placekey_mask_index(place)
+        inds = [val for val in placekey if !isa(val, Member)]
+        for genfunc in get(generators.byarray, key, Function[])
+            genfunc(f, physical, inds...)
         end
     end
 end
 
 function GeneratorSearch(generators::Vector{EventGenerator})
     from_event = Dict{Symbol,Vector{Function}}()
-    from_array = Dict{Symbol,Dict{Symbol,Vector{Function}}}()
-    for add_gen in generators
-        if matches_event(add_gen)
-            struct_name = add_gen.matchstr[1]
-            rule_set = get!(from_event, struct_name, Function[])
-            push!(rule_set, add_gen.generator)
-        elseif matches_place(add_gen)
-            struct_name = add_gen.matchstr[1]
-            property_name = add_gen.matchstr[3]
-            if struct_name ∉ keys(from_array)
-                from_array[struct_name] = Dict{Symbol,Vector{Function}}()
-            end
-            rule_set = get!(from_array[struct_name], property_name, Function[])
-            push!(rule_set, add_gen.generator)
+    for add_gen in filter(matches_event, generators)
+        struct_name = add_gen.matchstr[1]
+        rule_set = get!(from_event, struct_name, Function[])
+        push!(rule_set, add_gen.generator)
+    end
+
+    matchlens = [length(gen.matchstr) in filter(matches_place, generators)]
+    if allequal(matchlens)
+        dict_type = NTuple{matchlens[1],Member}
+    else
+        dict_type = Tuple{Member}
+    end
+    match_dict = Dict{dict_type,Vector{Function}}
+
+    for add_gen in filter(matches_place, generators)
+        match_key = placekey_mask_index(add_gen.matchstr)
+        rule_set = get(match_dict, match_key, Vector{Function}())
+        push!(rule_set, add_gen.generator)
+    end
+    GeneratorSearch{dict_type}(from_event, match_dict)
+end
+
+# Macros to make the match string.
+"""
+    @reactto changed(array[index].field) begin physical
+        # generator body
+    end
+
+    @reactto fired(EventType(args...)) begin physical
+        # generator body
+    end
+
+Creates an EventGenerator that reacts to state changes or event firings.
+Used within @conditionsfor blocks.
+"""
+macro reactto(trigger_expr, block)
+    if trigger_expr.head == :call
+        if trigger_expr.args[1] == :changed
+            return parse_changed_reactto(trigger_expr.args[2], block)
+        elseif trigger_expr.args[1] == :fired
+            return parse_fired_reactto(trigger_expr.args[2], block)
         else
-            error("event generator should match place or event")
+            error("@reactto expects changed(...) or fired(...)")
+        end
+    else
+        error("Invalid @reactto syntax")
+    end
+end
+
+
+function parse_changed_reactto(place_expr, block)
+    # Parse something like agent[i].loc
+    # We expect: array[index].field
+    if place_expr.head == :.
+        field = place_expr.args[2]
+        if field isa QuoteNode
+            field = field.value
+        end
+        
+        array_access = place_expr.args[1]
+        if array_access.head == :ref
+            array_name = array_access.args[1]
+            index_var = array_access.args[2]
+            
+            # Extract the block parameter and body
+            # The block should be: begin physical; <body>; end
+            if block.head == :block && length(block.args) >= 2
+                # Find the first non-LineNumberNode argument
+                param_idx = findfirst(arg -> !(arg isa LineNumberNode), block.args)
+                if param_idx === nothing
+                    error("Invalid block structure for @reactto")
+                end
+                block_param = block.args[param_idx]
+                
+                # The rest is the body
+                body_args = block.args[(param_idx+1):end]
+                body = Expr(:block, body_args...)
+            else
+                error("Invalid block structure for @reactto")
+            end
+            
+            # Transform generate(event) calls to f(event)
+            transformed_body = transform_generate_calls(body)
+            
+            # Create the generator function
+            return esc(quote
+                EventGenerator(
+                    ToPlace,
+                    [$(QuoteNode(array_name)), ℤ, $(QuoteNode(field))],
+                    function (f::Function, $block_param, $index_var)
+                        $transformed_body
+                    end
+                )
+            end)
+        else
+            error("Expected array[index] syntax")
+        end
+    else
+        error("Expected array[index].field syntax")
+    end
+end
+
+
+function parse_fired_reactto(event_expr, block)
+    # Parse something like InfectTransition(sick, healthy)
+    if event_expr.head == :call
+        event_type = event_expr.args[1]
+        event_args = event_expr.args[2:end]
+        
+        # Extract the block parameter and body
+        # The block should be: begin physical; <body>; end
+        if block.head == :block && length(block.args) >= 2
+            # Find the first non-LineNumberNode argument
+            param_idx = findfirst(arg -> !(arg isa LineNumberNode), block.args)
+            if param_idx === nothing
+                error("Invalid block structure for @reactto")
+            end
+            block_param = block.args[param_idx]
+            
+            # The rest is the body
+            body_args = block.args[(param_idx+1):end]
+            body = Expr(:block, body_args...)
+        else
+            error("Invalid block structure for @reactto")
+        end
+        
+        # Transform generate(event) calls to f(event)
+        transformed_body = transform_generate_calls(body)
+        
+        # Create the generator function
+        return esc(quote
+            EventGenerator(
+                ToEvent,
+                [$(QuoteNode(event_type))],
+                function (f::Function, $block_param, $(event_args...))
+                    $transformed_body
+                end
+            )
+        end)
+    else
+        error("Expected EventType(...) syntax")
+    end
+end
+
+
+function transform_generate_calls(expr)
+    if expr isa Expr
+        if expr.head == :call && expr.args[1] == :generate
+            # Transform generate(event) to f(event)
+            return Expr(:call, :f, expr.args[2:end]...)
+        else
+            # Recursively transform subexpressions
+            return Expr(expr.head, map(transform_generate_calls, expr.args)...)
+        end
+    else
+        return expr
+    end
+end
+
+
+"""
+    @conditionsfor EventType begin
+        @reactto ... end
+        @reactto ... end
+    end
+
+Generates a generators(::Type{EventType}) function containing all the
+EventGenerators defined in the @reactto blocks.
+"""
+macro conditionsfor(event_type, block)
+    # Collect all @reactto expressions
+    generators_list = Expr[]
+    
+    for expr in block.args
+        if expr isa Expr && expr.head == :macrocall && expr.args[1] == Symbol("@reactto")
+            # Evaluate the @reactto macro
+            push!(generators_list, macroexpand(__module__, expr))
+        elseif expr isa LineNumberNode
+            # Skip line numbers
+            continue
+        else
+            # Skip other expressions for now
+            continue
         end
     end
-    GeneratorSearch(from_event, from_array)
+    
+    # Generate the generators function
+    return esc(quote
+        function generators(::Type{$event_type})
+            return EventGenerator[
+                $(generators_list...)
+            ]
+        end
+    end)
 end
