@@ -81,7 +81,7 @@ macro keyedby(struct_name, index_type, struct_block)
             if field ∉ (:_container, :_index) && isdefined(obj, :_container)
                 container = getfield(obj, :_container)
                 ChronoSim.ObservedState.observed_notify(
-                    container, (getfield(obj, :_index), field), :read
+                    container, (getfield(obj, :_index), Member(field)), :read
                 )
             end
             return getfield(obj, field)
@@ -93,7 +93,7 @@ macro keyedby(struct_name, index_type, struct_block)
             if field ∉ (:_container, :_index) && isdefined(obj, :_container)
                 container = getfield(obj, :_container)
                 ChronoSim.ObservedState.observed_notify(
-                    container, (getfield(obj, :_index), field), :write
+                    container, (getfield(obj, :_index), Member(field)), :write
                 )
             end
             return setfield!(obj, field, value)

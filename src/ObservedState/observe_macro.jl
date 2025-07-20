@@ -1,10 +1,26 @@
+"""
+    access_to_placekey(expr)
+
+This function takes an expression for member access to a hierarchical container
+and converts it into a place key. For instance:
+
+| Accessor expression           | Place key                 |
+| ----------------------------- | ------------------------- |
+| `state.agent[j].armor`        | `(:agent, j, :armor)`     |
+| `sim.board[i, j].fval`        | `(:board, (i, j), :fval)` |
+| `state.param`                 | `(:param,)`               |
+| `sim.adict[(name, kind)]`     | `(:adict, (name, kind))`  |
+| `physical.land[square].grass` | `(:land, square, :grass)` |
+
+The output is also an `Expr`-type object.
+"""
 function access_to_placekey(expr::Expr)
     parts = []
     current = expr
 
     while current isa Expr
         if current.head == :.
-            push!(parts, current.args[2])
+            push!(parts, :(Member($(current.args[2]))))
             current = current.args[1]
         elseif current.head == :ref
             if length(current.args) == 2

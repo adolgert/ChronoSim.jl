@@ -8,6 +8,8 @@ public is_observed_container
 
 is_observed_container(::Any) = false
 
+using ..ChronoSim: Member
+
 include("observed_physical.jl")
 include("observed_vector.jl")
 include("observed_dict.jl")

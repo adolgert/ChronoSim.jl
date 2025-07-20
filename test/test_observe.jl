@@ -15,17 +15,17 @@ using ChronoSim.ObservedState
     ttwo = (3, 6)
 
     testset = [
-        (:(sim.board[ione].fval), :(:board, ione, :fval)),
-        (:(state.board[ione, itwo].fval), :(:board, (ione, itwo), :fval)),
-        (:(sim.agent[sone].arrow), :(:agent, sone, :arrow)),
+        (:(sim.board[ione].fval), :(Member(:board), ione, Member(:fval))),
+        (:(state.board[ione, itwo].fval), :(Member(:board), (ione, itwo), Member(:fval))),
+        (:(sim.agent[sone].arrow), :(Member(:agent), sone, Member(:arrow))),
         (
             :(sim.chess.board[ione, ithree, itwo].qval),
-            :(:chess, :board, (ione, ithree, itwo), :qval),
+            :(Member(:chess), Member(:board), (ione, ithree, itwo), Member(:qval)),
         ),
-        (:(pstate.flip[(sone, itwo)]), :(:flip, (sone, itwo))),
-        (:(pstate.flip[tone]), :(:flip, tone)),
-        (:(state.jug.places[tone]), :(:jug, :places, tone)),
-        (:(sim.cnt), :((:cnt,))),
+        (:(pstate.flip[(sone, itwo)]), :(Member(:flip), (sone, itwo))),
+        (:(pstate.flip[tone]), :(Member(:flip), tone)),
+        (:(state.jug.places[tone]), :(Member(:jug), Member(:places), tone)),
+        (:(sim.cnt), :((Member(:cnt),))),
     ]
     for (expr, expected) in testset
         @test ChronoSim.ObservedState.access_to_placekey(expr) == expected
@@ -51,8 +51,8 @@ end
     @test output[1] == physical.cnt
     @test output[2] == physical.vals[3].fval
     @test length(what_read.reads) == 2
-    @test (:cnt,) in what_read.reads
-    @test (:vals, 3, :fval) in what_read.reads
+    @test (Member(:cnt),) in what_read.reads
+    @test (Member(:vals), 3, Member(:fval)) in what_read.reads
 
     wrote = capture_state_changes(physical) do
         incr = 0.125
@@ -60,6 +60,6 @@ end
         @observe physical.vals[7].fval = incr
     end
     @test length(wrote.changes) == 2
-    @test (:cnt,) in wrote.changes
-    @test (:vals, 7, :fval) in wrote.changes
+    @test (Member(:cnt),) in wrote.changes
+    @test (Member(:vals), 7, Member(:fval)) in wrote.changes
 end

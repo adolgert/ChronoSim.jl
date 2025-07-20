@@ -5,3 +5,4 @@ margin=100
 trailing_comma=true
 always_for_in=true
 long_to_short_function_def=true
+remove_extra_newlines = false
