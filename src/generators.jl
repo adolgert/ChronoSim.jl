@@ -103,7 +103,7 @@ function GeneratorSearch(generators::Vector{EventGenerator})
     if allequal(matchlens)
         dict_type = NTuple{matchlens[1],Member}
     else
-        dict_type = Tuple{Member}
+        dict_type = Tuple{Member,Vararg{Member}}
     end
     match_dict = Dict{dict_type,Vector{Function}}
 
@@ -142,57 +142,89 @@ macro reactto(trigger_expr, block)
     end
 end
 
-function parse_changed_reactto(place_expr, block)
-    # Parse something like agent[i].loc
-    # We expect: array[index].field
-    if place_expr.head == :.
-        field = place_expr.args[2]
-        if field isa QuoteNode
-            field = field.value
-        end
+function access_to_searchkey(expr::Expr)
+    parts = []
+    current = expr
 
-        array_access = place_expr.args[1]
-        if array_access.head == :ref
-            array_name = array_access.args[1]
-            index_var = array_access.args[2]
-
-            # Extract the block parameter and body
-            # The block should be: begin physical; <body>; end
-            if block.head == :block && length(block.args) >= 2
-                # Find the first non-LineNumberNode argument
-                param_idx = findfirst(arg -> !(arg isa LineNumberNode), block.args)
-                if param_idx === nothing
-                    error("Invalid block structure for @reactto")
-                end
-                block_param = block.args[param_idx]
-
-                # The rest is the body
-                body_args = block.args[(param_idx + 1):end]
-                body = Expr(:block, body_args...)
-            else
-                error("Invalid block structure for @reactto")
-            end
-
-            # Transform generate(event) calls to f(event)
-            transformed_body = transform_generate_calls(body)
-
-            # Create the generator function
-            return esc(
-                quote
-                    EventGenerator(
-                        ToPlace,
-                        [$(QuoteNode(array_name)), ℤ, $(QuoteNode(field))],
-                        function (f::Function, $block_param, $index_var)
-                            $transformed_body
-                        end,
-                    )
-                end,
-            )
+    while current isa Expr
+        if current.head == :.
+            field = current.args[2]
+            field_val = field isa QuoteNode ? field.value : field
+            push!(parts, Member(field_val))
+            current = current.args[1]
+        elseif current.head == :ref
+            push!(parts, MEMBERINDEX)
+            current = current.args[1]
         else
-            error("Expected array[index] syntax")
+            break
         end
+    end
+
+    reverse!(parts)
+    return parts
+end
+
+function access_to_argnames(expr::Expr)
+    parts = []
+    current = expr
+
+    while current isa Expr
+        if current.head == :.
+            # Skip field access - no argument name here
+            current = current.args[1]
+        elseif current.head == :ref
+            # Check if this is multi-dimensional indexing
+            if length(current.args) > 2
+                # Multi-dimensional: arr[i, j] -> push tuple (i, j)
+                indices = current.args[2:end]
+                push!(parts, Expr(:tuple, indices...))
+            else
+                # Single index: arr[i] -> push i
+                push!(parts, current.args[2])
+            end
+            current = current.args[1]
+        else
+            break
+        end
+    end
+
+    reverse!(parts)
+    return parts
+end
+
+function parse_changed_reactto(place_expr, block)
+    matchstr_parts = access_to_searchkey(place_expr)
+    argnames = access_to_argnames(place_expr)
+
+    # Extract the block parameter and body
+    # The block should be: begin physical; <body>; end
+    if block.head == :block && length(block.args) >= 2
+        # Find the first non-LineNumberNode argument
+        param_idx = findfirst(arg -> !(arg isa LineNumberNode), block.args)
+        if param_idx === nothing
+            error("Invalid block structure for @reactto")
+        end
+        block_param = block.args[param_idx]
+
+        # The rest is the body
+        body_args = block.args[(param_idx + 1):end]
+        body = Expr(:block, body_args...)
     else
-        error("Expected array[index].field syntax")
+        error("Invalid block structure for @reactto")
+    end
+
+    # Transform generate(event) calls to f(event)
+    transformed_body = transform_generate_calls(body)
+
+    # Create the generator function
+    return quote
+        EventGenerator(
+            ToPlace,
+            $matchstr_parts,
+            function (f::Function, $(esc(block_param)), $(esc.(argnames)...))
+                $(esc(transformed_body))
+            end
+        )
     end
 end
 
