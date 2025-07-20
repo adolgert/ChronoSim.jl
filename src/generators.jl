@@ -7,7 +7,6 @@ export over_generated_events
 
 @enum GenMatches ToEvent ToPlace
 
-
 const MEMBERINDEX = Member(:_index)
 
 function placekey_mask_index(placekey)
@@ -143,7 +142,6 @@ macro reactto(trigger_expr, block)
     end
 end
 
-
 function parse_changed_reactto(place_expr, block)
     # Parse something like agent[i].loc
     # We expect: array[index].field
@@ -152,12 +150,12 @@ function parse_changed_reactto(place_expr, block)
         if field isa QuoteNode
             field = field.value
         end
-        
+
         array_access = place_expr.args[1]
         if array_access.head == :ref
             array_name = array_access.args[1]
             index_var = array_access.args[2]
-            
+
             # Extract the block parameter and body
             # The block should be: begin physical; <body>; end
             if block.head == :block && length(block.args) >= 2
@@ -167,27 +165,29 @@ function parse_changed_reactto(place_expr, block)
                     error("Invalid block structure for @reactto")
                 end
                 block_param = block.args[param_idx]
-                
+
                 # The rest is the body
-                body_args = block.args[(param_idx+1):end]
+                body_args = block.args[(param_idx + 1):end]
                 body = Expr(:block, body_args...)
             else
                 error("Invalid block structure for @reactto")
             end
-            
+
             # Transform generate(event) calls to f(event)
             transformed_body = transform_generate_calls(body)
-            
+
             # Create the generator function
-            return esc(quote
-                EventGenerator(
-                    ToPlace,
-                    [$(QuoteNode(array_name)), ℤ, $(QuoteNode(field))],
-                    function (f::Function, $block_param, $index_var)
-                        $transformed_body
-                    end
-                )
-            end)
+            return esc(
+                quote
+                    EventGenerator(
+                        ToPlace,
+                        [$(QuoteNode(array_name)), ℤ, $(QuoteNode(field))],
+                        function (f::Function, $block_param, $index_var)
+                            $transformed_body
+                        end,
+                    )
+                end,
+            )
         else
             error("Expected array[index] syntax")
         end
@@ -196,13 +196,12 @@ function parse_changed_reactto(place_expr, block)
     end
 end
 
-
 function parse_fired_reactto(event_expr, block)
     # Parse something like InfectTransition(sick, healthy)
     if event_expr.head == :call
         event_type = event_expr.args[1]
         event_args = event_expr.args[2:end]
-        
+
         # Extract the block parameter and body
         # The block should be: begin physical; <body>; end
         if block.head == :block && length(block.args) >= 2
@@ -212,32 +211,33 @@ function parse_fired_reactto(event_expr, block)
                 error("Invalid block structure for @reactto")
             end
             block_param = block.args[param_idx]
-            
+
             # The rest is the body
-            body_args = block.args[(param_idx+1):end]
+            body_args = block.args[(param_idx + 1):end]
             body = Expr(:block, body_args...)
         else
             error("Invalid block structure for @reactto")
         end
-        
+
         # Transform generate(event) calls to f(event)
         transformed_body = transform_generate_calls(body)
-        
+
         # Create the generator function
-        return esc(quote
-            EventGenerator(
-                ToEvent,
-                [$(QuoteNode(event_type))],
-                function (f::Function, $block_param, $(event_args...))
-                    $transformed_body
-                end
-            )
-        end)
+        return esc(
+            quote
+                EventGenerator(
+                    ToEvent,
+                    [$(QuoteNode(event_type))],
+                    function (f::Function, $block_param, $(event_args...))
+                        $transformed_body
+                    end,
+                )
+            end,
+        )
     else
         error("Expected EventType(...) syntax")
     end
 end
-
 
 function transform_generate_calls(expr)
     if expr isa Expr
@@ -253,7 +253,6 @@ function transform_generate_calls(expr)
     end
 end
 
-
 """
     @conditionsfor EventType begin
         @reactto ... end
@@ -266,7 +265,7 @@ EventGenerators defined in the @reactto blocks.
 macro conditionsfor(event_type, block)
     # Collect all @reactto expressions
     generators_list = Expr[]
-    
+
     for expr in block.args
         if expr isa Expr && expr.head == :macrocall && expr.args[1] == Symbol("@reactto")
             # Evaluate the @reactto macro
@@ -279,13 +278,9 @@ macro conditionsfor(event_type, block)
             continue
         end
     end
-    
+
     # Generate the generators function
     return esc(quote
-        function generators(::Type{$event_type})
-            return EventGenerator[
-                $(generators_list...)
-            ]
-        end
+        generators(::Type{$event_type}) = EventGenerator[$(generators_list...)]
     end)
 end
