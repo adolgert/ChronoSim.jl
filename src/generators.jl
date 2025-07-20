@@ -77,18 +77,41 @@ function Base.show(io::IO, generators::GeneratorSearch)
     println(io, "OnPlace: $(on_place)")
 end
 
+# Helper methods for testing and inspection
+function count_event_generators(gs::GeneratorSearch, event_type::Symbol)
+    length(get(gs.event_to_event, event_type, Function[]))
+end
+
+function count_place_generators(gs::GeneratorSearch, place_pattern)
+    masked_pattern = placekey_mask_index(place_pattern)
+    length(get(gs.byarray, masked_pattern, Function[]))
+end
+
+has_event_generator(gs::GeneratorSearch, event_type::Symbol) = haskey(gs.event_to_event, event_type)
+
+function has_place_generator(gs::GeneratorSearch, place_pattern)
+    masked_pattern = placekey_mask_index(place_pattern)
+    haskey(gs.byarray, masked_pattern)
+end
+
+event_types(gs::GeneratorSearch) = collect(keys(gs.event_to_event))
+
+place_patterns(gs::GeneratorSearch) = collect(keys(gs.byarray))
+
 function over_generated_events(
-    f::Function, generators::Vector{EventGenerator}, physical, event_key, changed_places
+    f::Function, generators::GeneratorSearch, physical, event_key, changed_places
 )
-    event_args = event_key[2:end]
-    for from_event in get(generators.event_to_event, event_key[1], Function[])
-        from_event(f, physical, event_args...)
+    if !isempty(event_key)
+        event_args = event_key[2:end]
+        for from_event in get(generators.event_to_event, event_key[1], Function[])
+            from_event(f, physical, event_args...)
+        end
     end
     # Every place is (arrayname, integer index in array, struct member)
     for place in changed_places
-        key = placekey_mask_index(place)
-        inds = [val for val in placekey if !isa(val, Member)]
-        for genfunc in get(generators.byarray, key, Function[])
+        placekey = placekey_mask_index(place)
+        inds = [val for val in place if !isa(val, Member)]
+        for genfunc in get(generators.byarray, placekey, Function[])
             genfunc(f, physical, inds...)
         end
     end
@@ -102,20 +125,27 @@ function GeneratorSearch(generators::Vector{EventGenerator})
         push!(rule_set, add_gen.generator)
     end
 
-    matchlens = [length(gen.matchstr) in filter(matches_place, generators)]
-    if allequal(matchlens)
-        dict_type = NTuple{matchlens[1],Member}
+    place_generators = filter(matches_place, generators)
+    if isempty(place_generators)
+        # No place generators, use a simple type
+        dict_type = Tuple{Vararg{Member}}
+        match_dict = Dict{dict_type,Vector{Function}}()
     else
-        dict_type = Tuple{Member,Vararg{Member}}
+        matchlens = [length(gen.matchstr) for gen in place_generators]
+        if allequal(matchlens)
+            dict_type = NTuple{matchlens[1],Member}
+        else
+            dict_type = Tuple{Vararg{Member}}
+        end
+        match_dict = Dict{dict_type,Vector{Function}}()
     end
-    match_dict = Dict{dict_type,Vector{Function}}
 
-    for add_gen in filter(matches_place, generators)
+    for add_gen in place_generators
         match_key = placekey_mask_index(add_gen.matchstr)
-        rule_set = get(match_dict, match_key, Vector{Function}())
+        rule_set = get!(match_dict, match_key, Vector{Function}())
         push!(rule_set, add_gen.generator)
     end
-    GeneratorSearch{dict_type}(from_event, match_dict)
+    GeneratorSearch{typeof(match_dict)}(from_event, match_dict)
 end
 
 # Macros to make the match string.
