@@ -14,26 +14,50 @@ using ChronoSim
     end
 end
 
+@testset "EventGenerator construction" begin
+    struct EGCMoveEvent
+        xloc::Int64
+        yloc::Int64
+        agent::String
+        kind::Symbol
+    end
+    gen = EventGenerator(
+        ToPlace,
+        [Member(:board), ChronoSim.MEMBERINDEX, Member(:piece)],
+        function (generate, physical, i)
+            return generate(EGCMoveEvent(i, 2, "hi", :there))
+        end,
+    )
+
+    @test gen.match_what == ToPlace
+    @test gen.matchstr == [Member(:board), ChronoSim.MEMBERINDEX, Member(:piece)]
+    @test gen.generator isa Function
+    physical = ()
+    gen.generator(physical, 3) do arg
+        @test arg == EGCMoveEvent(3, 2, "hi", :there)
+    end
+end
+
 @testset "access_to_searchkey" begin
     # Test simple field access
     expr = :(obj.field)
     result = ChronoSim.access_to_searchkey(expr)
-    @test result == [Member(:field)]
+    @test result == [Member(:obj), Member(:field)]
 
     # Test array access with field
     expr = :(arr[i].field)
     result = ChronoSim.access_to_searchkey(expr)
-    @test result == [ChronoSim.MEMBERINDEX, Member(:field)]
+    @test result == [Member(:arr), ChronoSim.MEMBERINDEX, Member(:field)]
 
     # Test nested field access
     expr = :(obj.field1.field2)
     result = ChronoSim.access_to_searchkey(expr)
-    @test result == [Member(:field1), Member(:field2)]
+    @test result == [Member(:obj), Member(:field1), Member(:field2)]
 
     # Test complex nested access
     expr = :(board[i][j].piece)
     result = ChronoSim.access_to_searchkey(expr)
-    @test result == [ChronoSim.MEMBERINDEX, ChronoSim.MEMBERINDEX, Member(:piece)]
+    @test result == [Member(:board), ChronoSim.MEMBERINDEX, ChronoSim.MEMBERINDEX, Member(:piece)]
 end
 
 @testset "access_to_argnames" begin
@@ -44,7 +68,7 @@ end
         (:(obj.field1.field2), []),
         (:(obj.field1[i].field2[j]), [:i, :j]),
         # This is meant to represent a function argument that is destructured into (i, j).
-        (:(sim.places[i, j].val), [(:i, :j)]),
+        (:(sim.places[i, j].val), Any[:(i, j)]),
     ]
     for (input, output) in examples
         result = ChronoSim.access_to_argnames(input)
@@ -53,37 +77,37 @@ end
 end
 
 @testset "@reactto macro expansion" begin
-    # Test changed() syntax
+    struct EMCMoveEvent
+        xloc::Int64
+        yloc::Int64
+        agent::String
+        kind::Symbol
+    end
     expanded = @macroexpand @reactto changed(agent[i].health) begin
         physical
-        # body
+        generate(EMCMoveEvent(i, 2, "hi", :there))
     end
 
     @test expanded isa Expr
     @test expanded.head == :call
-    @test expanded.args[1] == :EventGenerator
-    @test expanded.args[2] == ChronoSim.ToPlace
-    @test expanded.args[3] == [:agent, ChronoSim.MEMBERINDEX, Member(:health)]
+    @test expanded.args[1] in [:EventGenerator, GlobalRef(ChronoSim, :EventGenerator)]
+    @test expanded.args[2] in [ChronoSim.ToPlace, GlobalRef(ChronoSim, :ToPlace)]
+    @test expanded.args[3] == [Member(:agent), ChronoSim.MEMBERINDEX, Member(:health)]
 
     # Test that the function has correct signature
     @test expanded.args[4] isa Expr
     @test expanded.args[4].head == :function
     func_sig = expanded.args[4].args[1]
-    @test func_sig.args[1] == :(f::Function)
-    # The rest depends on escaping
-end
+    @test func_sig.args[1] isa Expr && func_sig.args[1].head == :(::)
 
-@testset "EventGenerator construction" begin
-    # Create a simple generator
-    gen = EventGenerator(
-        ChronoSim.ToPlace,
-        [:board, ChronoSim.MEMBERINDEX, Member(:piece)],
-        function (f, physical, i)
-            # Generator body
-        end,
-    )
+    eg = eval(expanded)
+    @test eg.match_what == ChronoSim.ToPlace
+    @test eg.matchstr == [Member(:agent), ChronoSim.MEMBERINDEX, Member(:health)]
+    @test eg.generator isa Function
 
-    @test gen.match_what == ChronoSim.ToPlace
-    @test gen.matchstr == [:board, ChronoSim.MEMBERINDEX, Member(:piece)]
-    @test gen.generator isa Function
+    # Test calling the generator
+    physical = nothing  # Define physical variable
+    result = nothing
+    eg.generator((evt) -> (result = evt), physical, 3)
+    @test result == EMCMoveEvent(3, 2, "hi", :there)
 end

@@ -12,6 +12,7 @@ include("test_observed_state.jl")
 include("test_observed_physical.jl")
 include("test_observe.jl")
 include("test_events.jl")
+include("test_generators.jl")
 
 retest(args...; kwargs...) = ReTest.retest(args...; kwargs...)
 

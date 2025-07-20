@@ -3,7 +3,8 @@ using Logging: Logging
 ##### Helpers for events
 
 export EventGenerator, generators, GeneratorSearch, GenMatches, ToEvent, ToPlace
-export over_generated_events
+export over_generated_events, @reactto
+export ToEvent, ToPlace
 
 @enum GenMatches ToEvent ToPlace
 
@@ -76,7 +77,9 @@ function Base.show(io::IO, generators::GeneratorSearch)
     println(io, "OnPlace: $(on_place)")
 end
 
-function over_generated_events(f::Function, generators, physical, event_key, changed_places)
+function over_generated_events(
+    f::Function, generators::Vector{EventGenerator}, physical, event_key, changed_places
+)
     event_args = event_key[2:end]
     for from_event in get(generators.event_to_event, event_key[1], Function[])
         from_event(f, physical, event_args...)
@@ -160,6 +163,10 @@ function access_to_searchkey(expr::Expr)
         end
     end
 
+    if current isa Symbol
+        push!(parts, Member(current))
+    end
+
     reverse!(parts)
     return parts
 end
@@ -217,15 +224,11 @@ function parse_changed_reactto(place_expr, block)
     transformed_body = transform_generate_calls(body)
 
     # Create the generator function
-    return quote
-        EventGenerator(
-            ToPlace,
-            $matchstr_parts,
-            function (f::Function, $(esc(block_param)), $(esc.(argnames)...))
-                $(esc(transformed_body))
-            end,
-        )
-    end
+    return :(EventGenerator(
+        ToPlace, $matchstr_parts, function (f::Function, $(esc(block_param)), $(esc.(argnames)...))
+            $transformed_body
+        end
+    ))
 end
 
 function parse_fired_reactto(event_expr, block)
@@ -275,13 +278,16 @@ function transform_generate_calls(expr)
     if expr isa Expr
         if expr.head == :call && expr.args[1] == :generate
             # Transform generate(event) to f(event)
-            return Expr(:call, :f, expr.args[2:end]...)
+            # Escape the event arguments but not f
+            escaped_args = [esc(arg) for arg in expr.args[2:end]]
+            return Expr(:call, :f, escaped_args...)
         else
             # Recursively transform subexpressions
             return Expr(expr.head, map(transform_generate_calls, expr.args)...)
         end
     else
-        return expr
+        # Escape non-expression values (symbols, etc)
+        return esc(expr)
     end
 end
 
