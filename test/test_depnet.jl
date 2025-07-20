@@ -98,7 +98,8 @@ end
 @testset "Compare depnet with naive" begin
     using Random
     rng = Xoshiro(2988823)
-    for trial_idx in 1:5
+    trial_cnt = continuous_integration() ? 5 : 500
+    for trial_idx in 1:trial_cnt
         place_cnt = rand(rng, [1, 3, 10])
         evt_cnt = rand(rng, [1, 3, 10])
         places = [(:a, i, :b) for i in 1:place_cnt]
