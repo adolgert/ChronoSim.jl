@@ -32,7 +32,7 @@ The seed is an integer seed for a `Xoshiro` random number generator. The
 observer is a callback with the signature:
 
 ```
-observer(physical, when::Float64, event::SimEvent, changed_places::Set{Tuple})
+observer(physical, when::Float64, event::SimEvent, changed_places::AbstractSet{Tuple})
 ```
 
 The `changed_places` argument is a set-like object with tuples that are keys that
