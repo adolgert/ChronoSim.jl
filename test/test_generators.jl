@@ -135,11 +135,11 @@ end
             else
                 return (genint(), genstr(), genint())
             end
-        piece_cnt = rand(rng, 1:5)
-        pieces = [Member(easysym()) for _ in 1:piece_cnt]
+        piece_cnt = rand(rng, 0:4)
+        pieces = [Member(easysym()) for _ in 0:piece_cnt]
         idx_cnt = rand(rng, 0:3)
         indices = [genindex() for _ in 1:idx_cnt]
-        placekey = shuffle(rng, vcat(pieces, indices))
+        placekey = vcat([Member(easysym())], shuffle(rng, vcat(pieces, indices)))
         return placekey
     end
     # While placekeys have values, we want to replicate what a user types, as in
@@ -216,8 +216,8 @@ end
     end
 
     @testset "Generated @reactto macro test" begin
-        # Skip if no indices in placekey (can't test properly)
-        for attempt in 1:10
+        attempt_cnt = continuous_integration() ? 10 : 1000
+        for attempt in 1:attempt_cnt
             pk = random_placekey(rng)
             pkindices = [val for val in pk if !isa(val, Member)]
 
@@ -236,7 +236,6 @@ end
                 generate([$(join(varnames, ", "))])
             end
             """
-            println("Testing this: \n$code")
             eventgen = eval(Meta.parse(code))
 
             @test eventgen isa EventGenerator
