@@ -223,7 +223,7 @@ function parse_changed_reactto(place_expr, block)
             $matchstr_parts,
             function (f::Function, $(esc(block_param)), $(esc.(argnames)...))
                 $(esc(transformed_body))
-            end
+            end,
         )
     end
 end

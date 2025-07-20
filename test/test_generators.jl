@@ -19,17 +19,17 @@ end
     expr = :(obj.field)
     result = ChronoSim.access_to_searchkey(expr)
     @test result == [Member(:field)]
-    
+
     # Test array access with field
     expr = :(arr[i].field)
     result = ChronoSim.access_to_searchkey(expr)
     @test result == [ChronoSim.MEMBERINDEX, Member(:field)]
-    
+
     # Test nested field access
     expr = :(obj.field1.field2)
     result = ChronoSim.access_to_searchkey(expr)
     @test result == [Member(:field1), Member(:field2)]
-    
+
     # Test complex nested access
     expr = :(board[i][j].piece)
     result = ChronoSim.access_to_searchkey(expr)
@@ -54,16 +54,17 @@ end
 
 @testset "@reactto macro expansion" begin
     # Test changed() syntax
-    expanded = @macroexpand @reactto changed(agent[i].health) begin physical
+    expanded = @macroexpand @reactto changed(agent[i].health) begin
+        physical
         # body
     end
-    
+
     @test expanded isa Expr
     @test expanded.head == :call
     @test expanded.args[1] == :EventGenerator
     @test expanded.args[2] == ChronoSim.ToPlace
     @test expanded.args[3] == [:agent, ChronoSim.MEMBERINDEX, Member(:health)]
-    
+
     # Test that the function has correct signature
     @test expanded.args[4] isa Expr
     @test expanded.args[4].head == :function
@@ -77,11 +78,11 @@ end
     gen = EventGenerator(
         ChronoSim.ToPlace,
         [:board, ChronoSim.MEMBERINDEX, Member(:piece)],
-        function(f, physical, i)
+        function (f, physical, i)
             # Generator body
-        end
+        end,
     )
-    
+
     @test gen.match_what == ChronoSim.ToPlace
     @test gen.matchstr == [:board, ChronoSim.MEMBERINDEX, Member(:piece)]
     @test gen.generator isa Function
