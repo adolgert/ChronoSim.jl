@@ -175,6 +175,30 @@ macro reactto(trigger_expr, block)
     end
 end
 
+"""
+    access_to_searchkey(expr::Expr)
+
+Convert a Julia access expression into a search key pattern for the event generator system.
+Field names become `Member` objects, and array/container indices become `MEMBERINDEX` placeholders.
+
+# Examples
+
+```julia
+# Simple member access
+julia> access_to_searchkey(:(obj.field))
+[Member(:obj), Member(:field)]
+
+# Array access with index
+julia> access_to_searchkey(:(arr[5].field))  
+[Member(:arr), MEMBERINDEX, Member(:field)]
+
+# Multi-dimensional array access
+julia> access_to_searchkey(:(board[i][j].piece))
+[Member(:board), MEMBERINDEX, MEMBERINDEX, Member(:piece)]
+```
+
+The resulting pattern is used to match against place keys in the simulation's state change tracking.
+"""
 function access_to_searchkey(expr::Expr)
     parts = []
     current = expr
