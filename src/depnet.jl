@@ -93,6 +93,13 @@ function getplace(net::DependencyNetwork{E}, place) where {E}
     get(net.place, place, (en=Set{E}(), ra=Set{E}()))
 end
 
+function getplace_enable(net::DependencyNetwork{E}, place) where {E}
+    get(net.place, place, (en=Set{E}(), ra=Set{E}())).en
+end
+
+function getplace_rate(net::DependencyNetwork{E}, place) where {E}
+    get(net.place, place, (en=Set{E}(), ra=Set{E}())).ra
+end
 
 export DepNetNaive
 
@@ -131,4 +138,14 @@ function getplace(net::DepNetNaive, place)
     en_events = Set(evtkey for (evtkey, placekey) in net.enable if placekey == place)
     ra_events = Set(evtkey for (evtkey, placekey) in net.rate if placekey == place)
     return (en=en_events, ra=ra_events)
+end
+
+
+function getplace_enable(net::DepNetNaive, place)
+    return Set(evtkey for (evtkey, placekey) in net.enable if placekey == place)
+end
+
+
+function getplace_rate(net::DepNetNaive, place)
+    return Set(evtkey for (evtkey, placekey) in net.rate if placekey == place)
 end

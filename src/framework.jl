@@ -128,8 +128,8 @@ function deal_with_changes(
     @debug "Fired $(fired_event) changed $(changed_places)"
     if !isempty(changed_places)
         clock_toremove = CK[]
-        cond_affected = union((getplace(sim.depnet, cp).en for cp in changed_places)...)
-        rate_affected = union((getplace(sim.depnet, cp).ra for cp in changed_places)...)
+        cond_affected = union((getplace_enable(sim.depnet, cp) for cp in changed_places)...)
+        rate_affected = union((getplace_rate(sim.depnet, cp) for cp in changed_places)...)
 
         for check_clock_key in sort(collect(cond_affected))
             event = sim.enabled_events[check_clock_key]
@@ -148,7 +148,7 @@ function deal_with_changes(
                 # right, but its moving right now depends on a different space
                 # to the right. This is because a "move right" event is defined
                 # relative to a state, not on a specific set of places.
-                if cond_places != getplace(sim.depnet, check_clock_key).en
+                if cond_places != getplace_enable(sim.depnet, check_clock_key)
                     # Then you get new places.
                     rate_deps = rate_reenable(sim, event, check_clock_key)
                     add_event!(sim.depnet, check_clock_key, cond_places, rate_deps)
@@ -162,7 +162,7 @@ function deal_with_changes(
         for rate_clock_key in sort(collect(rate_affected))
             event = sim.enabled_events[rate_clock_key]
             rate_deps = rate_reenable(sim, event, rate_clock_key)
-            cond_deps = getplace(sim.depnet, rate_clock_key).en
+            cond_deps = getplace_enable(sim.depnet, rate_clock_key)
             add_event!(sim.depnet, rate_clock_key, cond_deps, rate_deps)
         end
 
