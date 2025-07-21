@@ -220,6 +220,7 @@ function fire!(sim::SimulationFSM, when, what)
     sim.observer(sim.physical, when, event, changed_places)
 end
 
+get_enabled_events(sim::SimulationFSM) = collect(values(sim.enabled_events))
 
 """
 Initialize the simulation. You could call it as a do-function.
