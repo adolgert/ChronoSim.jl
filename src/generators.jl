@@ -312,17 +312,15 @@ function parse_fired_reactto(event_expr, block)
         transformed_body = transform_generate_calls(body)
 
         # Create the generator function
-        return esc(
-            quote
-                EventGenerator(
-                    ToEvent,
-                    [$(QuoteNode(event_type))],
-                    function (f::Function, $block_param, $(event_args...))
-                        $transformed_body
-                    end,
-                )
-            end,
-        )
+        return quote
+            EventGenerator(
+                ToEvent,
+                [$(QuoteNode(event_type))],
+                function (f::Function, $(esc(block_param)), $(esc.(event_args)...))
+                    $transformed_body
+                end,
+            )
+        end
     else
         error("Expected EventType(...) syntax")
     end

@@ -1,11 +1,12 @@
 module ElevatorExample
-
+using CompetingClocks
+using Distributions
+using Random
 using ChronoSim
 using ChronoSim.ObservedState
 import ChronoSim: precondition, enable, fire!
-using Distributions
-@enum ElevatorDirection Up Down Stationary
 
+@enum ElevatorDirection Up Down Stationary
 
 @keyedby Person Int64 begin
     location::Int64
@@ -35,7 +36,7 @@ end
 
 
 function ElevatorSystem(person_cnt::Int64, elevator_cnt::Int64, floor_cnt::Int64)
-    persons = ObservedVector{Person}(undef, person_cnt)
+    persons = ObservedArray{Person}(undef, person_cnt)
     for pidx in eachindex(persons)
         persons[pidx] = Person(1, 1, false)
     end
@@ -45,11 +46,11 @@ function ElevatorSystem(person_cnt::Int64, elevator_cnt::Int64, floor_cnt::Int64
             calls[(flooridx, direction)] = Call(false)
         end
     end
-    elevators = ObservedVector{Elevator}(undef, elevator_cnt)
+    elevators = ObservedArray{Elevator}(undef, elevator_cnt)
     for elevidx in eachindex(elevators)
         elevators[elevidx] = Elevator(1, Stationary, false, Set{Int64}())
     end
-    ElevatorSystem(person, calls, elevators, floor_cnt)
+    ElevatorSystem(persons, calls, elevators, floor_cnt)
 end
 
 
@@ -535,11 +536,12 @@ function fire!(evt::DispatchElevator, system, when, rng)
     end
 end
 
-function init_physical(physical, rng)
+init_physical(physical, rng) =
     for pidx in eachindex(persons)
-        persons[pidx] = Person(rand(rng, 1:floor_cnt), rand(rng, 1:floor_cnt), false)
+        physical.persons[pidx].location = rand(rng, 1:floor_cnt)
+        physical.persons[pidx].destination = rand(rng, 1:floor_cnt)
+        physical.persons[pidx].waiting = false
     end
-end
 
 
 struct TrajectoryEntry
@@ -559,11 +561,11 @@ end
 
 
 function run_elevator()
-    rng = Xoshiro(93472934)
     person_cnt = 10
     elevator_cnt = 3
     floor_cnt = 10
     minutes = 120.0
+    ClockKey=Tuple
     Sampler = CombinedNextReaction{ClockKey,Float64}
     physical = ElevatorSystem(person_cnt, elevator_cnt, floor_cnt)
     included_transitions = [
@@ -578,7 +580,7 @@ function run_elevator()
         DispatchElevator,
     ]
     @assert length(included_transitions) == 9
-    sim = SimulationFSM(physical, Sampler(), included_transitions, rng)
+    sim = SimulationFSM(physical, Sampler(), included_transitions; rng=Xoshiro(93472934))
     initializer = function (init_physical)
         initialize!(init_physical, sim.rng)
     end
