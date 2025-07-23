@@ -148,33 +148,6 @@ function GeneratorSearch(generators::Vector{EventGenerator})
     GeneratorSearch{typeof(match_dict)}(from_event, match_dict)
 end
 
-# Macros to make the match string.
-"""
-    @reactto changed(array[index].field) begin physical
-        # generator body
-    end
-
-    @reactto fired(EventType(args...)) begin physical
-        # generator body
-    end
-
-Creates an EventGenerator that reacts to state changes or event firings.
-Used within @conditionsfor blocks.
-"""
-macro reactto(trigger_expr, block)
-    if trigger_expr.head == :call
-        if trigger_expr.args[1] == :changed
-            return parse_changed_reactto(trigger_expr.args[2], block)
-        elseif trigger_expr.args[1] == :fired
-            return parse_fired_reactto(trigger_expr.args[2], block)
-        else
-            error("@reactto expects changed(...) or fired(...)")
-        end
-    else
-        error("Invalid @reactto syntax")
-    end
-end
-
 """
     access_to_searchkey(expr::Expr)
 
@@ -253,86 +226,99 @@ function access_to_argnames(expr::Expr)
     return parts
 end
 
-function parse_changed_reactto(place_expr, block)
-    matchstr_parts = access_to_searchkey(place_expr)
-    argnames = access_to_argnames(place_expr)
-
-    # Extract the block parameter and body
-    # The block should be: begin physical; <body>; end
-    if block.head == :block && length(block.args) >= 2
-        # Find the first non-LineNumberNode argument
-        param_idx = findfirst(arg -> !(arg isa LineNumberNode), block.args)
-        if param_idx === nothing
-            error("Invalid block structure for @reactto")
-        end
-        block_param = block.args[param_idx]
-
-        # The rest is the body
-        body_args = block.args[(param_idx + 1):end]
-        body = Expr(:block, body_args...)
-    else
-        error("Invalid block structure for @reactto")
+"""
+    @reactto changed(array[index].field) do physical
+        # generator body
     end
 
-    # Transform generate(event) calls to f(event)
-    transformed_body = transform_generate_calls(body)
+    @reactto fired(EventType(args...)) do physical
+        # generator body
+    end
 
-    # Create the generator function
-    return :(EventGenerator(
-        ToPlace, $matchstr_parts, function (f::Function, $(esc(block_param)), $(esc.(argnames)...))
-            $transformed_body
-        end
-    ))
-end
+Creates an EventGenerator that reacts to state changes or event firings.
+Used within @conditionsfor blocks.
+"""
+macro reactto(expr)
+    # When using do-block syntax, Julia passes the entire expression as one argument
+    if expr isa Expr && expr.head == :do && length(expr.args) == 2
+        # Extract the do-block components
+        func_expr = expr.args[1]
+        param_and_body = expr.args[2]
 
-function parse_fired_reactto(event_expr, block)
-    # Parse something like InfectTransition(sick, healthy)
-    if event_expr.head == :call
-        event_type = event_expr.args[1]
-        event_args = event_expr.args[2:end]
-
-        # Extract the block parameter and body
-        # The block should be: begin physical; <body>; end
-        if block.head == :block && length(block.args) >= 2
-            # Find the first non-LineNumberNode argument
-            param_idx = findfirst(arg -> !(arg isa LineNumberNode), block.args)
-            if param_idx === nothing
-                error("Invalid block structure for @reactto")
+        # Check if this is the expected structure
+        if param_and_body isa Expr && param_and_body.head == :-> && length(param_and_body.args) == 2
+            block_param = param_and_body.args[1]
+            # Handle single parameter do-blocks where param is wrapped in a tuple
+            if block_param isa Expr && block_param.head == :tuple && length(block_param.args) == 1
+                block_param = block_param.args[1]
             end
-            block_param = block.args[param_idx]
-
-            # The rest is the body
-            body_args = block.args[(param_idx + 1):end]
-            body = Expr(:block, body_args...)
+            body = param_and_body.args[2]
         else
-            error("Invalid block structure for @reactto")
+            error("Invalid do-block structure for @reactto")
         end
 
-        # Transform generate(event) calls to f(event)
-        transformed_body = transform_generate_calls(body)
-
-        # Create the generator function
-        return quote
-            EventGenerator(
-                ToEvent,
-                [$(QuoteNode(event_type))],
-                function (f::Function, $(esc(block_param)), $(esc.(event_args)...))
-                    $transformed_body
-                end,
-            )
+        # Now handle the trigger expression (func_expr)
+        if func_expr.head == :call
+            if func_expr.args[1] == :changed
+                return parse_changed_reactto_doblock(func_expr.args[2], block_param, body)
+            elseif func_expr.args[1] == :fired
+                return parse_fired_reactto_doblock(func_expr.args[2], block_param, body)
+            else
+                error("@reactto expects changed(...) or fired(...)")
+            end
+        else
+            error("Invalid @reactto syntax")
         end
     else
-        error("Expected EventType(...) syntax")
+        error(
+            "@reactto expects do-block syntax: @reactto (fired|changed)(accessor) do param ... end"
+        )
+    end
+end
+
+# Keep the old two-argument version for backward compatibility if needed
+macro reactto(trigger_expr, block)
+    # Check if this is do-block syntax passed as two arguments (shouldn't happen but just in case)
+    if block isa Expr && block.head == :do && length(block.args) == 2
+        # Extract parameter and body from do block
+        param_and_body = block.args[1]
+        func_expr = block.args[2]
+
+        # The parameter is in param_and_body.args
+        if param_and_body isa Expr && param_and_body.head == :-> && length(param_and_body.args) == 2
+            block_param = param_and_body.args[1]
+            # Handle single parameter do-blocks where param is wrapped in a tuple
+            if block_param isa Expr && block_param.head == :tuple && length(block_param.args) == 1
+                block_param = block_param.args[1]
+            end
+            body = param_and_body.args[2]
+        else
+            error("Invalid do-block structure for @reactto")
+        end
+
+        # Now handle the trigger expression (func_expr)
+        if func_expr.head == :call
+            if func_expr.args[1] == :changed
+                return parse_changed_reactto_doblock(func_expr.args[2], block_param, body)
+            elseif func_expr.args[1] == :fired
+                return parse_fired_reactto_doblock(func_expr.args[2], block_param, body)
+            else
+                error("@reactto expects changed(...) or fired(...)")
+            end
+        else
+            error("Invalid @reactto syntax")
+        end
+    else
+        error("@reactto (fired|changed)(accessor) do block")
     end
 end
 
 function transform_generate_calls(expr)
     if expr isa Expr
         if expr.head == :call && expr.args[1] == :generate
-            # Transform generate(event) to f(event)
-            # Escape the event arguments but not f
+            # Keep generate unescaped but escape its arguments
             escaped_args = [esc(arg) for arg in expr.args[2:end]]
-            return Expr(:call, :f, escaped_args...)
+            return Expr(:call, :generate, escaped_args...)
         else
             # Recursively transform subexpressions
             return Expr(expr.head, map(transform_generate_calls, expr.args)...)
@@ -340,6 +326,45 @@ function transform_generate_calls(expr)
     else
         # Escape non-expression values (symbols, etc)
         return esc(expr)
+    end
+end
+
+function parse_changed_reactto_doblock(place_expr, block_param, body)
+    matchstr_parts = access_to_searchkey(place_expr)
+    argnames = access_to_argnames(place_expr)
+
+    # Transform generate(event) calls to use the local generate parameter
+    transformed_body = transform_generate_calls(body)
+
+    return :(EventGenerator(
+        ToPlace,
+        $matchstr_parts,
+        function (generate::Function, $(esc(block_param)), $(esc.(argnames)...))
+            $transformed_body
+        end,
+    ))
+end
+
+function parse_fired_reactto_doblock(event_expr, block_param, body)
+    # Parse something like InfectTransition(sick, healthy)
+    if event_expr.head == :call
+        event_type = event_expr.args[1]
+        event_args = event_expr.args[2:end]
+
+        # Transform generate(event) calls to use the local generate parameter
+        transformed_body = transform_generate_calls(body)
+
+        return quote
+            EventGenerator(
+                ToEvent,
+                [$(QuoteNode(event_type))],
+                function (generate::Function, $(esc(block_param)), $(esc.(event_args)...))
+                    $transformed_body
+                end,
+            )
+        end
+    else
+        error("Expected EventType(...) syntax")
     end
 end
 

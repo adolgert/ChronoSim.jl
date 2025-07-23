@@ -59,7 +59,7 @@ struct PickNewDestination <: SimEvent
 end
 
 @conditionsfor PickNewDestination begin
-    @reactto changed(person[who].location) begin
+    @reactto changed(person[who].location) do
         system
         generate(PickNewDestination(who))
     end
@@ -83,7 +83,7 @@ struct CallElevator <: SimEvent
 end
 
 @conditionsfor CallElevator begin
-    @reactto changed(person[who].waiting) begin
+    @reactto changed(person[who].waiting) do
         system
         generate(CallElevator(who))
     end
@@ -113,15 +113,15 @@ struct OpenElevatorDoor <: SimEvent
 end
 
 @conditionsfor OpenElevatorDoor begin
-    @reactto changed(elevator[elidx].floor) begin
+    @reactto changed(elevator[elidx].floor) do
         system
         generate(OpenElevatorDoor(elidx))
     end
-    @reactto changed(elevator[elidx].buttons_pressed) begin
+    @reactto changed(elevator[elidx].buttons_pressed) do
         system
         generate(OpenElevatorDoor(elidx))
     end
-    @reactto changed(calls[callkey].requested) begin
+    @reactto changed(calls[callkey].requested) do
         system
         # Check all elevators when a new call is made
         for elidx in 1:length(system.elevator)
@@ -174,11 +174,11 @@ struct EnterElevator <: SimEvent
 end
 
 @conditionsfor EnterElevator begin
-    @reactto changed(elevator[elidx].doorsOpen) begin
+    @reactto changed(elevator[elidx].doorsOpen) do
         system
         generate(EnterElevator(elidx))
     end
-    @reactto changed(person[pidx].waiting) begin
+    @reactto changed(person[pidx].waiting) do
         system
         # Check all elevators when person starts waiting
         for elidx in 1:length(system.elevator)
@@ -239,11 +239,11 @@ struct ExitElevator <: SimEvent
 end
 
 @conditionsfor ExitElevator begin
-    @reactto changed(elevator[elidx].doorsOpen) begin
+    @reactto changed(elevator[elidx].doorsOpen) do
         system
         generate(ExitElevator(elidx))
     end
-    @reactto changed(elevator[elidx].floor) begin
+    @reactto changed(elevator[elidx].floor) do
         system
         generate(ExitElevator(elidx))
     end
@@ -291,15 +291,15 @@ struct CloseElevatorDoors <: SimEvent
 end
 
 @conditionsfor CloseElevatorDoors begin
-    @reactto changed(elevator[elidx].doorsOpen) begin
+    @reactto changed(elevator[elidx].doorsOpen) do
         system
         generate(CloseElevatorDoors(elidx))
     end
-    @reactto fired(EnterElevator(elidx)) begin
+    @reactto fired(EnterElevator(elidx)) do
         system
         generate(CloseElevatorDoors(elidx))
     end
-    @reactto fired(ExitElevator(elidx)) begin
+    @reactto fired(ExitElevator(elidx)) do
         system
         generate(CloseElevatorDoors(elidx))
     end
@@ -350,15 +350,15 @@ struct MoveElevator <: SimEvent
 end
 
 @conditionsfor MoveElevator begin
-    @reactto changed(elevator[elidx].doorsOpen) begin
+    @reactto changed(elevator[elidx].doorsOpen) do
         system
         generate(MoveElevator(elidx))
     end
-    @reactto changed(elevator[elidx].direction) begin
+    @reactto changed(elevator[elidx].direction) do
         system
         generate(MoveElevator(elidx))
     end
-    @reactto changed(elevator[elidx].floor) begin
+    @reactto changed(elevator[elidx].floor) do
         system
         generate(MoveElevator(elidx))
     end
@@ -405,15 +405,15 @@ struct StopElevator <: SimEvent
 end
 
 @conditionsfor StopElevator begin
-    @reactto changed(elevator[elidx].floor) begin
+    @reactto changed(elevator[elidx].floor) do
         system
         generate(StopElevator(elidx))
     end
-    @reactto changed(elevator[elidx].buttons_pressed) begin
+    @reactto changed(elevator[elidx].buttons_pressed) do
         system
         generate(StopElevator(elidx))
     end
-    @reactto changed(calls[callkey].requested) begin
+    @reactto changed(calls[callkey].requested) do
         system
         for elidx in 1:length(system.elevator)
             generate(StopElevator(elidx))
@@ -469,12 +469,12 @@ struct DispatchElevator <: SimEvent
 end
 
 @conditionsfor DispatchElevator begin
-    @reactto changed(calls[callkey].requested) begin
+    @reactto changed(calls[callkey].requested) do
         system
         floor, direction = callkey
         generate(DispatchElevator(floor, direction))
     end
-    @reactto changed(elevator[elidx].direction) begin
+    @reactto changed(elevator[elidx].direction) do
         system
         # Check all calls when elevator becomes available
         for (call_key, call) in system.calls
