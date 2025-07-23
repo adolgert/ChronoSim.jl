@@ -38,7 +38,17 @@ observer(physical, when::Float64, event::SimEvent, changed_places::AbstractSet{T
 The `changed_places` argument is a set-like object with tuples that are keys that
 represent which places were changed.
 """
-function SimulationFSM(physical, sampler::SSA{CK}, events, seed; observer=nothing) where {CK}
+function SimulationFSM(
+    physical, sampler::SSA{CK}, events; observer=nothing, rng=nothing, seed=nothing
+) where {CK}
+    randgen = if !isnothing(rng)
+        rng
+    elseif !isnothing(seed)
+        Xoshiro(seed)
+    else
+        Xoshiro()
+    end
+
     generator_searches = Vector{GeneratorSearch}(undef, 2)
     for (idx, filter_condition) in enumerate([!isimmediate, isimmediate])
         event_set = filter(filter_condition, events)
@@ -59,7 +69,7 @@ function SimulationFSM(physical, sampler::SSA{CK}, events, seed; observer=nothin
         generator_searches[1],
         generator_searches[2],
         0.0,
-        Xoshiro(seed),
+        randgen,
         DependencyNetwork{CK}(),
         Dict{CK,SimEvent}(),
         Dict{CK,Float64}(),

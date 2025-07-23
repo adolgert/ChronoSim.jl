@@ -2,7 +2,7 @@ module ElevatorExample
 
 using ChronoSim
 using ChronoSim.ObservedState
-using ChronoSim: precondition, enable, fire!
+import ChronoSim: precondition, enable, fire!
 using Distributions
 @enum ElevatorDirection Up Down Stationary
 
@@ -31,7 +31,25 @@ end
     calls::ObservedDict{Tuple{Int64,ElevatorDirection},Call}
     elevator::ObservedVector{Elevator}
     floor_cnt::Int64
-    people_cnt::Int64
+end
+
+
+function ElevatorSystem(person_cnt::Int64, elevator_cnt::Int64, floor_cnt::Int64)
+    persons = ObservedVector{Person}(undef, person_cnt)
+    for pidx in eachindex(persons)
+        persons[pidx] = Person(1, 1, false)
+    end
+    calls = ObservedDict{Tuple{Int64,ElevatorDirection},Call}()
+    for flooridx in 1:floor_cnt
+        for direction in [Up, Down]
+            calls[(flooridx, direction)] = Call(false)
+        end
+    end
+    elevators = ObservedVector{Elevator}(undef, elevator_cnt)
+    for elevidx in eachindex(elevators)
+        elevators[elevidx] = Elevator(1, Stationary, false, Set{Int64}())
+    end
+    ElevatorSystem(person, calls, elevators, floor_cnt)
 end
 
 
@@ -137,7 +155,8 @@ function fire!(evt::OpenElevatorDoor, system, when, rng)
 
     # Remove this floor from buttons pressed
     if elevator.floor ∈ elevator.buttons_pressed
-        delete!(elevator.buttons_pressed, elevator.floor)
+        # Assign a new value so that it registers as changed.
+        elevator.buttons_pressed = setdiff(elevator.buttons_pressed, elevator.floor)
     end
 
     # Remove the active call at this floor in the elevator's direction
@@ -206,7 +225,7 @@ function fire!(evt::EnterElevator, system, when, rng)
                 person.waiting = false
 
                 # Add destination to buttons pressed
-                push!(elevator.buttons_pressed, person.destination)
+                elevator.buttons_pressed = union(elevator.buttons_presed, person.destination)
             end
         end
     end
@@ -516,6 +535,62 @@ function fire!(evt::DispatchElevator, system, when, rng)
     end
 end
 
+function init_physical(physical, rng)
+    for pidx in eachindex(persons)
+        persons[pidx] = Person(rand(rng, 1:floor_cnt), rand(rng, 1:floor_cnt), false)
+    end
+end
+
+
+struct TrajectoryEntry
+    event::Tuple
+    when::Float64
+end
+
+struct TrajectorySave
+    trajectory::Vector{TrajectoryEntry}
+    TrajectorySave() = new(Vector{TrajectoryEntry}())
+end
+
+function observe(te::TrajectoryEntry, physical, when, event, changed_places)
+    @debug "Firing $event at $when"
+    push!(te.trajectory, TrajectoryEntry(clock_key(event), when))
+end
+
+
+function run_elevator()
+    rng = Xoshiro(93472934)
+    person_cnt = 10
+    elevator_cnt = 3
+    floor_cnt = 10
+    minutes = 120.0
+    Sampler = CombinedNextReaction{ClockKey,Float64}
+    physical = ElevatorSystem(person_cnt, elevator_cnt, floor_cnt)
+    included_transitions = [
+        PickNewDestination,
+        CallElevator,
+        OpenElevatorDoor,
+        EnterElevator,
+        ExitElevator,
+        CloseElevatorDoors,
+        MoveElevator,
+        StopElevator,
+        DispatchElevator,
+    ]
+    @assert length(included_transitions) == 9
+    sim = SimulationFSM(physical, Sampler(), included_transitions, rng)
+    initializer = function (init_physical)
+        initialize!(init_physical, sim.rng)
+    end
+    # Stop-condition is called after the next event is chosen but before the
+    # next event is fired. This way you can stop at an end time between events.
+    stop_condition = function (physical, step_idx, event, when)
+        return when > minutes
+    end
+    ChronoSim.run(sim, initializer, stop_condition)
+end
+
+run_elevator()
 # include("elevatortla.jl")
 
 end
