@@ -516,12 +516,13 @@ function fire!(evt::DispatchElevator, system, when, rng)
     end
 end
 
-init_physical(physical, rng) =
-    for pidx in eachindex(persons)
-        physical.persons[pidx].location = rand(rng, 1:floor_cnt)
-        physical.persons[pidx].destination = rand(rng, 1:floor_cnt)
-        physical.persons[pidx].waiting = false
+function init_physical(physical, when, rng)
+    for pidx in eachindex(physical.person)
+        physical.person[pidx].location = rand(rng, 1:physical.floor_cnt)
+        physical.person[pidx].destination = rand(rng, 1:physical.floor_cnt)
+        physical.person[pidx].waiting = false
     end
+end
 
 
 struct TrajectoryEntry
@@ -561,18 +562,14 @@ function run_elevator()
     ]
     @assert length(included_transitions) == 9
     sim = SimulationFSM(physical, Sampler(), included_transitions; rng=Xoshiro(93472934))
-    initializer = function (init_physical)
-        initialize!(init_physical, sim.rng)
-    end
     # Stop-condition is called after the next event is chosen but before the
     # next event is fired. This way you can stop at an end time between events.
     stop_condition = function (physical, step_idx, event, when)
         return when > minutes
     end
-    ChronoSim.run(sim, initializer, stop_condition)
+    ChronoSim.run(sim, init_physical, stop_condition)
 end
 
-run_elevator()
 # include("elevatortla.jl")
 
 end
