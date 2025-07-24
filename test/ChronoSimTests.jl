@@ -15,6 +15,7 @@ include("test_observe.jl")
 include("test_events.jl")
 include("test_generators.jl")
 include("test_generator_search.jl")
+include("test_elevator.jl")
 
 retest(args...; kwargs...) = ReTest.retest(args...; kwargs...)
 

@@ -52,7 +52,9 @@ The callback function `f` will modify the physical state. This function
 records which parts of the state were modified. The callback should have
 no arguments and may return a result.
 """
-function capture_state_changes(f::Function, physical) end
+function capture_state_changes(f::Function, physical)
+    @assert false
+end
 
 """
     capture_state_reads(f::Function, physical_state)

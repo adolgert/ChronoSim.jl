@@ -1,6 +1,7 @@
 using Base: Base
 using OrderedCollections
 using ..ChronoSim: PhysicalState
+import ..ChronoSim: capture_state_changes, capture_state_reads
 
 export @observedphysical, ObservedPhysical, capture_state_reads, capture_state_changes
 
