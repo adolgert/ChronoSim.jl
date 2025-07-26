@@ -1,0 +1,119 @@
+/* 
+ * Custom CSS for ChronoSim.jl documentation
+ * 
+ * HOW DOCUMENTER.JL HANDLES THEMES AND CSS:
+ * 
+ * Documenter.jl has a sophisticated theme system that works as follows:
+ * 
+ * 1. THEME LOADING: Multiple theme CSS files are loaded simultaneously in the HTML <head>,
+ *    but only one is active at a time. All non-active themes have their stylesheets 
+ *    disabled via JavaScript (stylesheet.disabled = true).
+ * 
+ * 2. THEME CLASSES: When a theme is selected, JavaScript adds a class to the <html> element:
+ *    - documenter-dark theme → <html class="theme--documenter-dark">
+ *    - catppuccin-latte theme → <html class="theme--catppuccin-latte">
+ *    - documenter-light theme → <html> (NO CLASS - this is the default/primary light theme)
+ * 
+ * 3. AUTOMATIC THEME SELECTION: On page load, Documenter checks:
+ *    - First: User's saved preference in localStorage
+ *    - Second: OS preference via CSS media query (prefers-color-scheme: dark/light)
+ *    - Light OS preference → documenter-light (no class)
+ *    - Dark OS preference → documenter-dark (class="theme--documenter-dark")
+ * 
+ * 4. CSS OVERRIDE STRATEGY: This custom CSS file is loaded AFTER all theme CSS files,
+ *    allowing us to override specific theme styles while preserving the base theme's
+ *    layout, spacing, and other styling.
+ * 
+ * WHY THESE SELECTORS:
+ * 
+ * - html:not([class*="theme--"]) targets the DEFAULT LIGHT THEME (documenter-light)
+ *   which has no theme class on the html element
+ * 
+ * - html.theme--documenter-dark targets the DEFAULT DARK THEME specifically
+ * 
+ * - We avoid targeting other themes (catppuccin variants) to leave them untouched
+ * 
+ * WHY !important IS NECESSARY:
+ * 
+ * Documenter's theme CSS files have high specificity selectors and are loaded before
+ * this custom CSS. Without !important, our styles would be overridden by the more
+ * specific selectors in the theme files. The !important flag ensures our custom
+ * styling takes precedence over the base theme styles.
+ * 
+ * CUSTOMIZATION APPROACH:
+ * 
+ * Rather than creating entirely new themes, we selectively override typography
+ * (serif fonts, colors) while preserving all the layout, spacing, and interaction
+ * styles from the base themes. This keeps the documentation functional while
+ * achieving the desired visual styling.
+ */
+
+/* Light theme (documenter-light has no class on html) */
+html:not([class*="theme--"]) #documenter .content h1,
+html:not([class*="theme--"]) #documenter .content h2,
+html:not([class*="theme--"]) #documenter .content h3,
+html:not([class*="theme--"]) #documenter .content h4,
+html:not([class*="theme--"]) #documenter .content h5,
+html:not([class*="theme--"]) #documenter .content h6 {
+    font-family: Georgia, 'Times New Roman', serif !important;
+    color: #1a237e !important;
+}
+
+/* Heading anchor links in light theme */
+html:not([class*="theme--"]) #documenter .content h1 a,
+html:not([class*="theme--"]) #documenter .content h2 a,
+html:not([class*="theme--"]) #documenter .content h3 a,
+html:not([class*="theme--"]) #documenter .content h4 a,
+html:not([class*="theme--"]) #documenter .content h5 a,
+html:not([class*="theme--"]) #documenter .content h6 a {
+    color: #1a237e !important;
+}
+
+html:not([class*="theme--"]) #documenter .docs-sidebar .docs-package-name {
+    font-family: Georgia, 'Times New Roman', serif !important;
+}
+
+html:not([class*="theme--"]) #documenter .docs-sidebar .docs-package-name a {
+    color: #1a237e !important;
+}
+
+html:not([class*="theme--"]) #documenter hr {
+    background-color: #ffd700 !important;
+    border: none !important;
+    height: 2px !important;
+}
+
+/* Dark theme (documenter-dark) */
+html.theme--documenter-dark #documenter .content h1,
+html.theme--documenter-dark #documenter .content h2,
+html.theme--documenter-dark #documenter .content h3,
+html.theme--documenter-dark #documenter .content h4,
+html.theme--documenter-dark #documenter .content h5,
+html.theme--documenter-dark #documenter .content h6 {
+    font-family: Georgia, 'Times New Roman', serif !important;
+    color: #ffd700 !important;
+}
+
+/* Heading anchor links in dark theme */
+html.theme--documenter-dark #documenter .content h1 a,
+html.theme--documenter-dark #documenter .content h2 a,
+html.theme--documenter-dark #documenter .content h3 a,
+html.theme--documenter-dark #documenter .content h4 a,
+html.theme--documenter-dark #documenter .content h5 a,
+html.theme--documenter-dark #documenter .content h6 a {
+    color: #ffd700 !important;
+}
+
+html.theme--documenter-dark #documenter .docs-sidebar .docs-package-name {
+    font-family: Georgia, 'Times New Roman', serif !important;
+}
+
+html.theme--documenter-dark #documenter .docs-sidebar .docs-package-name a {
+    color: #ffd700 !important;
+}
+
+html.theme--documenter-dark #documenter hr {
+    background-color: #1a237e !important;
+    border: none !important;
+    height: 2px !important;
+}
