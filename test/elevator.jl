@@ -1,6 +1,7 @@
 module ElevatorExample
 using CompetingClocks
 using Distributions
+using Logging
 using Random
 using ChronoSim
 using ChronoSim.ObservedState
@@ -16,8 +17,7 @@ import ChronoSim: precondition, enable, fire!
     waiting::Bool
 end
 
-# ElevatorCall
-@keyedby Call Tuple{Int64,ElevatorDirection} begin
+@keyedby ElevatorCall Tuple{Int64,ElevatorDirection} begin
     requested::Bool
 end
 
@@ -32,7 +32,7 @@ end
 @observedphysical ElevatorSystem begin
     person::ObservedVector{Person}
     # Floor and direction, true is up, false is down.
-    calls::ObservedDict{Tuple{Int64,ElevatorDirection},Call}
+    calls::ObservedDict{Tuple{Int64,ElevatorDirection},ElevatorCall}
     elevator::ObservedVector{Elevator}
     floor_cnt::Int64
 end
@@ -43,10 +43,10 @@ function ElevatorSystem(person_cnt::Int64, elevator_cnt::Int64, floor_cnt::Int64
     for pidx in eachindex(persons)
         persons[pidx] = Person(1, 1, 0, false)
     end
-    calls = ObservedDict{Tuple{Int64,ElevatorDirection},Call}()
+    calls = ObservedDict{Tuple{Int64,ElevatorDirection},ElevatorCall}()
     for flooridx in 1:floor_cnt
         for direction in [Up, Down]
-            calls[(flooridx, direction)] = Call(false)
+            calls[(flooridx, direction)] = ElevatorCall(false)
         end
     end
     elevators = ObservedArray{Elevator}(undef, elevator_cnt)
@@ -82,13 +82,15 @@ end
 
 @conditionsfor PickNewDestination begin
     @reactto changed(person[who].location) do system
+        @debug "picking new destination for $who"
         generate(PickNewDestination(who))
     end
 end
 
 function precondition(evt::PickNewDestination, system)
     person = system.person[evt.person]
-    return !person.waiting && person.location == person.destination
+    @debug "PickNewDestination $(person.waiting) $(person.location)"
+    return !person.waiting && person.location != 0
 end
 
 enable(evt::PickNewDestination, system, when) = (Exponential(1.0), when)
@@ -210,7 +212,8 @@ function fire!(evt::EnterElevator, system, when, rng)
             person_direction = person.destination > person.location ? Up : Down
             if elevator.direction == Stationary || elevator.direction == person_direction
                 # Person enters elevator - use negative elevator index to indicate in elevator
-                person.location = -evt.elevator_idx
+                person.location = 0
+                person.elevator = evt.elevator_idx
                 person.waiting = false
 
                 # Add destination to buttons pressed
@@ -238,20 +241,16 @@ end
 function precondition(evt::ExitElevator, system)
     elevator = system.elevator[evt.elevator_idx]
 
-    # Doors must be open
-    if !elevator.doors_open
-        return false
-    end
-
     # Check if anyone in this elevator wants to exit at this floor
+    anyone_exit_here = false
     for pidx in 1:length(system.person)
         person = system.person[pidx]
-        if person.location == -evt.elevator_idx && person.destination == elevator.floor
-            return true
+        if person.elevator == evt.elevator_idx && person.destination == elevator.floor
+            anyone_exit_here = true
         end
     end
 
-    return false
+    return anyone_exit_here && elevator.doors_open
 end
 
 enable(evt::ExitElevator, system, when) = (Exponential(1.0), when)
@@ -259,12 +258,11 @@ enable(evt::ExitElevator, system, when) = (Exponential(1.0), when)
 function fire!(evt::ExitElevator, system, when, rng)
     elevator = system.elevator[evt.elevator_idx]
 
-    # Exit all people whose destination is this floor
     for pidx in 1:length(system.person)
         person = system.person[pidx]
-        if person.location == -evt.elevator_idx && person.destination == elevator.floor
-            # Person exits to the floor
+        if person.elevator == evt.elevator_idx && person.destination == elevator.floor
             person.location = elevator.floor
+            person.elevator = 0
             person.waiting = false
         end
     end
@@ -298,25 +296,32 @@ function precondition(evt::CloseElevatorDoors, system)
 
     # No one can enter or exit
     # Check no one waiting at this floor can board
+    person_needs_to_board = false
     for pidx in 1:length(system.person)
         person = system.person[pidx]
         if person.location == elevator.floor && person.waiting
             person_direction = person.destination > person.location ? Up : Down
             if elevator.direction == Stationary || elevator.direction == person_direction
-                return false  # Someone can still board
+                person_needs_to_board = true
             end
         end
     end
 
-    # Check no one wants to exit
+    person_needs_to_exit = false
     for pidx in 1:length(system.person)
         person = system.person[pidx]
-        if person.location == -evt.elevator_idx && person.destination == elevator.floor
-            return false  # Someone wants to exit
+        if person.elevator == evt.elevator_idx && person.destination == elevator.floor
+            person_needs_to_exit = true
         end
     end
 
-    return true
+    enabled_enter = !precondition(EnterElevator(evt.elevator_idx), system)
+    enabled_exit = !precondition(ExitElevator(evt.elevator_idx), system)
+
+    return elevator.doors_open &&
+           !(person_needs_to_board || person_needs_to_exit) &&
+           !enabled_enter &&
+           !enabled_exit
 end
 
 enable(evt::CloseElevatorDoors, system, when) = (Exponential(1.0), when)
@@ -346,40 +351,41 @@ end
 
 function precondition(evt::MoveElevator, system)
     elevator = system.elevator[evt.elevator_idx]
-
-    # Doors must be closed
-    if elevator.doors_open
-        return false
-    end
-
-    # Must have a direction
-    if elevator.direction == Stationary
-        return false
-    end
-
-    # Check if next floor is valid
     next_floor = elevator.direction == Up ? elevator.floor + 1 : elevator.floor - 1
-    if next_floor < 1 || next_floor > system.floor_cnt
-        return false
+    next_floor_valid = next_floor >= 1 && next_floor <= system.floor_cnt
+    stop_here = elevator.floor ∈ elevator.buttons_pressed
+    # /\ \A call \in ActiveElevatorCalls : \* Can move only if other elevator servicing call
+    #     /\ CanServiceCall[e, call] =>
+    #         /\ \E e2 \in Elevator :
+    #             /\ e /= e2
+    #             /\ CanServiceCall[e2, call]
+    for (floor, direction) in keys(system.calls)
+        other_calls_serviced = true
+        if can_service_call(elevator, floor, direction)
+            another_can_service = false
+            for other_elev in eachindex(system.elevator)
+                other_elev == evt.elevator_idx && continue
+                other_elevator = system.elevator[other_elev]
+                another_can_service |= can_service_call(other_elevator, floor, direction)
+            end
+            other_calls_serviced &= another_can_service
+        end
     end
-
-    return true
+    return !elevator.doors_open &&
+           elevator.direction != Stationary &&
+           next_floor_valid &&
+           !stop_here &&
+           other_calls_serviced
 end
 
 enable(evt::MoveElevator, system, when) = (Exponential(1.0), when)
 
 function fire!(evt::MoveElevator, system, when, rng)
     elevator = system.elevator[evt.elevator_idx]
-    # Move one floor in current direction
-    if elevator.direction == Up
-        elevator.floor += 1
-    else
-        elevator.floor -= 1
-    end
+    elevator.floor += elevator.direction == Up ? 1 : -1
 end
 
-
-# StopElevator - elevator becomes stationary
+# This is about stopping when the elevator is at the top or bottom floor.
 struct StopElevator <: SimEvent
     elevator_idx::Int64
 end
@@ -388,47 +394,15 @@ end
     @reactto changed(elevator[elidx].floor) do system
         generate(StopElevator(elidx))
     end
-    @reactto changed(elevator[elidx].buttons_pressed) do system
-        generate(StopElevator(elidx))
-    end
-    @reactto changed(calls[callkey].requested) do system
-        for elidx in 1:length(system.elevator)
-            generate(StopElevator(elidx))
-        end
-    end
 end
 
 function precondition(evt::StopElevator, system)
     elevator = system.elevator[evt.elevator_idx]
-
-    # Must be moving
-    if elevator.direction == Stationary
-        return false
-    end
-
-    # Must have doors closed
-    if elevator.doors_open
-        return false
-    end
-
-    # Stop if: no more buttons pressed AND no calls in current direction
-    if !isempty(elevator.buttons_pressed)
-        return false
-    end
-
-    # Check for calls in current direction
-    for floor in 1:system.floor_cnt
-        call_key = (floor, elevator.direction)
-        if haskey(system.calls, call_key) && system.calls[call_key].requested
-            # Check if elevator can reach this call
-            if (elevator.direction == Up && floor >= elevator.floor) ||
-                (elevator.direction == Down && floor <= elevator.floor)
-                return false  # Still have calls to service
-            end
-        end
-    end
-
-    return true
+    next_floor = elevator.direction == Up ? elevator.floor + 1 : elevator.floor - 1
+    next_floor_valid = 1 <= next_floor <= system.floor_cnt
+    return !elevator.doors_open &&
+           !next_floor_valid &&
+           !precondition(OpenElevatorDoor(evt.elevator_idx), system)
 end
 
 enable(evt::StopElevator, system, when) = (Exponential(1.0), when)
@@ -463,51 +437,39 @@ end
 
 function precondition(evt::DispatchElevator, system)
     # Call must exist and be active
-    call_key = (evt.floor, evt.direction)
-    if !haskey(system.calls, call_key) || !system.calls[call_key].requested
-        return false
-    end
-
-    # At least one elevator must be available to service
-    for elidx in 1:length(system.elevator)
-        elevator = system.elevator[elidx]
-        if elevator.direction == Stationary
-            return true  # Idle elevator available
-        end
-    end
-
-    return false
+    call_active = system.calls[(evt.floor, evt.direction)]
+    any_stationary = any(elevator.direction == Stationary for elevator in system.elevator)
+    any_approaching = any(
+        elevator.direction == evt.direction &&
+        (elevator.floor == evt.floor || get_direction(elevator.floor, evt.floor) == evt.direction)
+        for elevator in system.elevator
+    )
+    return call_active && (any_stationary || any_approaching)
 end
 
 enable(evt::DispatchElevator, system, when) = (Exponential(1.0), when)
 
 function fire!(evt::DispatchElevator, system, when, rng)
-    # Find closest idle elevator
-    best_elevator = 0
-    best_distance = typemax(Int64)
-
-    for elidx in 1:length(system.elevator)
-        elevator = system.elevator[elidx]
-        if elevator.direction == Stationary
-            distance = abs(elevator.floor - evt.floor)
-            if distance < best_distance
-                best_distance = distance
-                best_elevator = elidx
+    close_elev = 0
+    close_dist = system.floor_cnt + 1
+    for elev_idx in eachindex(system.elevator)
+        elevator = system.elevator[elev_idx]
+        approaching =
+            elevator.direction == evt.direction && (
+                elevator.floor == evt.floor ||
+                get_direction(elevator.floor, evt.floor) == evt.direction
+            )
+        if elevator.direction == Stationary || approaching
+            dist = get_distance(elevator.floor, evt.floor)
+            if dist < close_dist
+                close_elev = elev_idx
+                close_dist = dist
             end
         end
     end
-
-    if best_elevator > 0
-        elevator = system.elevator[best_elevator]
-        # Set direction toward the call
-        if evt.floor > elevator.floor
-            elevator.direction = Up
-        elseif evt.floor < elevator.floor
-            elevator.direction = Down
-        else
-            # Already at floor, set to call's direction
-            elevator.direction = evt.direction
-        end
+    @assert close_elev > 0
+    if system.elevator[close_elev].direction == Stationary
+        system.elevator[close_elev].direction = get_direction(elevator.floor, evt.floor)
     end
 end
 
