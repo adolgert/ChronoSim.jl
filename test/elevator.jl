@@ -5,7 +5,7 @@ using Logging
 using Random
 using ChronoSim
 using ChronoSim.ObservedState
-import ChronoSim: precondition, enable, fire!
+import ChronoSim: precondition, enable, fire!, generators
 
 # DirectionState
 @enum ElevatorDirection Up Down Stationary
@@ -83,7 +83,6 @@ end
 @conditionsfor PickNewDestination begin
     @reactto changed(person[who].location) do system
         @debug "picking new destination for $who"
-        println("PICKING DESTINATION")
         generate(PickNewDestination(who))
     end
 end

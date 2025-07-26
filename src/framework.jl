@@ -246,7 +246,11 @@ function initialize!(callback::Function, sim::SimulationFSM)
     changes_result = capture_state_changes(sim.physical) do
         callback(sim.physical, sim.when, sim.rng)
     end
-    deal_with_changes(sim, InitializeEvent(), changes_result.changes)
+    init_evt = InitializeEvent()
+    deal_with_changes(sim, init_evt, changes_result.changes)
+    process_generated_events_from_changes(sim, clock_key(init_evt), changes_result.changes)
+    checksim(sim)
+    sim.observer(sim.physical, sim.when, init_evt, changes_result.changes)
 end
 
 

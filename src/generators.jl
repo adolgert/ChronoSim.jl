@@ -145,6 +145,12 @@ function GeneratorSearch(generators::Vector{EventGenerator})
         rule_set = get!(match_dict, match_key, Vector{Function}())
         push!(rule_set, add_gen.generator)
     end
+    if isempty(from_event) && isempty(match_dict)
+        println("""No event generators were found for generation by `@reactto changed`
+        or `@reactto fired`. You may need to `import ChronoSim: generators` to
+        ensure event generation uses the ChronoSim.generators method.
+        """)
+    end
     GeneratorSearch{typeof(match_dict)}(from_event, match_dict)
 end
 
