@@ -319,6 +319,9 @@ function transform_generate_calls(expr)
             # Keep generate unescaped but escape its arguments
             escaped_args = [esc(arg) for arg in expr.args[2:end]]
             return Expr(:call, :generate, escaped_args...)
+        elseif expr.head == :macrocall
+            # Don't transform macrocalls like @debug - they need to work as-is
+            return expr
         else
             # Recursively transform subexpressions
             return Expr(expr.head, map(transform_generate_calls, expr.args)...)
