@@ -66,7 +66,7 @@ makedocs(;
         # and that doesn't work for browsers looking at local directories.
         prettyurls=get(ENV, "CI", nothing) == "true",
         edit_link="main",
-        assets=String[],
+        assets=["assets/custom.css"],
     ),
     pages=[
         "Home" => "index.md",
