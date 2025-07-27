@@ -58,6 +58,9 @@ function SimulationFSM(
         end
         generator_searches[idx] = GeneratorSearch(generator_set)
     end
+    if isempty(generator_searches[1])
+        error("There are no timed events and immediate events are $(generator_searches[2])")
+    end
     @debug generator_searches[1]
 
     if isnothing(observer)

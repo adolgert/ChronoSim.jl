@@ -1,7 +1,7 @@
 export DependencyNetwork, add_event!, remove_event!, getplace
 using Base
 
-const DNPlaceKey = Tuple{Symbol,Int64,Symbol}
+const DNPlaceKey = Tuple
 DoubleEdge{T} = @NamedTuple{en::Set{T}, ra::Set{T}}
 
 

@@ -66,9 +66,10 @@ generators(::Type{<:SimEvent}) = EventGenerator[]
 
 struct GeneratorSearch{DictType}
     event_to_event::Dict{Symbol,Vector{Function}}
-    # Think of this as a two-level trie.
     byarray::DictType
 end
+
+Base.isempty(gs::GeneratorSearch) = isempty(gs.event_to_event) && isempty(gs.byarray)
 
 function Base.show(io::IO, generators::GeneratorSearch)
     by_event = [(sym, length(funcs)) for (sym, funcs) in generators.event_to_event]
@@ -144,12 +145,6 @@ function GeneratorSearch(generators::Vector{EventGenerator})
         match_key = placekey_mask_index(add_gen.matchstr)
         rule_set = get!(match_dict, match_key, Vector{Function}())
         push!(rule_set, add_gen.generator)
-    end
-    if isempty(from_event) && isempty(match_dict)
-        println("""No event generators were found for generation by `@reactto changed`
-        or `@reactto fired`. You may need to `import ChronoSim: generators` to
-        ensure event generation uses the ChronoSim.generators method.
-        """)
     end
     GeneratorSearch{typeof(match_dict)}(from_event, match_dict)
 end
@@ -327,6 +322,9 @@ function transform_generate_calls(expr)
             return Expr(:call, :generate, escaped_args...)
         elseif expr.head == :macrocall
             # Don't transform macrocalls like @debug - they need to work as-is
+            return expr
+        elseif expr.head == :string
+            # Don't escape string interpolations - they need local variable access
             return expr
         else
             # Recursively transform subexpressions
