@@ -82,7 +82,7 @@ end
 
 @conditionsfor PickNewDestination begin
     @reactto changed(person[who].location) do system
-        # @debug "picking new destination for $who"
+        @debug "picking new destination for $who"
         generate(PickNewDestination(who))
     end
 end
