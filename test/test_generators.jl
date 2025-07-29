@@ -1,3 +1,4 @@
+using Logging
 using Random
 using ReTest
 using ChronoSim
@@ -84,30 +85,20 @@ end
         agent::String
         kind::Symbol
     end
-    expanded = @macroexpand @reactto changed(agent[i].health) begin
-        physical
+    # Do-block syntax needs special handling - test the actual generator instead
+    eg = @reactto changed(agent[i].health) do system
+        system == "physical_state" || error("system should be the physical state not $system")
         generate(EMCMoveEvent(i, 2, "hi", :there))
     end
 
-    @test expanded isa Expr
-    @test expanded.head == :call
-    @test expanded.args[1] in [:EventGenerator, GlobalRef(ChronoSim, :EventGenerator)]
-    @test expanded.args[2] in [ChronoSim.ToPlace, GlobalRef(ChronoSim, :ToPlace)]
-    @test expanded.args[3] == [Member(:agent), ChronoSim.MEMBERINDEX, Member(:health)]
-
-    # Test that the function has correct signature
-    @test expanded.args[4] isa Expr
-    @test expanded.args[4].head == :function
-    func_sig = expanded.args[4].args[1]
-    @test func_sig.args[1] isa Expr && func_sig.args[1].head == :(::)
-
-    eg = eval(expanded)
+    # Instead of testing the macro expansion, test the resulting EventGenerator
+    @test eg isa EventGenerator
     @test eg.match_what == ChronoSim.ToPlace
     @test eg.matchstr == [Member(:agent), ChronoSim.MEMBERINDEX, Member(:health)]
     @test eg.generator isa Function
 
     # Test calling the generator
-    physical = nothing  # Define physical variable
+    physical = "physical_state"
     result = nothing
     eg.generator((evt) -> (result = evt), physical, 3)
     @test result == EMCMoveEvent(3, 2, "hi", :there)
@@ -232,7 +223,7 @@ end
             # the variable values were defined and in the right order for the
             # function.
             code = """
-            @reactto changed($matchstr) begin physical
+            @reactto changed($matchstr) do physical
                 generate([$(join(varnames, ", "))])
             end
             """

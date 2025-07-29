@@ -1,4 +1,5 @@
 using Base: Base
+export ObservedArray, ObservedVector, ObservedMatrix
 
 mutable struct ObservedArray{T,N} <: DenseArray{T,N}
     const arr::Array{T,N}
@@ -6,6 +7,9 @@ mutable struct ObservedArray{T,N} <: DenseArray{T,N}
     owner::Any
     ObservedArray{T,N}(arr) where {T,N} = new{T,N}(arr)
 end
+
+const ObservedVector{T} = ObservedArray{T,1}
+const ObservedMatrix{T} = ObservedArray{T,2}
 
 function ObservedArray{T}(::UndefInitializer, dims...) where {T}
     N = length(dims)
