@@ -82,7 +82,7 @@ end
 
 @conditionsfor PickNewDestination begin
     @reactto changed(person[who].location) do system
-        @debug "picking new destination for $who"
+        # @debug "picking new destination for $who"
         generate(PickNewDestination(who))
     end
 end
@@ -196,7 +196,7 @@ end
 function precondition(evt::EnterElevator, system)
     elevator = system.elevator[evt.elevator_idx]
     elevator_ready = (elevator.doors_open && elevator.direction != Stationary)
-    people_ready = !empty(people_waiting(system.person, elevator.floor, elevator.direction))
+    people_ready = !isempty(people_waiting(system.person, elevator.floor, elevator.direction))
     return elevator_ready && people_ready
 end
 

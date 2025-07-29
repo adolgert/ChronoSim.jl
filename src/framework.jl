@@ -220,6 +220,11 @@ function modify_state!(sim::SimulationFSM, fire_event)
     return changed_places
 end
 
+"""
+    fire!(sim::SimulationFSM, time, event_key)
+
+Let the event act on the state.
+"""
 function fire!(sim::SimulationFSM, when, what)
     sim.when = when
     event = sim.enabled_events[what]
@@ -227,7 +232,7 @@ function fire!(sim::SimulationFSM, when, what)
     changed_places = modify_state!(sim, event)
     disable_clocks!(sim, [what])
     deal_with_changes(sim, event, changed_places)
-    process_generated_events_from_changes(sim, clock_key(fired_event), changed_places)
+    process_generated_events_from_changes(sim, what, changed_places)
     checksim(sim)
     # Invariant for states and events is restored, so show the result.
     sim.observer(sim.physical, when, event, changed_places)
