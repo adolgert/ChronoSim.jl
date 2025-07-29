@@ -4,7 +4,6 @@ using Logging: Logging
 
 export EventGenerator, generators, GeneratorSearch, GenMatches, ToEvent, ToPlace
 export over_generated_events, @reactto, @conditionsfor
-export ToEvent, ToPlace
 
 @enum GenMatches ToEvent ToPlace
 
@@ -23,7 +22,7 @@ function placekey_mask_index(placekey)
 end
 
 """
-    EventGenerator{TransitionType}(matchstr, generator::Function)
+    EventGenerator(match_what, matchstr, generator::Function)
 
 When an event fires, it changes the physical state. The simulation observes which
 parts of the physical state changed and sends those parts to this `EventGenerator`.
@@ -149,6 +148,11 @@ function GeneratorSearch(generators::Vector{EventGenerator})
     GeneratorSearch{typeof(match_dict)}(from_event, match_dict)
 end
 
+# These functions support debugging macros below.
+const DEBUG_MACROS = Ref(false)
+enable_macro_debug(flag=true) = DEBUG_MACROS[] = flag
+macro_debug(label, expr) = DEBUG_MACROS[] && println("[$label] ", expr)
+
 """
     access_to_searchkey(expr::Expr)
 
@@ -199,6 +203,13 @@ function access_to_searchkey(expr::Expr)
     return parts
 end
 
+"""
+    access_to_argnames(expr)
+
+It extracts variable arguments to an accessor expression. An accessor expression
+uses `getfield` or `getindex` to find members of structs and containers.
+Turns this: `:(agent[j].value[k])`, into this: `[:(j), :(k)]`.
+"""
 function access_to_argnames(expr::Expr)
     parts = []
     current = expr
@@ -214,7 +225,7 @@ function access_to_argnames(expr::Expr)
                 indices = current.args[2:end]
                 push!(parts, Expr(:tuple, indices...))
             else
-                # Single index: arr[i] -> push i
+                # Single index: arr[i] -> push i.  This pushes a Symbol, not an Expr.
                 push!(parts, current.args[2])
             end
             current = current.args[1]
@@ -226,6 +237,31 @@ function access_to_argnames(expr::Expr)
     reverse!(parts)
     return parts
 end
+
+
+"""
+Instead of escaping the argument list as-is, we reach into arguments
+that are tuples and escape them individually. The idea is to destructure
+the arguments into escaped variables.
+"""
+function escaped_args(accessor_args)
+    accessor_restated = Any[]
+    for arg in accessor_args
+        if isa(arg, Symbol)
+            # Escape the symbol so it resolves in caller's scope
+            modified = esc(arg)
+        elseif isa(arg, Expr) && arg.head == :tuple
+            # Escape each element of the tuple for destructuring: (i, j)
+            arg_vec = [esc(a) for a in arg.args]
+            modified = Expr(:tuple, arg_vec...)
+        else
+            error("unknown argument to build_argument_list: $arg")
+        end
+        push!(accessor_restated, modified)
+    end
+    return accessor_restated
+end
+
 
 """
     @reactto changed(array[index].field) do physical
@@ -240,6 +276,10 @@ Creates an EventGenerator that reacts to state changes or event firings.
 Used within @conditionsfor blocks.
 """
 macro reactto(expr)
+    if DEBUG_MACROS[]
+        println("=== @funcmaker input ===")
+        dump(do_block; maxdepth=32)
+    end
     # When using do-block syntax, Julia passes the entire expression as one argument
     if expr isa Expr && expr.head == :do && length(expr.args) == 2
         # Extract the do-block components
@@ -277,79 +317,23 @@ macro reactto(expr)
     end
 end
 
-# Keep the old two-argument version for backward compatibility if needed
-macro reactto(trigger_expr, block)
-    # Check if this is do-block syntax passed as two arguments (shouldn't happen but just in case)
-    if block isa Expr && block.head == :do && length(block.args) == 2
-        # Extract parameter and body from do block
-        param_and_body = block.args[1]
-        func_expr = block.args[2]
-
-        # The parameter is in param_and_body.args
-        if param_and_body isa Expr && param_and_body.head == :-> && length(param_and_body.args) == 2
-            block_param = param_and_body.args[1]
-            # Handle single parameter do-blocks where param is wrapped in a tuple
-            if block_param isa Expr && block_param.head == :tuple && length(block_param.args) == 1
-                block_param = block_param.args[1]
-            end
-            body = param_and_body.args[2]
-        else
-            error("Invalid do-block structure for @reactto")
-        end
-
-        # Now handle the trigger expression (func_expr)
-        if func_expr.head == :call
-            if func_expr.args[1] == :changed
-                return parse_changed_reactto_doblock(func_expr.args[2], block_param, body)
-            elseif func_expr.args[1] == :fired
-                return parse_fired_reactto_doblock(func_expr.args[2], block_param, body)
-            else
-                error("@reactto expects changed(...) or fired(...)")
-            end
-        else
-            error("Invalid @reactto syntax")
-        end
-    else
-        error("@reactto (fired|changed)(accessor) do block")
-    end
-end
-
-function transform_generate_calls(expr)
-    if expr isa Expr
-        if expr.head == :call && expr.args[1] == :generate
-            # Keep generate unescaped but escape its arguments
-            escaped_args = [esc(arg) for arg in expr.args[2:end]]
-            return Expr(:call, :generate, escaped_args...)
-        elseif expr.head == :macrocall
-            # Don't transform macrocalls like @debug - they need to work as-is
-            return expr
-        elseif expr.head == :string
-            # Don't escape string interpolations - they need local variable access
-            return expr
-        else
-            # Recursively transform subexpressions
-            return Expr(expr.head, map(transform_generate_calls, expr.args)...)
-        end
-    else
-        # Escape non-expression values (symbols, etc)
-        return esc(expr)
-    end
-end
 
 function parse_changed_reactto_doblock(place_expr, block_param, body)
     matchstr_parts = access_to_searchkey(place_expr)
     argnames = access_to_argnames(place_expr)
-
-    # Transform generate(event) calls to use the local generate parameter
-    transformed_body = transform_generate_calls(body)
-
-    return :(EventGenerator(
+    esc_args = escaped_args(argnames)
+    franken_func = :(EventGenerator(
         ToPlace,
         $matchstr_parts,
-        function (generate::Function, $(esc(block_param)), $(esc.(argnames)...))
-            $transformed_body
+        function ($(esc(:generate))::Function, $(esc(block_param)), $(esc_args...))
+            $(esc(body))
         end,
     ))
+    if DEBUG_MACROS[]
+        println("=== @funcmaker output ===")
+        dump(franken_func; maxdepth=32)
+    end
+    return franken_func
 end
 
 function parse_fired_reactto_doblock(event_expr, block_param, body)
@@ -358,18 +342,20 @@ function parse_fired_reactto_doblock(event_expr, block_param, body)
         event_type = event_expr.args[1]
         event_args = event_expr.args[2:end]
 
-        # Transform generate(event) calls to use the local generate parameter
-        transformed_body = transform_generate_calls(body)
-
-        return quote
+        franken_func = quote
             EventGenerator(
                 ToEvent,
                 [$(QuoteNode(event_type))],
-                function (generate::Function, $(esc(block_param)), $(esc.(event_args)...))
-                    $transformed_body
+                function ($(esc(:generate))::Function, $(esc(block_param)), $(esc.(event_args)...))
+                    $(esc(body))
                 end,
             )
         end
+        if DEBUG_MACROS[]
+            println("=== @funcmaker output ===")
+            dump(franken_func; maxdepth=32)
+        end
+        return franken_func
     else
         error("Expected EventType(...) syntax")
     end
