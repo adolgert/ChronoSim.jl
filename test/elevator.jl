@@ -56,6 +56,7 @@ function ElevatorSystem(person_cnt::Int64, elevator_cnt::Int64, floor_cnt::Int64
     ElevatorSystem(persons, calls, elevators, floor_cnt)
 end
 
+######## Helper functions
 
 get_distance(floor1, floor2) = abs(floor1 - floor2)
 get_direction(current, destination) = destination > current ? Up : Down
@@ -75,6 +76,114 @@ function people_waiting(people, floor, dirn)
     return waiters
 end
 
+################ Validators
+
+"""
+Validate that Julia state matches TLA+ type invariants
+"""
+function validate_type_invariant(physical::ElevatorSystem)
+    errors = String[]
+
+    # Check PersonState types
+    for (i, person) in enumerate(physical.person)
+        # Check mutually exclusive location/elevator constraint
+        if !(
+            (person.location > 0 && person.elevator == 0) ||
+            (person.location == 0 && person.elevator > 0)
+        )
+            push!(
+                errors,
+                "Person $i has invalid state: location=$(person.location), elevator=$(person.elevator)",
+            )
+        end
+        if person.destination < 1 || person.destination > physical.floor_cnt
+            push!(errors, "Person $i has invalid destination $(person.destination)")
+        end
+        if person.elevator > length(physical.elevator)
+            push!(errors, "Person $i in non-existent elevator $(person.elevator)")
+        end
+    end
+
+    # Check ElevatorState types
+    for (i, elevator) in enumerate(physical.elevator)
+        if elevator.floor < 1 || elevator.floor > physical.floor_cnt
+            push!(errors, "Elevator $i has invalid floor $(elevator.floor)")
+        end
+        for button in elevator.buttons_pressed
+            if button < 1 || button > physical.floor_cnt
+                push!(errors, "Elevator $i has invalid button pressed: $button")
+            end
+        end
+    end
+
+    return errors
+end
+
+"""
+Check safety invariants from TLA+ spec
+"""
+function check_safety_invariant(physical::ElevatorSystem)
+    violations = String[]
+
+    # Check: elevator has button pressed only if person going to that floor
+    for (eidx, elevator) in enumerate(physical.elevator)
+        for floor_button in elevator.buttons_pressed
+            found_person = false
+            for person in physical.person
+                if person.elevator == eidx && person.destination == floor_button
+                    found_person = true
+                    break
+                end
+            end
+            if !found_person
+                push!(
+                    violations,
+                    "Elevator $eidx has button $floor_button pressed but no passenger going there",
+                )
+            end
+        end
+    end
+
+    # Check: person in elevator only if elevator moving toward destination
+    for (pidx, person) in enumerate(physical.person)
+        if person.elevator > 0  # In elevator
+            elevator = physical.elevator[person.elevator]
+            if elevator.floor != person.destination
+                expected_dir = person.destination > elevator.floor ? Up : Down
+                if elevator.direction != expected_dir && elevator.direction != Stationary
+                    push!(
+                        violations,
+                        "Person $pidx in elevator $(person.elevator) going wrong direction",
+                    )
+                end
+            end
+        end
+    end
+
+    # Check: no ghost calls
+    for ((floor, direction), call) in physical.calls
+        if call.requested
+            found_waiting = false
+            for person in physical.person
+                if person.location == floor && person.waiting
+                    person_dir = person.destination > person.location ? Up : Down
+                    if person_dir == direction
+                        found_waiting = true
+                        break
+                    end
+                end
+            end
+            if !found_waiting
+                dir_str = direction == Up ? "Up" : "Down"
+                push!(violations, "Ghost call at floor $floor direction $dir_str")
+            end
+        end
+    end
+
+    return violations
+end
+
+################# Events follow
 
 struct PickNewDestination <: SimEvent
     person::Int64
