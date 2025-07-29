@@ -623,6 +623,10 @@ end
 function observe(te::TrajectoryEntry, physical, when, event, changed_places)
     @debug "Firing $event at $when"
     push!(te.trajectory, TrajectoryEntry(clock_key(event), when))
+    err_str = vcat(validate_type_invariant(physical), check_safety_invariant(physical))
+    if !isempty(err_str)
+        error(join(err_str, "\n"))
+    end
 end
 
 
