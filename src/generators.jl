@@ -240,24 +240,6 @@ end
 
 
 """
-    next_expr(expr, idx)
-
-An iterator over the arguments of an expression. Start with `idx=1`,
-and it returns the next expression, starting at `idx`, that isn't a
-`LineNumberNode`, along with the next `idx` to start at.
-"""
-function next_expr(expr, idx)
-    while idx <= length(expr.args) && !isa(expr.args[idx], Expr)
-        idx+=1
-    end
-    if idx > length(expr.args)
-        return nothing
-    else
-        return (expr.args[idx], idx + 1)
-    end
-end
-
-"""
 Instead of escaping the argument list as-is, we reach into arguments
 that are tuples and escape them individually. The idea is to destructure
 the arguments into escaped variables.
