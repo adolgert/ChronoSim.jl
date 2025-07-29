@@ -133,38 +133,42 @@ function fire!(evt::CallElevator, system, when, rng)
 end
 
 
-struct OpenElevatorDoor <: SimEvent
+struct OpenElevatorDoors <: SimEvent
     elevator_idx::Int64
 end
 
-@conditionsfor OpenElevatorDoor begin
+@conditionsfor OpenElevatorDoors begin
     @reactto changed(elevator[elidx].floor) do system
-        generate(OpenElevatorDoor(elidx))
+        generate(OpenElevatorDoors(elidx))
     end
     @reactto changed(elevator[elidx].buttons_pressed) do system
-        generate(OpenElevatorDoor(elidx))
+        generate(OpenElevatorDoors(elidx))
     end
     @reactto changed(calls[callkey].requested) do system
         # Check all elevators when a new call is made
         for elidx in 1:length(system.elevator)
-            generate(OpenElevatorDoor(elidx))
+            generate(OpenElevatorDoors(elidx))
         end
     end
 end
 
-function precondition(evt::OpenElevatorDoor, system)
+function precondition(evt::OpenElevatorDoors, system)
     elevator = system.elevator[evt.elevator_idx]
-    elevator.doors_open && return false
 
-    call_exists = system.calls[(elevator.floor, elevator.direction)].requested
+    # This is a faster way to say there exists a call this elevator can service,
+    # which means there is a call in the same direction as the elevator on the
+    # same floor as the elevator.
+    call_exists =
+        elevator.direction != Stationary &&
+        system.calls[(elevator.floor, elevator.direction)].requested
     button_pressed = elevator.floor ∈ elevator.buttons_pressed
 
-    return call_exists || button_pressed
+    return !elevator.doors_open && (call_exists || button_pressed)
 end
 
-enable(evt::OpenElevatorDoor, system, when) = (Exponential(1.0), when)
+enable(evt::OpenElevatorDoors, system, when) = (Exponential(1.0), when)
 
-function fire!(evt::OpenElevatorDoor, system, when, rng)
+function fire!(evt::OpenElevatorDoors, system, when, rng)
     elevator = system.elevator[evt.elevator_idx]
     elevator.doors_open = true
 
@@ -359,8 +363,8 @@ function precondition(evt::MoveElevator, system)
     #         /\ \E e2 \in Elevator :
     #             /\ e /= e2
     #             /\ CanServiceCall[e2, call]
+    other_calls_serviced = true
     for (floor, direction) in keys(system.calls)
-        other_calls_serviced = true
         if can_service_call(elevator, floor, direction)
             another_can_service = false
             for other_elev in eachindex(system.elevator)
@@ -402,7 +406,7 @@ function precondition(evt::StopElevator, system)
     next_floor_valid = 1 <= next_floor <= system.floor_cnt
     return !elevator.doors_open &&
            !next_floor_valid &&
-           !precondition(OpenElevatorDoor(evt.elevator_idx), system)
+           !precondition(OpenElevatorDoors(evt.elevator_idx), system)
 end
 
 enable(evt::StopElevator, system, when) = (Exponential(1.0), when)
@@ -437,7 +441,7 @@ end
 
 function precondition(evt::DispatchElevator, system)
     # Call must exist and be active
-    call_active = system.calls[(evt.floor, evt.direction)]
+    call_active = system.calls[(evt.floor, evt.direction)].requested
     any_stationary = any(elevator.direction == Stationary for elevator in system.elevator)
     any_approaching = any(
         elevator.direction == evt.direction &&
@@ -468,8 +472,10 @@ function fire!(evt::DispatchElevator, system, when, rng)
         end
     end
     @assert close_elev > 0
-    if system.elevator[close_elev].direction == Stationary
-        system.elevator[close_elev].direction = get_direction(elevator.floor, evt.floor)
+    elevator = system.elevator[close_elev]
+    if elevator.direction == Stationary
+        elevator.direction = get_direction(elevator.floor, evt.floor)
+        # else don't change the direction when this fires.
     end
 end
 
@@ -510,7 +516,7 @@ function run_elevator()
     included_transitions = [
         PickNewDestination,
         CallElevator,
-        OpenElevatorDoor,
+        OpenElevatorDoors,
         EnterElevator,
         ExitElevator,
         CloseElevatorDoors,
