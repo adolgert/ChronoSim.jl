@@ -1,3 +1,15 @@
+# This implements a set of elevators and people interacting.
+# The spec comes from https://github.com/tlaplus/Examples which has
+# elevator.tla, the MODULE Elevator.
+#
+# Contents
+#   1. Define physical state of the system.
+#   2. Helper functions that compute on that physical state.
+#   3. Validations of the physical state.
+#   4. All 9 event types.
+#   5. Initialization and observation of the simulation.
+#   6. Running the simulation.
+#
 module ElevatorExample
 using CompetingClocks
 using Distributions
