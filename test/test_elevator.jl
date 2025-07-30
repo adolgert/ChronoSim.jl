@@ -4,7 +4,7 @@ include("elevator.jl")
 
 @testset "Elevator smoke" begin
     using .ElevatorExample
-    with_logger(ConsoleLogger(stderr, Logging.Debug)) do
+    with_logger(ConsoleLogger(stderr, Logging.Info)) do
         ElevatorExample.run_elevator()
     end
 end

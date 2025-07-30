@@ -2,6 +2,8 @@
 # The spec comes from https://github.com/tlaplus/Examples which has
 # elevator.tla, the MODULE Elevator.
 #
+# Run the .tla with `java -jar tla2tools.jar -config Elevator.cfg Elevator.tla`.
+#
 # Contents
 #   1. Define physical state of the system.
 #   2. Helper functions that compute on that physical state.
@@ -67,6 +69,56 @@ function ElevatorSystem(person_cnt::Int64, elevator_cnt::Int64, floor_cnt::Int64
     end
     ElevatorSystem(persons, calls, elevators, floor_cnt)
 end
+
+mutable struct ShowFloor
+    elevators::Vector{Int64}
+    elevator_people::Vector{Int64}
+    floor_people::Vector{Int64}
+end
+
+function Base.show(io::IO, system::ElevatorSystem)
+    state = Vector{ShowFloor}(undef, system.floor_cnt)
+    for floor in 1:system.floor_cnt
+        state[floor] = ShowFloor(Vector{Int64}(), Vector{Int64}(), Vector{Int64}())
+    end
+    for pidx in eachindex(system.person)
+        person = system.person[pidx]
+        if person.location > 0
+            push!(state[person.location].floor_people, pidx)
+        else
+            push!(state[person.location].elevator_people, pidx)
+        end
+    end
+    for eidx in eachindex(system.elevator)
+        push!(state[system.elevator[eidx].floor].elevators, eidx)
+    end
+    for flidx in system.floor_cnt:-1:1
+        print(io, "Floor $flidx: ")
+        for elidx in state[flidx].elevators
+            eldir = system.elevator[elidx].direction
+            print(io, "e$elidx-$(string(eldir)) ")
+        end
+        isup = system.calls[(flidx, Up)].requested
+        isup && print(io, "↑ ")
+        isdown = system.calls[(flidx, Down)].requested
+        isdown && print(io, "↓ ")
+        for epidx in state[flidx].elevator_people
+            on_elev = system.person[epidx].elevator
+            print(io, "$epidx-$(on_elev) ")
+        end
+        for epidx in state[flidx].floor_people
+            who = system.person[epidx]
+            whodirn = if who.waiting
+                who.destination > who.location ? "↑" : "↓"
+            else
+                ""
+            end
+            print(io, "$epidx$(whodirn) ")
+        end
+        println(io)
+    end
+end
+
 
 ######## Helper functions
 
@@ -210,13 +262,13 @@ end
 
 function precondition(evt::PickNewDestination, system)
     person = system.person[evt.person]
-    @debug "PickNewDestination $(person.waiting) $(person.location)"
     return !person.waiting && person.location != 0
 end
 
 enable(evt::PickNewDestination, system, when) = (Exponential(1.0), when)
 
 function fire!(evt::PickNewDestination, system, when, rng)
+    who = system.person[evt.person]
     dests = Set(collect(1:system.floor_cnt))
     delete!(dests, system.person[evt.person].location)
     system.person[evt.person].destination = rand(rng, dests)
@@ -620,9 +672,10 @@ struct TrajectorySave
     TrajectorySave() = new(Vector{TrajectoryEntry}())
 end
 
-function observe(te::TrajectoryEntry, physical, when, event, changed_places)
-    @debug "Firing $event at $when"
+function (te::TrajectorySave)(physical, when, event, changed_places)
+    @info "Firing $event at $when"
     push!(te.trajectory, TrajectoryEntry(clock_key(event), when))
+    println(physical)
     err_str = vcat(validate_type_invariant(physical), check_safety_invariant(physical))
     if !isempty(err_str)
         error(join(err_str, "\n"))
@@ -650,7 +703,10 @@ function run_elevator()
         DispatchElevator,
     ]
     @assert length(included_transitions) == 9
-    sim = SimulationFSM(physical, Sampler(), included_transitions; rng=Xoshiro(93472934))
+    trajectory = TrajectorySave()
+    sim = SimulationFSM(
+        physical, Sampler(), included_transitions; rng=Xoshiro(93472934), observer=trajectory
+    )
     # Stop-condition is called after the next event is chosen but before the
     # next event is fired. This way you can stop at an end time between events.
     stop_condition = function (physical, step_idx, event, when)
@@ -659,6 +715,35 @@ function run_elevator()
     ChronoSim.run(sim, init_physical, stop_condition)
 end
 
-# include("elevatortla.jl")
+include("elevatortla.jl")
+
+function run_with_trace()
+    person_cnt = 10
+    elevator_cnt = 3
+    floor_cnt = 10
+    minutes = 120.0
+    ClockKey=Tuple
+    Sampler = CombinedNextReaction{ClockKey,Float64}
+    physical = ElevatorSystem(person_cnt, elevator_cnt, floor_cnt)
+    included_transitions = [
+        PickNewDestination,
+        CallElevator,
+        OpenElevatorDoors,
+        EnterElevator,
+        ExitElevator,
+        CloseElevatorDoors,
+        MoveElevator,
+        StopElevator,
+        DispatchElevator,
+    ]
+    @assert length(included_transitions) == 9
+    sim = SimulationFSM(physical, Sampler(), included_transitions; rng=Xoshiro(93472934))
+    # Stop-condition is called after the next event is chosen but before the
+    # next event is fired. This way you can stop at an end time between events.
+    stop_condition = function (physical, step_idx, event, when)
+        return when > minutes
+    end
+    ChronoSim.run(sim, init_physical, stop_condition)
+end
 
 end
