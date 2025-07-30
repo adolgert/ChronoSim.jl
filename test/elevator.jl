@@ -228,14 +228,12 @@ function check_safety_invariant(physical::ElevatorSystem)
     for ((flidx, direction), active_call) in physical.calls
         if active_call.requested
             found_waiting = false
-            # Using for-each style doesn't work for TrackedVector. Test it!
-            # for (pidx, person) in enumerate(physical.person)
-            for pidx in eachindex(physical.person)
-                person = physical.person[pidx]
+            for person in physical.person
                 if person.location == flidx && person.waiting
                     person_dir = person.destination > person.location ? Up : Down
                     if person_dir == direction
                         found_waiting = true
+                        break
                     end
                 end
             end
