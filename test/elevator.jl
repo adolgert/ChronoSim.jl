@@ -225,21 +225,22 @@ function check_safety_invariant(physical::ElevatorSystem)
     end
 
     # Check: no ghost calls
-    for ((floor, direction), call) in physical.calls
-        if call.requested
+    for ((flidx, direction), active_call) in physical.calls
+        if active_call.requested
             found_waiting = false
-            for person in physical.person
-                if person.location == floor && person.waiting
+            # Using for-each style doesn't work for TrackedVector. Test it!
+            # for (pidx, person) in enumerate(physical.person)
+            for pidx in eachindex(physical.person)
+                person = physical.person[pidx]
+                if person.location == flidx && person.waiting
                     person_dir = person.destination > person.location ? Up : Down
                     if person_dir == direction
                         found_waiting = true
-                        break
                     end
                 end
             end
             if !found_waiting
-                dir_str = direction == Up ? "Up" : "Down"
-                push!(violations, "Ghost call at floor $floor direction $dir_str")
+                push!(violations, "Ghost call at floor $flidx direction $(string(direction))")
             end
         end
     end
@@ -303,6 +304,7 @@ function fire!(evt::CallElevator, system, when, rng)
     if !any_open
         system.calls[(person.location, direction)].requested = true
     end
+    @assert system.person[evt.person].waiting
 end
 
 
@@ -394,7 +396,7 @@ function fire!(evt::EnterElevator, system, when, rng)
                 person.waiting = false
 
                 # Add destination to buttons pressed
-                elevator.buttons_pressed = union(elevator.buttons_presed, person.destination)
+                elevator.buttons_pressed = union(elevator.buttons_pressed, person.destination)
             end
         end
     end
