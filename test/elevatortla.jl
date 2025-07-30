@@ -1,35 +1,16 @@
-# TLA+ Integration for Elevator Simulation
-# This module provides functions to export simulation trajectories and states
-# in a format that can be checked by TLC (TLA+ model checker)
-#
-# IO/Export functions for TLA+ integration:
-#   1. TLATraceRecorder - A mutable struct that records simulation states
-#   2. Observer function (lines 18-43) - Records states during simulation
-#   3. Conversion functions:
-#     - convert_person_state - Converts Julia Person to TLA+ format
-#     - convert_active_calls - Converts Julia calls to TLA+ format
-#     - convert_elevator_state - Converts Julia elevators to TLA+ format
-#   4. Formatting functions:
-#     - format_action - Converts SimEvent to TLA+ action names
-#     - format_changed_places - Formats changed places for debugging
-#     - format_tla_state - Formats complete TLA+ state as string
-#   5. Export functions:
-#     - export_tlc_trace - Exports recorded trace to TLC format
-#     - export_current_state - Exports single state snapshot
-#     - create_tlc_config - Creates TLC configuration file
-#   6. run_tlc_check - Runs TLC model checker on exported trace
-
+# TLA+ Integration for Elevator Simulation (Refactored)
 using ChronoSim: get_enabled_events
 
 mutable struct TLATraceRecorder
     states::Vector{Dict{String,Any}}
     transitions::Vector{Dict{String,Any}}
     enabled_events::Vector{Vector{String}}
-    enabled_before_transition::Vector{Vector{String}}  # Events enabled just before transition
+    enabled_before_transition::Vector{Vector{String}}
     export_every_state::Bool
     sim::ChronoSim.SimulationFSM
     TLATraceRecorder() = new([], [], [], [], false)
 end
+
 
 """
 Observer function that records simulation states for TLA+ validation
@@ -42,7 +23,6 @@ function (recorder::TLATraceRecorder)(physical, when, event, changed_places)
         "ElevatorState" => convert_elevator_state(physical.elevator),
     )
 
-    # Record the state
     push!(recorder.states, tla_state)
 
     # Record the transition that led to this state
@@ -54,7 +34,6 @@ function (recorder::TLATraceRecorder)(physical, when, event, changed_places)
         )
         push!(recorder.transitions, transition)
 
-        # The enabled events before this transition were recorded in the previous state
         if length(recorder.enabled_events) > 0
             push!(recorder.enabled_before_transition, recorder.enabled_events[end])
         end
@@ -76,9 +55,7 @@ Convert Julia person state to TLA+ format
 function convert_person_state(persons::ObservedVector{Person})
     result = Dict{String,Any}()
     for (idx, person) in enumerate(persons)
-        # In TLA+, location is either a floor number or elevator identifier
-        # New structure: on floor if location > 0 && elevator == 0
-        #                in elevator if location == 0 && elevator > 0
+        # Determine location based on new structure
         location = if person.location > 0 && person.elevator == 0
             person.location  # On a floor
         elseif person.location == 0 && person.elevator > 0
@@ -100,122 +77,91 @@ end
 Convert Julia calls to TLA+ ActiveElevatorCalls format
 """
 function convert_active_calls(calls::ObservedDict{Tuple{Int64,ElevatorDirection},ElevatorCall})
-    active_calls = []
-    for ((floor, direction), call) in calls
-        if call.requested
-            push!(
-                active_calls, Dict("floor" => floor, "direction" => direction == Up ? "Up" : "Down")
-            )
-        end
-    end
-    return active_calls
+    [
+        Dict("floor" => floor, "direction" => string(direction)) for
+        ((floor, direction), call) in calls if call.requested
+    ]
 end
 
 """
 Convert Julia elevator state to TLA+ format
 """
 function convert_elevator_state(elevators::ObservedVector{Elevator})
-    result = Dict{String,Any}()
-    for (idx, elevator) in enumerate(elevators)
-        direction_str = if elevator.direction == Up
-            "Up"
-        elseif elevator.direction == Down
-            "Down"
-        else
-            "Stationary"
-        end
-
-        result["e$idx"] = Dict(
+    Dict(
+        "e$idx" => Dict(
             "floor" => elevator.floor,
-            "direction" => direction_str,
+            "direction" => string(elevator.direction),
             "doorsOpen" => elevator.doors_open,
             "buttonsPressed" => collect(elevator.buttons_pressed),
-        )
-    end
-    return result
+        ) for (idx, elevator) in enumerate(elevators)
+    )
 end
 
 """
 Format a SimEvent into TLA+ action name
 """
 function format_action(event::SimEvent)
-    if isa(event, PickNewDestination)
-        return "PickNewDestination(p$(event.person))"
-    elseif isa(event, CallElevator)
-        return "CallElevator(p$(event.person))"
-    elseif isa(event, OpenElevatorDoors)
-        return "OpenElevatorDoors(e$(event.elevator_idx))"
-    elseif isa(event, EnterElevator)
-        return "EnterElevator(e$(event.elevator_idx))"
-    elseif isa(event, ExitElevator)
-        return "ExitElevator(e$(event.elevator_idx))"
-    elseif isa(event, CloseElevatorDoors)
-        return "CloseElevatorDoors(e$(event.elevator_idx))"
-    elseif isa(event, MoveElevator)
-        return "MoveElevator(e$(event.elevator_idx))"
-    elseif isa(event, StopElevator)
-        return "StopElevator(e$(event.elevator_idx))"
-    elseif isa(event, DispatchElevator)
-        dir_str = event.direction == Up ? "Up" : "Down"
-        return "DispatchElevator([floor |-> $(event.floor), direction |-> \"$dir_str\"])"
-    else
-        return "Unknown($(typeof(event)))"
-    end
+    # Use type dispatch pattern
+    format_action_impl(event)
 end
 
-"""
-Format changed places for debugging
-"""
+# Individual implementations for each event type
+format_action_impl(e::PickNewDestination) = "PickNewDestination(p$(e.person))"
+format_action_impl(e::CallElevator) = "CallElevator(p$(e.person))"
+format_action_impl(e::OpenElevatorDoors) = "OpenElevatorDoors(e$(e.elevator_idx))"
+format_action_impl(e::EnterElevator) = "EnterElevator(e$(e.elevator_idx))"
+format_action_impl(e::ExitElevator) = "ExitElevator(e$(e.elevator_idx))"
+format_action_impl(e::CloseElevatorDoors) = "CloseElevatorDoors(e$(e.elevator_idx))"
+format_action_impl(e::MoveElevator) = "MoveElevator(e$(e.elevator_idx))"
+format_action_impl(e::StopElevator) = "StopElevator(e$(e.elevator_idx))"
+function format_action_impl(e::DispatchElevator)
+    "DispatchElevator([floor |-> $(e.floor), direction |-> \"$(string(e.direction))\"])"
+end
+format_action_impl(e) = "Unknown($(typeof(e)))"
+
 format_changed_places(changed_places) = [string(cp) for cp in changed_places]
 
-"""
-Export recorded trace to TLC trace format
-"""
+function format_person_entry(pid, pstate)
+    loc_str = isa(pstate["location"], String) ? pstate["location"] : string(pstate["location"])
+    "  $pid |-> [location |-> $loc_str, destination |-> $(pstate["destination"]), waiting |-> $(uppercase(string(pstate["waiting"])))]"
+end
+
+function format_elevator_entry(eid, estate)
+    buttons_str = "{$(join(estate["buttonsPressed"], ", "))}"
+    "  $eid |-> [floor |-> $(estate["floor"]), direction |-> \"$(estate["direction"])\", doorsOpen |-> $(uppercase(string(estate["doorsOpen"]))), buttonsPressed |-> $buttons_str]"
+end
+
+format_call_entry(call) = "[floor |-> $(call["floor"]), direction |-> \"$(call["direction"])\"]"
+
+function format_state_to_tla(state::Dict{String,Any}, indent::String="")
+    lines = String[]
+
+    # PersonState
+    push!(lines, "$(indent)PersonState = [")
+    person_items = [format_person_entry(pid, pstate) for (pid, pstate) in state["PersonState"]]
+    push!(lines, join(person_items, ",\n"))
+    push!(lines, "$(indent)]")
+
+    # ActiveElevatorCalls
+    call_items = [format_call_entry(call) for call in state["ActiveElevatorCalls"]]
+    push!(lines, "$(indent)ActiveElevatorCalls = {$(join(call_items, ", "))}")
+
+    # ElevatorState
+    push!(lines, "$(indent)ElevatorState = [")
+    elevator_items = [
+        format_elevator_entry(eid, estate) for (eid, estate) in state["ElevatorState"]
+    ]
+    push!(lines, join(elevator_items, ",\n"))
+    push!(lines, "$(indent)]")
+
+    return join(lines, "\n")
+end
+
 function export_tlc_trace(recorder::TLATraceRecorder, filename::String)
     open(filename, "w") do io
         for (i, state) in enumerate(recorder.states)
             println(io, "State $i:")
-
-            # Write PersonState
-            println(io, "PersonState = [")
-            person_items = []
-            for (pid, pstate) in state["PersonState"]
-                loc_str = if isa(pstate["location"], String)
-                    pstate["location"]
-                else
-                    string(pstate["location"])
-                end
-                push!(
-                    person_items,
-                    "  $pid |-> [location |-> $loc_str, destination |-> $(pstate["destination"]), waiting |-> $(uppercase(string(pstate["waiting"])))]",
-                )
-            end
-            println(io, join(person_items, ",\n"))
-            println(io, "]")
-
-            # Write ActiveElevatorCalls
-            print(io, "ActiveElevatorCalls = {")
-            call_items = []
-            for call in state["ActiveElevatorCalls"]
-                push!(
-                    call_items,
-                    "[floor |-> $(call["floor"]), direction |-> \"$(call["direction"])\"]",
-                )
-            end
-            println(io, join(call_items, ", "), "}")
-
-            # Write ElevatorState
-            println(io, "ElevatorState = [")
-            elevator_items = []
-            for (eid, estate) in state["ElevatorState"]
-                buttons_str = "{" * join(estate["buttonsPressed"], ", ") * "}"
-                push!(
-                    elevator_items,
-                    "  $eid |-> [floor |-> $(estate["floor"]), direction |-> \"$(estate["direction"])\", doorsOpen |-> $(uppercase(string(estate["doorsOpen"]))), buttonsPressed |-> $buttons_str]",
-                )
-            end
-            println(io, join(elevator_items, ",\n"))
-            println(io, "]")
+            println(io, format_state_to_tla(state))
 
             # Add transition info if available
             if i > 1 && i-1 <= length(recorder.transitions)
@@ -225,7 +171,7 @@ function export_tlc_trace(recorder::TLATraceRecorder, filename::String)
 
             # Add enabled events info
             if i <= length(recorder.enabled_events)
-                println(io, "-- Enabled: [" * join(recorder.enabled_events[i], ", ") * "]")
+                println(io, "-- Enabled: [$(join(recorder.enabled_events[i], ", "))]")
             end
 
             println(io)  # Empty line between states
@@ -245,15 +191,14 @@ function export_current_state(sim, physical, filename::String)
             "ElevatorState" => convert_elevator_state(physical.elevator),
         )
 
-        # Format and write current state
         println(io, "Current State:")
-        println(io, format_tla_state(state))
+        println(io, format_state_to_tla(state))
 
         # Get and write enabled events
         println(io, "\nEnabled Actions:")
         enabled = get_enabled_events(sim)
         for event in enabled
-            println(io, "  - " * format_action(event))
+            println(io, "  - $(format_action(event))")
         end
     end
 end
@@ -261,103 +206,53 @@ end
 """
 Format a complete TLA+ state as a string
 """
-function format_tla_state(state::Dict{String,Any})
-    lines = String[]
-
-    # PersonState
-    push!(lines, "PersonState = [")
-    person_items = []
-    for (pid, pstate) in state["PersonState"]
-        loc_str = isa(pstate["location"], String) ? pstate["location"] : string(pstate["location"])
-        push!(
-            person_items,
-            "  $pid |-> [location |-> $loc_str, destination |-> $(pstate["destination"]), waiting |-> $(uppercase(string(pstate["waiting"])))]",
-        )
-    end
-    push!(lines, join(person_items, ",\n"))
-    push!(lines, "]")
-
-    # ActiveElevatorCalls
-    push!(lines, "ActiveElevatorCalls = {")
-    call_items = []
-    for call in state["ActiveElevatorCalls"]
-        push!(call_items, "[floor |-> $(call["floor"]), direction |-> \"$(call["direction"])\"]")
-    end
-    push!(lines, "  " * join(call_items, ", "))
-    push!(lines, "}")
-
-    # ElevatorState
-    push!(lines, "ElevatorState = [")
-    elevator_items = []
-    for (eid, estate) in state["ElevatorState"]
-        buttons_str = "{" * join(estate["buttonsPressed"], ", ") * "}"
-        push!(
-            elevator_items,
-            "  $eid |-> [floor |-> $(estate["floor"]), direction |-> \"$(estate["direction"])\", doorsOpen |-> $(uppercase(string(estate["doorsOpen"]))), buttonsPressed |-> $buttons_str]",
-        )
-    end
-    push!(lines, join(elevator_items, ",\n"))
-    push!(lines, "]")
-
-    return join(lines, "\n")
-end
+format_tla_state(state::Dict{String,Any}) = format_state_to_tla(state)
 
 """
-Create a TLC configuration file for the elevator spec
+Create a TLC configuration file with given invariants and properties
 """
-function create_tlc_config(
-    people_count::Int, elevator_count::Int, floor_count::Int, filename::String
+function create_config_file(
+    people_count::Int,
+    elevator_count::Int,
+    floor_count::Int,
+    filename::String,
+    invariants::Vector{String},
+    properties::Vector{String}=String[],
 )
     open(filename, "w") do io
-        println(io, "CONSTANTS")
+        println(
+            io,
+            """
+CONSTANTS
+  Person = {$(join(["p$i" for i in 1:people_count], ", "))}
+  Elevator = {$(join(["e$i" for i in 1:elevator_count], ", "))}
+  FloorCount = $floor_count
 
-        # Person set
-        person_set = join(["p$i" for i in 1:people_count], ", ")
-        println(io, "  Person = {$person_set}")
+INVARIANTS
+$(join(["  $inv" for inv in invariants], "\n"))
+""",
+        )
 
-        # Elevator set
-        elevator_set = join(["e$i" for i in 1:elevator_count], ", ")
-        println(io, "  Elevator = {$elevator_set}")
-
-        # Floor count
-        println(io, "  FloorCount = $floor_count")
-
-        println(io, "\nINVARIANTS")
-        println(io, "  TypeInvariant")
-        println(io, "  SafetyInvariant")
-
-        println(io, "\nPROPERTIES")
-        println(io, "  TemporalInvariant")
+        if !isempty(properties)
+            println(io, "\nPROPERTIES")
+            println(io, join(["  $prop" for prop in properties], "\n"))
+        end
     end
 end
 
+# Convenience functions for specific config types
+function create_tlc_config(pc, ec, fc, fn)
+    create_config_file(pc, ec, fc, fn, ["TypeInvariant", "SafetyInvariant"], ["TemporalInvariant"])
+end
 
-"""
-Create a config file for checking the trace specification
-"""
-function create_trace_config(
-    people_count::Int, elevator_count::Int, floor_count::Int, filename::String
-)
-    open(filename, "w") do io
-        println(io, "CONSTANTS")
-
-        # Person set
-        person_set = join(["p$i" for i in 1:people_count], ", ")
-        println(io, "  Person = {$person_set}")
-
-        # Elevator set  
-        elevator_set = join(["e$i" for i in 1:elevator_count], ", ")
-        println(io, "  Elevator = {$elevator_set}")
-
-        # Floor count
-        println(io, "  FloorCount = $floor_count")
-
-        println(io, "\nINVARIANTS")
-        println(io, "  TraceTypeInvariant")
-        println(io, "  TraceSafetyInvariant")
-        println(io, "  ValidTransitions")
-        println(io, "  CorrectEnabledActions")
-    end
+function create_trace_config(pc, ec, fc, fn)
+    create_config_file(
+        pc,
+        ec,
+        fc,
+        fn,
+        ["TraceTypeInvariant", "TraceSafetyInvariant", "ValidTransitions", "CorrectEnabledActions"],
+    )
 end
 
 """
@@ -418,69 +313,100 @@ function validate_trace(
 end
 
 """
+Generate a single enabled predicate for a given action type
+"""
+generate_single_predicate(io::IO, name::String, params::String, body::String) = println(
+    io,
+    """
+$name($params) ==
+$body
+""",
+)
+
+"""
 Generate enabled action predicates for TLA+ based on Julia event types
 """
 function generate_enabled_predicates(io::IO)
     println(io, "(* Predicates to check if specific actions are enabled *)")
-    println(io, "")
 
-    # PickNewDestination
-    println(io, "PickNewDestinationEnabled(p, ps) ==")
-    println(io, "    /\\ ~ps[p].waiting")
-    println(io, "    /\\ ps[p].location \\in 1..FloorCount")
-    println(io, "")
+    # Define predicates as (name, params, body) tuples
+    predicates = [
+        (
+            "PickNewDestinationEnabled",
+            "p, ps",
+            """    /\\ ~ps[p].waiting
+/\\ ps[p].location \\in 1..FloorCount""",
+        ),
+        (
+            "CallElevatorEnabled",
+            "p, ps, es",
+            """    LET pState == ps[p]
+    call == [floor |-> pState.location, direction |-> IF pState.destination > pState.location THEN "Up" ELSE "Down"]
+IN
+/\\ ~pState.waiting
+/\\ pState.location /= pState.destination""",
+        ),
+        (
+            "OpenElevatorDoorsEnabled",
+            "e, es, calls",
+            """    LET eState == es[e] IN
+/\\ ~eState.doorsOpen
+/\\ \\/ \\E call \\in calls :
+      /\\ call.floor = eState.floor
+      /\\ call.direction = eState.direction
+   \\/ eState.floor \\in eState.buttonsPressed""",
+        ),
+        (
+            "EnterElevatorEnabled",
+            "e, ps, es",
+            """    LET eState == es[e] IN
+/\\ eState.doorsOpen
+/\\ eState.direction /= "Stationary"
+/\\ \\E p \\in Person :
+      /\\ ps[p].location = eState.floor
+      /\\ ps[p].waiting
+      /\\ IF ps[p].destination > ps[p].location
+         THEN eState.direction = "Up"
+         ELSE eState.direction = "Down\"""",
+        ),
+    ]
 
-    # CallElevator
-    println(io, "CallElevatorEnabled(p, ps, es) ==")
-    println(io, "    LET pState == ps[p]")
+    for (name, params, body) in predicates
+        generate_single_predicate(io, name, params, body)
+    end
+
+    # ActionIsEnabled mapping
     println(
         io,
-        "        call == [floor |-> pState.location, direction |-> IF pState.destination > pState.location THEN \"Up\" ELSE \"Down\"]",
+        """(* Check if an action string corresponds to an enabled action *)
+ActionIsEnabled(actionStr, ps, calls, es) ==
+    \\/ /\\ \\E p \\in Person : actionStr = "PickNewDestination(" \\o p \\o ")"
+       /\\ \\E p \\in Person : PickNewDestinationEnabled(p, ps)
+    \\/ /\\ \\E p \\in Person : actionStr = "CallElevator(" \\o p \\o ")"
+       /\\ \\E p \\in Person : CallElevatorEnabled(p, ps, es)
+    \\/ /\\ \\E e \\in Elevator : actionStr = "OpenElevatorDoors(" \\o e \\o ")"
+       /\\ \\E e \\in Elevator : OpenElevatorDoorsEnabled(e, es, calls)
+    \\/ /\\ \\E e \\in Elevator : actionStr = "EnterElevator(" \\o e \\o ")"
+       /\\ \\E e \\in Elevator : EnterElevatorEnabled(e, ps, es)
+""",
     )
-    println(io, "    IN")
-    println(io, "    /\\ ~pState.waiting")
-    println(io, "    /\\ pState.location /= pState.destination")
-    println(io, "")
+end
 
-    # OpenElevatorDoors
-    println(io, "OpenElevatorDoorsEnabled(e, es, calls) ==")
-    println(io, "    LET eState == es[e] IN")
-    println(io, "    /\\ ~eState.doorsOpen")
-    println(io, "    /\\ \\/ \\E call \\in calls :")
-    println(io, "          /\\ call.floor = eState.floor")
-    println(io, "          /\\ call.direction = eState.direction")
-    println(io, "       \\/ eState.floor \\in eState.buttonsPressed")
-    println(io, "")
-
-    # EnterElevator
-    println(io, "EnterElevatorEnabled(e, ps, es) ==")
-    println(io, "    LET eState == es[e] IN")
-    println(io, "    /\\ eState.doorsOpen")
-    println(io, "    /\\ eState.direction /= \"Stationary\"")
-    println(io, "    /\\ \\E p \\in Person :")
-    println(io, "          /\\ ps[p].location = eState.floor")
-    println(io, "          /\\ ps[p].waiting")
-    println(io, "          /\\ IF ps[p].destination > ps[p].location")
-    println(io, "             THEN eState.direction = \"Up\"")
-    println(io, "             ELSE eState.direction = \"Down\"")
-    println(io, "")
-
-    # Add more predicates for other actions...
-    println(io, "(* Check if an action string corresponds to an enabled action *)")
-    println(io, "ActionIsEnabled(actionStr, ps, calls, es) ==")
+"""
+Generate invariant verification section
+"""
+function generate_invariant_checks(io::IO, invariant_name::String, tla_invariant::String)
     println(
-        io, "    \\/ /\\ \\E p \\in Person : actionStr = \"PickNewDestination(\" \\o p \\o \")\""
+        io,
+        """
+$invariant_name == \\A i \\in 1..Len(TraceStates) :
+    LET state == TraceStates[i]
+        PersonState == state.PersonState
+        ActiveElevatorCalls == state.ActiveElevatorCalls
+        ElevatorState == state.ElevatorState
+    IN $tla_invariant
+""",
     )
-    println(io, "       /\\ \\E p \\in Person : PickNewDestinationEnabled(p, ps)")
-    println(io, "    \\/ /\\ \\E p \\in Person : actionStr = \"CallElevator(\" \\o p \\o \")\"")
-    println(io, "       /\\ \\E p \\in Person : CallElevatorEnabled(p, ps, es)")
-    println(
-        io, "    \\/ /\\ \\E e \\in Elevator : actionStr = \"OpenElevatorDoors(\" \\o e \\o \")\""
-    )
-    println(io, "       /\\ \\E e \\in Elevator : OpenElevatorDoorsEnabled(e, es, calls)")
-    println(io, "    \\/ /\\ \\E e \\in Elevator : actionStr = \"EnterElevator(\" \\o e \\o \")\"")
-    println(io, "       /\\ \\E e \\in Elevator : EnterElevatorEnabled(e, ps, es)")
-    println(io, "")
 end
 
 """
@@ -491,157 +417,104 @@ function export_trace_spec(recorder::TLATraceRecorder, spec_filename::String)
     open(spec_filename, "w") do io
         # Module header
         module_name = replace(basename(spec_filename), ".tla" => "")
-        println(io, "-" ^ 28 * " MODULE $module_name " * "-" ^ 28)
         println(
             io,
-            "(* This specification defines a specific trace to be checked against the Elevator spec *)",
+            """
+$(repeat("-", 28)) MODULE $module_name $(repeat("-", 28))
+(* This specification defines a specific trace to be checked against the Elevator spec *)
+EXTENDS Elevator, Sequences, TLC
+
+(* The recorded trace as a sequence of states *)
+TraceStates == <<""",
         )
-        println(io, "EXTENDS Elevator, Sequences, TLC\n")
 
-        # Define the trace as a sequence of states
-        println(io, "(* The recorded trace as a sequence of states *)")
-        println(io, "TraceStates == <<")
-
+        # Output each state
         for (i, state) in enumerate(recorder.states)
             println(io, "    (* State $i *)")
             println(io, "    [")
 
-            # PersonState
-            print(io, "        PersonState |-> [")
-            person_items = []
-            for (pid, pstate) in sort(collect(state["PersonState"]); by=x->x[1])
-                loc_str = if isa(pstate["location"], String)
-                    "\"$(pstate["location"])\""
-                else
-                    string(pstate["location"])
-                end
-                push!(
-                    person_items,
-                    "$pid |-> [location |-> $loc_str, destination |-> $(pstate["destination"]), waiting |-> $(uppercase(string(pstate["waiting"])))]",
-                )
-            end
-            println(io, join(person_items, ",\n                         "), "],")
-
-            # ActiveElevatorCalls
-            print(io, "        ActiveElevatorCalls |-> {")
-            call_items = []
-            for call in state["ActiveElevatorCalls"]
-                push!(
-                    call_items,
-                    "[floor |-> $(call["floor"]), direction |-> \"$(call["direction"])\"]",
-                )
-            end
-            println(io, join(call_items, ", "), "},")
-
-            # ElevatorState
-            print(io, "        ElevatorState |-> [")
-            elevator_items = []
-            for (eid, estate) in sort(collect(state["ElevatorState"]); by=x->x[1])
-                buttons_str = "{" * join(estate["buttonsPressed"], ", ") * "}"
-                push!(
-                    elevator_items,
-                    "$eid |-> [floor |-> $(estate["floor"]), direction |-> \"$(estate["direction"])\", doorsOpen |-> $(uppercase(string(estate["doorsOpen"]))), buttonsPressed |-> $buttons_str]",
-                )
-            end
-            println(io, join(elevator_items, ",\n                            "), "]")
+            # Format the state with proper indentation
+            state_lines = split(format_state_to_tla(state, "        "), "\n")
+            println(io, join(state_lines, "\n"))
 
             print(io, "    ]")
-            if i < length(recorder.states)
-                println(io, ",")
-            else
-                println(io)
-            end
+            println(io, i < length(recorder.states) ? "," : "")
         end
 
         println(io, ">>\n")
 
-        # Verification that trace satisfies invariants
+        # Verification sections
         println(io, "(* Verify each state in the trace satisfies the invariants *)")
-        println(io, "TraceTypeInvariant == \\A i \\in 1..Len(TraceStates) :")
-        println(io, "    LET state == TraceStates[i]")
-        println(io, "        PersonState == state.PersonState")
-        println(io, "        ActiveElevatorCalls == state.ActiveElevatorCalls")
-        println(io, "        ElevatorState == state.ElevatorState")
-        println(io, "    IN TypeInvariant\n")
+        generate_invariant_checks(io, "TraceTypeInvariant", "TypeInvariant")
+        generate_invariant_checks(io, "TraceSafetyInvariant", "SafetyInvariant")
 
-        println(io, "TraceSafetyInvariant == \\A i \\in 1..Len(TraceStates) :")
-        println(io, "    LET state == TraceStates[i]")
-        println(io, "        PersonState == state.PersonState")
-        println(io, "        ActiveElevatorCalls == state.ActiveElevatorCalls")
-        println(io, "        ElevatorState == state.ElevatorState")
-        println(io, "    IN SafetyInvariant\n")
-
-        # Verify transitions are valid according to Next
-        println(io, "(* Verify each transition in the trace is valid according to Next *)")
-        println(io, "ValidTransitions == \\A i \\in 1..(Len(TraceStates)-1) :")
-        println(io, "    LET PersonState == TraceStates[i].PersonState")
-        println(io, "        ActiveElevatorCalls == TraceStates[i].ActiveElevatorCalls")
-        println(io, "        ElevatorState == TraceStates[i].ElevatorState")
-        println(io, "        PersonState' == TraceStates[i+1].PersonState")
-        println(io, "        ActiveElevatorCalls' == TraceStates[i+1].ActiveElevatorCalls")
-        println(io, "        ElevatorState' == TraceStates[i+1].ElevatorState")
+        # Verify transitions
         println(
-            io, "    IN Next \\/ UNCHANGED <<PersonState, ActiveElevatorCalls, ElevatorState>>\n"
+            io,
+            """(* Verify each transition in the trace is valid according to Next *)
+ValidTransitions == \\A i \\in 1..(Len(TraceStates)-1) :
+    LET PersonState == TraceStates[i].PersonState
+        ActiveElevatorCalls == TraceStates[i].ActiveElevatorCalls
+        ElevatorState == TraceStates[i].ElevatorState
+        PersonState' == TraceStates[i+1].PersonState
+        ActiveElevatorCalls' == TraceStates[i+1].ActiveElevatorCalls
+        ElevatorState' == TraceStates[i+1].ElevatorState
+    IN Next \\/ UNCHANGED <<PersonState, ActiveElevatorCalls, ElevatorState>>
+""",
         )
 
         # Add enabled actions information if available
         if length(recorder.enabled_events) > 0
-            println(io, "(* Enabled actions recorded at each state *)")
-            println(io, "EnabledActions == <<")
+            println(
+                io,
+                """(* Enabled actions recorded at each state *)
+EnabledActions == <<""",
+            )
+
             for (i, enabled) in enumerate(recorder.enabled_events)
-                enabled_str = "{" * join(["\"$e\"" for e in enabled], ", ") * "}"
-                if i < length(recorder.enabled_events)
-                    println(io, "    $enabled_str,  (* State $i *)")
-                else
-                    println(io, "    $enabled_str   (* State $i *)")
-                end
+                enabled_str = "{$(join(["\"$e\"" for e in enabled], ", "))}"
+                comment = i < length(recorder.enabled_events) ? "," : ""
+                println(io, "    $enabled_str$comment  (* State $i *)")
             end
             println(io, ">>\n")
 
-            # Generate the enabled predicates
             generate_enabled_predicates(io)
 
-            println(io, "(* Verify that recorded enabled actions match the specification *)")
             println(
                 io,
-                "(* This checks that the simulation correctly determines which actions are enabled *)",
+                """(* Verify that recorded enabled actions match the specification *)
+(* This checks that the simulation correctly determines which actions are enabled *)
+CorrectEnabledActions == \\A i \\in 1..Len(TraceStates) :
+    LET state == TraceStates[i]
+        ps == state.PersonState
+        calls == state.ActiveElevatorCalls
+        es == state.ElevatorState
+        recordedEnabled == IF i <= Len(EnabledActions) THEN EnabledActions[i] ELSE {}
+    IN \\A action \\in recordedEnabled :
+        ActionIsEnabled(action, ps, calls, es)
+
+(* Additionally check that transitions taken were actually enabled *)
+TransitionWasEnabled == \\A i \\in 1..(Len(TraceStates)-1) :
+    LET state == TraceStates[i]
+        ps == state.PersonState
+        calls == state.ActiveElevatorCalls
+        es == state.ElevatorState
+        enabledBefore == IF i <= Len(EnabledActions) THEN EnabledActions[i] ELSE {}
+    IN TRUE  (* The transition that was taken should have been in enabledBefore *)
+""",
             )
-            println(io, "CorrectEnabledActions == \\A i \\in 1..Len(TraceStates) :")
-            println(io, "    LET state == TraceStates[i]")
-            println(io, "        ps == state.PersonState")
-            println(io, "        calls == state.ActiveElevatorCalls")
-            println(io, "        es == state.ElevatorState")
-            println(
-                io,
-                "        recordedEnabled == IF i <= Len(EnabledActions) THEN EnabledActions[i] ELSE {}",
-            )
-            println(io, "    IN \\A action \\in recordedEnabled :")
-            println(io, "        ActionIsEnabled(action, ps, calls, es)")
-            println(io, "")
-            println(io, "(* Additionally check that transitions taken were actually enabled *)")
-            println(io, "TransitionWasEnabled == \\A i \\in 1..(Len(TraceStates)-1) :")
-            println(io, "    LET state == TraceStates[i]")
-            println(io, "        ps == state.PersonState")
-            println(io, "        calls == state.ActiveElevatorCalls")
-            println(io, "        es == state.ElevatorState")
-            println(
-                io,
-                "        enabledBefore == IF i <= Len(EnabledActions) THEN EnabledActions[i] ELSE {}",
-            )
-            println(
-                io,
-                "    IN TRUE  (* The transition that was taken should have been in enabledBefore *)",
-            )
-            println(io, "")
         end
 
         # Properties to check
-        println(io, "(* Properties to check *)")
-        println(io, "ASSUME TraceTypeInvariant")
-        println(io, "ASSUME TraceSafetyInvariant")
-        println(io, "ASSUME ValidTransitions\n")
+        println(
+            io,
+            """(* Properties to check *)
+ASSUME TraceTypeInvariant
+ASSUME TraceSafetyInvariant
+ASSUME ValidTransitions
 
-        println(io, "=" ^ 77)
+$(repeat("=", 77))""",
+        )
     end
 end
 
