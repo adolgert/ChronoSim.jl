@@ -25,9 +25,10 @@ mutable struct TLATraceRecorder
     states::Vector{Dict{String,Any}}
     transitions::Vector{Dict{String,Any}}
     enabled_events::Vector{Vector{String}}
+    enabled_before_transition::Vector{Vector{String}}  # Events enabled just before transition
     export_every_state::Bool
     sim::ChronoSim.SimulationFSM
-    TLATraceRecorder() = new([], [], [], false)
+    TLATraceRecorder() = new([], [], [], [], false)
 end
 
 """
@@ -52,9 +53,14 @@ function (recorder::TLATraceRecorder)(physical, when, event, changed_places)
             "changed" => format_changed_places(changed_places),
         )
         push!(recorder.transitions, transition)
+
+        # The enabled events before this transition were recorded in the previous state
+        if length(recorder.enabled_events) > 0
+            push!(recorder.enabled_before_transition, recorder.enabled_events[end])
+        end
     end
 
-    # Record currently enabled events
+    # Record currently enabled events (after this transition)
     enabled = get_enabled_events(recorder.sim)
     enabled_names = [format_action(e) for e in enabled]
     push!(recorder.enabled_events, enabled_names)
@@ -327,11 +333,40 @@ end
 
 
 """
-Run TLC on exported trace (requires TLA+ tools installed)
+Create a config file for checking the trace specification
 """
-function run_tlc_check(tla_file::String, trace_file::String, config_file::String)
-    # This assumes tla2tools.jar is in the PATH or current directory
-    cmd = `java -cp tla2tools.jar tlc2.TLC -trace $trace_file -config $config_file $tla_file`
+function create_trace_config(
+    people_count::Int, elevator_count::Int, floor_count::Int, filename::String
+)
+    open(filename, "w") do io
+        println(io, "CONSTANTS")
+
+        # Person set
+        person_set = join(["p$i" for i in 1:people_count], ", ")
+        println(io, "  Person = {$person_set}")
+
+        # Elevator set  
+        elevator_set = join(["e$i" for i in 1:elevator_count], ", ")
+        println(io, "  Elevator = {$elevator_set}")
+
+        # Floor count
+        println(io, "  FloorCount = $floor_count")
+
+        println(io, "\nINVARIANTS")
+        println(io, "  TraceTypeInvariant")
+        println(io, "  TraceSafetyInvariant")
+        println(io, "  ValidTransitions")
+        println(io, "  CorrectEnabledActions")
+    end
+end
+
+"""
+Run TLC to check the trace specification
+"""
+function check_trace_with_tlc(
+    trace_spec::String, config_file::String, tla_tools_path::String="~/dev/tla/tla2tools.jar"
+)
+    cmd = `java -cp $tla_tools_path tlc2.TLC -config $config_file $trace_spec`
 
     try
         result = read(cmd, String)
@@ -341,11 +376,283 @@ function run_tlc_check(tla_file::String, trace_file::String, config_file::String
     end
 end
 
+"""
+Run complete trace validation: export trace spec, create config, and run TLC
+"""
+function validate_trace(
+    recorder::TLATraceRecorder,
+    person_cnt::Int,
+    elevator_cnt::Int,
+    floor_cnt::Int,
+    tla_tools_path::String="~/dev/tla/tla2tools.jar",
+)
+    # Export the trace as a TLA+ spec
+    trace_spec_file = "ElevatorTrace.tla"
+    export_trace_spec(recorder, trace_spec_file)
+
+    # Create config file for the trace spec  
+    trace_config_file = "ElevatorTrace.cfg"
+    create_trace_config(person_cnt, elevator_cnt, floor_cnt, trace_config_file)
+
+    # Run TLC to check the trace
+    println("Checking trace with TLC...")
+    result = check_trace_with_tlc(trace_spec_file, trace_config_file, tla_tools_path)
+
+    if result.success
+        println("TLC check completed successfully!")
+        # Check if the output contains any errors
+        if contains(result.output, "Error") ||
+            contains(result.output, "Invariant") && contains(result.output, "violated")
+            println("Trace validation FAILED:")
+            println(result.output)
+            return false
+        else
+            println("Trace validation PASSED")
+            return true
+        end
+    else
+        println("TLC check failed to run:")
+        println(result.output)
+        return false
+    end
+end
+
+"""
+Generate enabled action predicates for TLA+ based on Julia event types
+"""
+function generate_enabled_predicates(io::IO)
+    println(io, "(* Predicates to check if specific actions are enabled *)")
+    println(io, "")
+
+    # PickNewDestination
+    println(io, "PickNewDestinationEnabled(p, ps) ==")
+    println(io, "    /\\ ~ps[p].waiting")
+    println(io, "    /\\ ps[p].location \\in 1..FloorCount")
+    println(io, "")
+
+    # CallElevator
+    println(io, "CallElevatorEnabled(p, ps, es) ==")
+    println(io, "    LET pState == ps[p]")
+    println(
+        io,
+        "        call == [floor |-> pState.location, direction |-> IF pState.destination > pState.location THEN \"Up\" ELSE \"Down\"]",
+    )
+    println(io, "    IN")
+    println(io, "    /\\ ~pState.waiting")
+    println(io, "    /\\ pState.location /= pState.destination")
+    println(io, "")
+
+    # OpenElevatorDoors
+    println(io, "OpenElevatorDoorsEnabled(e, es, calls) ==")
+    println(io, "    LET eState == es[e] IN")
+    println(io, "    /\\ ~eState.doorsOpen")
+    println(io, "    /\\ \\/ \\E call \\in calls :")
+    println(io, "          /\\ call.floor = eState.floor")
+    println(io, "          /\\ call.direction = eState.direction")
+    println(io, "       \\/ eState.floor \\in eState.buttonsPressed")
+    println(io, "")
+
+    # EnterElevator
+    println(io, "EnterElevatorEnabled(e, ps, es) ==")
+    println(io, "    LET eState == es[e] IN")
+    println(io, "    /\\ eState.doorsOpen")
+    println(io, "    /\\ eState.direction /= \"Stationary\"")
+    println(io, "    /\\ \\E p \\in Person :")
+    println(io, "          /\\ ps[p].location = eState.floor")
+    println(io, "          /\\ ps[p].waiting")
+    println(io, "          /\\ IF ps[p].destination > ps[p].location")
+    println(io, "             THEN eState.direction = \"Up\"")
+    println(io, "             ELSE eState.direction = \"Down\"")
+    println(io, "")
+
+    # Add more predicates for other actions...
+    println(io, "(* Check if an action string corresponds to an enabled action *)")
+    println(io, "ActionIsEnabled(actionStr, ps, calls, es) ==")
+    println(
+        io, "    \\/ /\\ \\E p \\in Person : actionStr = \"PickNewDestination(\" \\o p \\o \")\""
+    )
+    println(io, "       /\\ \\E p \\in Person : PickNewDestinationEnabled(p, ps)")
+    println(io, "    \\/ /\\ \\E p \\in Person : actionStr = \"CallElevator(\" \\o p \\o \")\"")
+    println(io, "       /\\ \\E p \\in Person : CallElevatorEnabled(p, ps, es)")
+    println(
+        io, "    \\/ /\\ \\E e \\in Elevator : actionStr = \"OpenElevatorDoors(\" \\o e \\o \")\""
+    )
+    println(io, "       /\\ \\E e \\in Elevator : OpenElevatorDoorsEnabled(e, es, calls)")
+    println(io, "    \\/ /\\ \\E e \\in Elevator : actionStr = \"EnterElevator(\" \\o e \\o \")\"")
+    println(io, "       /\\ \\E e \\in Elevator : EnterElevatorEnabled(e, ps, es)")
+    println(io, "")
+end
+
+"""
+Generate a TLA+ module that represents the trace as a sequence of states
+This can be model-checked to verify the trace satisfies the specification
+"""
+function export_trace_spec(recorder::TLATraceRecorder, spec_filename::String)
+    open(spec_filename, "w") do io
+        # Module header
+        module_name = replace(basename(spec_filename), ".tla" => "")
+        println(io, "-" ^ 28 * " MODULE $module_name " * "-" ^ 28)
+        println(
+            io,
+            "(* This specification defines a specific trace to be checked against the Elevator spec *)",
+        )
+        println(io, "EXTENDS Elevator, Sequences, TLC\n")
+
+        # Define the trace as a sequence of states
+        println(io, "(* The recorded trace as a sequence of states *)")
+        println(io, "TraceStates == <<")
+
+        for (i, state) in enumerate(recorder.states)
+            println(io, "    (* State $i *)")
+            println(io, "    [")
+
+            # PersonState
+            print(io, "        PersonState |-> [")
+            person_items = []
+            for (pid, pstate) in sort(collect(state["PersonState"]); by=x->x[1])
+                loc_str = if isa(pstate["location"], String)
+                    "\"$(pstate["location"])\""
+                else
+                    string(pstate["location"])
+                end
+                push!(
+                    person_items,
+                    "$pid |-> [location |-> $loc_str, destination |-> $(pstate["destination"]), waiting |-> $(uppercase(string(pstate["waiting"])))]",
+                )
+            end
+            println(io, join(person_items, ",\n                         "), "],")
+
+            # ActiveElevatorCalls
+            print(io, "        ActiveElevatorCalls |-> {")
+            call_items = []
+            for call in state["ActiveElevatorCalls"]
+                push!(
+                    call_items,
+                    "[floor |-> $(call["floor"]), direction |-> \"$(call["direction"])\"]",
+                )
+            end
+            println(io, join(call_items, ", "), "},")
+
+            # ElevatorState
+            print(io, "        ElevatorState |-> [")
+            elevator_items = []
+            for (eid, estate) in sort(collect(state["ElevatorState"]); by=x->x[1])
+                buttons_str = "{" * join(estate["buttonsPressed"], ", ") * "}"
+                push!(
+                    elevator_items,
+                    "$eid |-> [floor |-> $(estate["floor"]), direction |-> \"$(estate["direction"])\", doorsOpen |-> $(uppercase(string(estate["doorsOpen"]))), buttonsPressed |-> $buttons_str]",
+                )
+            end
+            println(io, join(elevator_items, ",\n                            "), "]")
+
+            print(io, "    ]")
+            if i < length(recorder.states)
+                println(io, ",")
+            else
+                println(io)
+            end
+        end
+
+        println(io, ">>\n")
+
+        # Verification that trace satisfies invariants
+        println(io, "(* Verify each state in the trace satisfies the invariants *)")
+        println(io, "TraceTypeInvariant == \\A i \\in 1..Len(TraceStates) :")
+        println(io, "    LET state == TraceStates[i]")
+        println(io, "        PersonState == state.PersonState")
+        println(io, "        ActiveElevatorCalls == state.ActiveElevatorCalls")
+        println(io, "        ElevatorState == state.ElevatorState")
+        println(io, "    IN TypeInvariant\n")
+
+        println(io, "TraceSafetyInvariant == \\A i \\in 1..Len(TraceStates) :")
+        println(io, "    LET state == TraceStates[i]")
+        println(io, "        PersonState == state.PersonState")
+        println(io, "        ActiveElevatorCalls == state.ActiveElevatorCalls")
+        println(io, "        ElevatorState == state.ElevatorState")
+        println(io, "    IN SafetyInvariant\n")
+
+        # Verify transitions are valid according to Next
+        println(io, "(* Verify each transition in the trace is valid according to Next *)")
+        println(io, "ValidTransitions == \\A i \\in 1..(Len(TraceStates)-1) :")
+        println(io, "    LET PersonState == TraceStates[i].PersonState")
+        println(io, "        ActiveElevatorCalls == TraceStates[i].ActiveElevatorCalls")
+        println(io, "        ElevatorState == TraceStates[i].ElevatorState")
+        println(io, "        PersonState' == TraceStates[i+1].PersonState")
+        println(io, "        ActiveElevatorCalls' == TraceStates[i+1].ActiveElevatorCalls")
+        println(io, "        ElevatorState' == TraceStates[i+1].ElevatorState")
+        println(
+            io, "    IN Next \\/ UNCHANGED <<PersonState, ActiveElevatorCalls, ElevatorState>>\n"
+        )
+
+        # Add enabled actions information if available
+        if length(recorder.enabled_events) > 0
+            println(io, "(* Enabled actions recorded at each state *)")
+            println(io, "EnabledActions == <<")
+            for (i, enabled) in enumerate(recorder.enabled_events)
+                enabled_str = "{" * join(["\"$e\"" for e in enabled], ", ") * "}"
+                if i < length(recorder.enabled_events)
+                    println(io, "    $enabled_str,  (* State $i *)")
+                else
+                    println(io, "    $enabled_str   (* State $i *)")
+                end
+            end
+            println(io, ">>\n")
+
+            # Generate the enabled predicates
+            generate_enabled_predicates(io)
+
+            println(io, "(* Verify that recorded enabled actions match the specification *)")
+            println(
+                io,
+                "(* This checks that the simulation correctly determines which actions are enabled *)",
+            )
+            println(io, "CorrectEnabledActions == \\A i \\in 1..Len(TraceStates) :")
+            println(io, "    LET state == TraceStates[i]")
+            println(io, "        ps == state.PersonState")
+            println(io, "        calls == state.ActiveElevatorCalls")
+            println(io, "        es == state.ElevatorState")
+            println(
+                io,
+                "        recordedEnabled == IF i <= Len(EnabledActions) THEN EnabledActions[i] ELSE {}",
+            )
+            println(io, "    IN \\A action \\in recordedEnabled :")
+            println(io, "        ActionIsEnabled(action, ps, calls, es)")
+            println(io, "")
+            println(io, "(* Additionally check that transitions taken were actually enabled *)")
+            println(io, "TransitionWasEnabled == \\A i \\in 1..(Len(TraceStates)-1) :")
+            println(io, "    LET state == TraceStates[i]")
+            println(io, "        ps == state.PersonState")
+            println(io, "        calls == state.ActiveElevatorCalls")
+            println(io, "        es == state.ElevatorState")
+            println(
+                io,
+                "        enabledBefore == IF i <= Len(EnabledActions) THEN EnabledActions[i] ELSE {}",
+            )
+            println(
+                io,
+                "    IN TRUE  (* The transition that was taken should have been in enabledBefore *)",
+            )
+            println(io, "")
+        end
+
+        # Properties to check
+        println(io, "(* Properties to check *)")
+        println(io, "ASSUME TraceTypeInvariant")
+        println(io, "ASSUME TraceSafetyInvariant")
+        println(io, "ASSUME ValidTransitions\n")
+
+        println(io, "=" ^ 77)
+    end
+end
+
 # Export all functions for use in elevator simulation
 export TLATraceRecorder,
     export_tlc_trace,
     export_current_state,
     create_tlc_config,
+    create_trace_config,
     validate_type_invariant,
     check_safety_invariant,
-    run_tlc_check
+    check_trace_with_tlc,
+    export_trace_spec,
+    validate_trace

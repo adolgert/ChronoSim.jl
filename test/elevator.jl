@@ -749,8 +749,13 @@ function run_with_trace()
         return when > minutes
     end
     ChronoSim.run(sim, init_physical, stop_condition)
-    export_tla_trace(tla_recorder, "Elevator_trace.txt")
+    export_tlc_trace(tla_recorder, "Elevator_trace.txt")
+    export_trace_spec(tla_recorder, "ElevatorTrace.tla")
     create_tlc_config(person_cnt, elevator_cnt, floor_cnt, "Elevator.cfg")
+
+    # Validate the trace with TLC
+    println("\nValidating trace with TLC...")
+    validate_trace(tla_recorder, person_cnt, elevator_cnt, floor_cnt)
 end
 
 end
