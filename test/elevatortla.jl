@@ -71,9 +71,11 @@ function convert_person_state(persons::ObservedVector{Person})
     result = Dict{String,Any}()
     for (idx, person) in enumerate(persons)
         # In TLA+, location is either a floor number or elevator identifier
-        location = if person.location > 0
+        # New structure: on floor if location > 0 && elevator == 0
+        #                in elevator if location == 0 && elevator > 0
+        location = if person.location > 0 && person.elevator == 0
             person.location  # On a floor
-        elseif person.elevator > 0
+        elseif person.location == 0 && person.elevator > 0
             "e$(person.elevator)"  # In elevator
         else
             error(
