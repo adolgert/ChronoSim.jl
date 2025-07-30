@@ -25,14 +25,15 @@ mutable struct TLATraceRecorder
     states::Vector{Dict{String,Any}}
     transitions::Vector{Dict{String,Any}}
     enabled_events::Vector{Vector{String}}
-
-    TLATraceRecorder() = new([], [], [])
+    export_every_state::Bool
+    sim::ChronoSim.SimulationFSM
+    TLATraceRecorder() = new([], [], [], false)
 end
 
 """
 Observer function that records simulation states for TLA+ validation
 """
-function (recorder::TLATraceRecorder)(sim, physical, when, event, changed_places)
+function (recorder::TLATraceRecorder)(physical, when, event, changed_places)
     # Convert current state to TLA+ format
     tla_state = Dict(
         "PersonState" => convert_person_state(physical.person),
@@ -54,9 +55,13 @@ function (recorder::TLATraceRecorder)(sim, physical, when, event, changed_places
     end
 
     # Record currently enabled events
-    enabled = get_enabled_events(sim)
+    enabled = get_enabled_events(recorder.sim)
     enabled_names = [format_action(e) for e in enabled]
     push!(recorder.enabled_events, enabled_names)
+
+    if recorder.export_every_state
+        export_current_state(recorder.sim, physical, "Elevator_state$(length(recorder.states)).txt")
+    end
 end
 
 """
@@ -115,7 +120,7 @@ function convert_elevator_state(elevators::ObservedVector{Elevator})
         result["e$idx"] = Dict(
             "floor" => elevator.floor,
             "direction" => direction_str,
-            "doorsOpen" => elevator.doorsOpen,
+            "doorsOpen" => elevator.doors_open,
             "buttonsPressed" => collect(elevator.buttons_pressed),
         )
     end

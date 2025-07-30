@@ -8,3 +8,10 @@ include("elevator.jl")
         ElevatorExample.run_elevator()
     end
 end
+
+@testset "Elevator tlaplus" begin
+    using .ElevatorExample
+    with_logger(ConsoleLogger(stderr, Logging.Info)) do
+        ElevatorExample.run_with_trace()
+    end
+end

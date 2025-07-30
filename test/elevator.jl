@@ -674,7 +674,7 @@ end
 
 function (te::TrajectorySave)(physical, when, event, changed_places)
     @info "Firing $event at $when"
-    push!(te.trajectory, TrajectoryEntry(clock_key(event), when))
+    # push!(te.trajectory, TrajectoryEntry(clock_key(event), when))
     println(physical)
     err_str = vcat(validate_type_invariant(physical), check_safety_invariant(physical))
     if !isempty(err_str)
@@ -687,7 +687,7 @@ function run_elevator()
     person_cnt = 10
     elevator_cnt = 3
     floor_cnt = 10
-    minutes = 120.0
+    minutes = π * 1e7
     ClockKey=Tuple
     Sampler = CombinedNextReaction{ClockKey,Float64}
     physical = ElevatorSystem(person_cnt, elevator_cnt, floor_cnt)
@@ -713,14 +713,15 @@ function run_elevator()
         return when > minutes
     end
     ChronoSim.run(sim, init_physical, stop_condition)
+    println("Simulation ended at $(sim.when) minutes.")
 end
 
 include("elevatortla.jl")
 
 function run_with_trace()
-    person_cnt = 10
-    elevator_cnt = 3
-    floor_cnt = 10
+    person_cnt = 3
+    elevator_cnt = 2
+    floor_cnt = 5
     minutes = 120.0
     ClockKey=Tuple
     Sampler = CombinedNextReaction{ClockKey,Float64}
@@ -737,13 +738,19 @@ function run_with_trace()
         DispatchElevator,
     ]
     @assert length(included_transitions) == 9
-    sim = SimulationFSM(physical, Sampler(), included_transitions; rng=Xoshiro(93472934))
+    tla_recorder = TLATraceRecorder()
+    sim = SimulationFSM(
+        physical, Sampler(), included_transitions; rng=Xoshiro(93472934), observer=tla_recorder
+    )
+    tla_recorder.sim = sim
     # Stop-condition is called after the next event is chosen but before the
     # next event is fired. This way you can stop at an end time between events.
     stop_condition = function (physical, step_idx, event, when)
         return when > minutes
     end
     ChronoSim.run(sim, init_physical, stop_condition)
+    export_tla_trace(tla_recorder, "Elevator_trace.txt")
+    create_tlc_config(person_cnt, elevator_cnt, floor_cnt, "Elevator.cfg")
 end
 
 end
