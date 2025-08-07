@@ -684,10 +684,10 @@ end
 
 
 function run_elevator()
-    person_cnt = 10
-    elevator_cnt = 3
-    floor_cnt = 10
-    minutes = π * 1e7
+    person_cnt = 1
+    elevator_cnt = 1
+    floor_cnt = 3
+    minutes = 10.0
     ClockKey=Tuple
     Sampler = CombinedNextReaction{ClockKey,Float64}
     physical = ElevatorSystem(person_cnt, elevator_cnt, floor_cnt)
@@ -714,6 +714,7 @@ function run_elevator()
     end
     ChronoSim.run(sim, init_physical, stop_condition)
     println("Simulation ended at $(sim.when) minutes.")
+    return sim.when
 end
 
 include("elevatortla.jl")
@@ -756,6 +757,7 @@ function run_with_trace()
     # Validate the trace with TLC
     println("\nValidating trace with TLC...")
     validate_trace(tla_recorder, person_cnt, elevator_cnt, floor_cnt)
+    return sim.when
 end
 
 end

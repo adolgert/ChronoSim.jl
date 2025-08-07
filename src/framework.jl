@@ -295,4 +295,5 @@ function run(sim::SimulationFSM, initializer, stop_condition)
         end
         step_idx += 1
     end
+    step_idx
 end
