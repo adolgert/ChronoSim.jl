@@ -134,6 +134,7 @@ function people_waiting(people, floor, dirn)
     for pidx in eachindex(people)
         p = people[pidx]
         if p.location == floor && p.waiting && get_direction(p.location, p.destination) == dirn
+            @show ("people_waiting", p.location, p.waiting, floor, dirn)
             push!(waiters, pidx)
         end
     end
@@ -470,11 +471,6 @@ end
 function precondition(evt::CloseElevatorDoors, system)
     elevator = system.elevator[evt.elevator_idx]
 
-    # Doors must be open
-    if !elevator.doors_open
-        return false
-    end
-
     # No one can enter or exit
     # Check no one waiting at this floor can board
     person_needs_to_board = false
@@ -496,8 +492,8 @@ function precondition(evt::CloseElevatorDoors, system)
         end
     end
 
-    enabled_enter = !precondition(EnterElevator(evt.elevator_idx), system)
-    enabled_exit = !precondition(ExitElevator(evt.elevator_idx), system)
+    enabled_enter = precondition(EnterElevator(evt.elevator_idx), system)
+    enabled_exit = precondition(ExitElevator(evt.elevator_idx), system)
 
     return elevator.doors_open &&
            !(person_needs_to_board || person_needs_to_exit) &&
