@@ -86,7 +86,7 @@ function Base.show(io::IO, system::ElevatorSystem)
         if person.location > 0
             push!(state[person.location].floor_people, pidx)
         else
-            push!(state[person.location].elevator_people, pidx)
+            push!(state[person.elevator].elevator_people, pidx)
         end
     end
     for eidx in eachindex(system.elevator)
@@ -383,6 +383,7 @@ function fire!(evt::EnterElevator, system, when, rng)
     elevator = system.elevator[evt.elevator_idx]
 
     # Find all people who can enter
+    entered_cnt = 0
     for pidx in 1:length(system.person)
         person = system.person[pidx]
         if person.location == elevator.floor && person.waiting
@@ -393,11 +394,14 @@ function fire!(evt::EnterElevator, system, when, rng)
                 person.elevator = evt.elevator_idx
                 person.waiting = false
 
-                # Add destination to buttons pressed
+                # If we pushed the destination to buttons_pressed it wouldn't show
+                # up as a changed Place in the Petri net.
                 elevator.buttons_pressed = union(elevator.buttons_pressed, person.destination)
+                entered_cnt += 1
             end
         end
     end
+    @assert entered_cnt > 0
 end
 
 
@@ -537,7 +541,8 @@ function precondition(evt::MoveElevator, system)
     #             /\ e /= e2
     #             /\ CanServiceCall[e2, call]
     other_calls_serviced = true
-    for (floor, direction) in keys(system.calls)
+    for ((floor, direction), call) in system.calls
+        call.requested || continue  # skip inactive calls
         if can_service_call(elevator, floor, direction)
             another_can_service = false
             for other_elev in eachindex(system.elevator)
@@ -648,7 +653,8 @@ function fire!(evt::DispatchElevator, system, when, rng)
     elevator = system.elevator[close_elev]
     if elevator.direction == Stationary
         elevator.direction = get_direction(elevator.floor, evt.floor)
-        # else don't change the direction when this fires.
+        elevator.floor = evt.floor
+        # Doors will open via OpenElevatorDoors event reacting to floor change.
     end
 end
 
