@@ -134,7 +134,6 @@ function people_waiting(people, floor, dirn)
     for pidx in eachindex(people)
         p = people[pidx]
         if p.location == floor && p.waiting && get_direction(p.location, p.destination) == dirn
-            @show ("people_waiting", p.location, p.waiting, floor, dirn)
             push!(waiters, pidx)
         end
     end
@@ -262,6 +261,7 @@ end
 
 function precondition(evt::PickNewDestination, system)
     person = system.person[evt.person]
+    @show ("PickNewDestination", !person.waiting && person.location != 0)
     return !person.waiting && person.location != 0
 end
 
