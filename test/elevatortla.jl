@@ -259,9 +259,10 @@ end
 Run TLC to check the trace specification
 """
 function check_trace_with_tlc(
-    trace_spec::String, config_file::String, tla_tools_path::String="~/dev/tla/tla2tools.jar"
+    trace_spec::String, config_file::String, tla_tools_path::String="~/dev/tla"
 )
-    cmd = `java -cp $tla_tools_path tlc2.TLC -config $config_file $trace_spec`
+    tla_tools_path = joinpath(expanduser(tla_tools_path), "tla2tools.jar")
+    cmd = `java -XX:+UseParallelGC -jar $tla_tools_path -config $config_file $trace_spec`
 
     try
         result = read(cmd, String)
@@ -279,8 +280,9 @@ function validate_trace(
     person_cnt::Int,
     elevator_cnt::Int,
     floor_cnt::Int,
-    tla_tools_path::String="~/dev/tla/tla2tools.jar",
+    tla_tools_path::String="~/dev/tla",
 )
+    tla_tools_path = expanduser(tla_tools_path)
     # Export the trace as a TLA+ spec
     trace_spec_file = "ElevatorTrace.tla"
     export_trace_spec(recorder, trace_spec_file)
@@ -315,13 +317,15 @@ end
 """
 Generate a single enabled predicate for a given action type
 """
-generate_single_predicate(io::IO, name::String, params::String, body::String) = println(
-    io,
-    """
-$name($params) ==
-$body
-""",
-)
+function generate_single_predicate(io::IO, name::String, params::String, body::String)
+    println(
+        io,
+        """
+    $name($params) ==
+    $body
+    """,
+    )
+end
 
 """
 Generate enabled action predicates for TLA+ based on Julia event types

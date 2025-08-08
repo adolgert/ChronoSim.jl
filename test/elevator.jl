@@ -261,7 +261,7 @@ end
 
 function precondition(evt::PickNewDestination, system)
     person = system.person[evt.person]
-    @show ("PickNewDestination", !person.waiting && person.location != 0)
+    @show ("PickNewDestination", person.waiting, person.location)
     return !person.waiting && person.location != 0
 end
 
@@ -313,6 +313,9 @@ end
 
 @conditionsfor OpenElevatorDoors begin
     @reactto changed(elevator[elidx].floor) do system
+        generate(OpenElevatorDoors(elidx))
+    end
+    @reactto changed(elevator[elidx].direction) do system
         generate(OpenElevatorDoors(elidx))
     end
     @reactto changed(elevator[elidx].buttons_pressed) do system
@@ -524,6 +527,13 @@ end
     @reactto changed(elevator[elidx].floor) do system
         generate(MoveElevator(elidx))
     end
+    @reactto changed(calls[callkey].requested) do system
+        # When a call appears, make sure movement keeps progressing so that
+        # a single elevator can eventually reach a stationary/approaching state.
+        for elidx in 1:length(system.elevator)
+            generate(MoveElevator(elidx))
+        end
+    end
 end
 
 function precondition(evt::MoveElevator, system)
@@ -622,6 +632,7 @@ function precondition(evt::DispatchElevator, system)
         (elevator.floor == evt.floor || get_direction(elevator.floor, evt.floor) == evt.direction)
         for elevator in system.elevator
     )
+    @show (call_active, any_stationary, any_approaching)
     return call_active && (any_stationary || any_approaching)
 end
 
@@ -648,7 +659,9 @@ function fire!(evt::DispatchElevator, system, when, rng)
     @assert close_elev > 0
     elevator = system.elevator[close_elev]
     if elevator.direction == Stationary
-        elevator.direction = get_direction(elevator.floor, evt.floor)
+        # Set to the call's direction per TLA spec, not computed from current floor,
+        # to handle the case where the elevator is already at the call floor.
+        elevator.direction = evt.direction
         elevator.floor = evt.floor
         # Doors will open via OpenElevatorDoors event reacting to floor change.
     end
@@ -669,13 +682,15 @@ struct TrajectoryEntry
     when::Float64
 end
 
-struct TrajectorySave
+mutable struct TrajectorySave
     trajectory::Vector{TrajectoryEntry}
+    sim::SimulationFSM
     TrajectorySave() = new(Vector{TrajectoryEntry}())
 end
 
 function (te::TrajectorySave)(physical, when, event, changed_places)
     @info "Firing $event at $when"
+    @info "Enabled events $(keys(te.sim.enabled_events))"
     # push!(te.trajectory, TrajectoryEntry(clock_key(event), when))
     println(physical)
     err_str = vcat(validate_type_invariant(physical), check_safety_invariant(physical))
@@ -689,7 +704,7 @@ function run_elevator()
     person_cnt = 1
     elevator_cnt = 1
     floor_cnt = 3
-    minutes = 10.0
+    minutes = 120.0
     ClockKey=Tuple
     Sampler = CombinedNextReaction{ClockKey,Float64}
     physical = ElevatorSystem(person_cnt, elevator_cnt, floor_cnt)
@@ -709,6 +724,7 @@ function run_elevator()
     sim = SimulationFSM(
         physical, Sampler(), included_transitions; rng=Xoshiro(93472934), observer=trajectory
     )
+    trajectory.sim = sim
     # Stop-condition is called after the next event is chosen but before the
     # next event is fired. This way you can stop at an end time between events.
     stop_condition = function (physical, step_idx, event, when)
