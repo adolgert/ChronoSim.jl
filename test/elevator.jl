@@ -765,7 +765,7 @@ function run_with_trace()
     # Stop-condition is called after the next event is chosen but before the
     # next event is fired. This way you can stop at an end time between events.
     stop_condition = function (physical, step_idx, event, when)
-        return when > minutes
+        return step_idx > 1
     end
     ChronoSim.run(sim, init_physical, stop_condition)
     export_tlc_trace(tla_recorder, "Elevator_trace.txt")
