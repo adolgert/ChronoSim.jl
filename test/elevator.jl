@@ -1,3 +1,17 @@
+# This implements a set of elevators and people interacting.
+# The spec comes from https://github.com/tlaplus/Examples which has
+# elevator.tla, the MODULE Elevator.
+#
+# Run the .tla with `java -jar tla2tools.jar -config Elevator.cfg Elevator.tla`.
+#
+# Contents
+#   1. Define physical state of the system.
+#   2. Helper functions that compute on that physical state.
+#   3. Validations of the physical state.
+#   4. All 9 event types.
+#   5. Initialization and observation of the simulation.
+#   6. Running the simulation.
+#
 module ElevatorExample
 using CompetingClocks
 using Distributions
@@ -56,6 +70,57 @@ function ElevatorSystem(person_cnt::Int64, elevator_cnt::Int64, floor_cnt::Int64
     ElevatorSystem(persons, calls, elevators, floor_cnt)
 end
 
+mutable struct ShowFloor
+    elevators::Vector{Int64}
+    elevator_people::Vector{Int64}
+    floor_people::Vector{Int64}
+end
+
+function Base.show(io::IO, system::ElevatorSystem)
+    state = Vector{ShowFloor}(undef, system.floor_cnt)
+    for floor in 1:system.floor_cnt
+        state[floor] = ShowFloor(Vector{Int64}(), Vector{Int64}(), Vector{Int64}())
+    end
+    for pidx in eachindex(system.person)
+        person = system.person[pidx]
+        if person.location > 0
+            push!(state[person.location].floor_people, pidx)
+        else
+            push!(state[person.elevator].elevator_people, pidx)
+        end
+    end
+    for eidx in eachindex(system.elevator)
+        push!(state[system.elevator[eidx].floor].elevators, eidx)
+    end
+    for flidx in system.floor_cnt:-1:1
+        print(io, "Floor $flidx: ")
+        for elidx in state[flidx].elevators
+            eldir = system.elevator[elidx].direction
+            print(io, "e$elidx-$(string(eldir)) ")
+        end
+        isup = system.calls[(flidx, Up)].requested
+        isup && print(io, "↑ ")
+        isdown = system.calls[(flidx, Down)].requested
+        isdown && print(io, "↓ ")
+        for epidx in state[flidx].elevator_people
+            on_elev = system.person[epidx].elevator
+            print(io, "$epidx-$(on_elev) ")
+        end
+        for epidx in state[flidx].floor_people
+            who = system.person[epidx]
+            whodirn = if who.waiting
+                who.destination > who.location ? "↑" : "↓"
+            else
+                ""
+            end
+            print(io, "$epidx$(whodirn) ")
+        end
+        println(io)
+    end
+end
+
+
+######## Helper functions
 
 get_distance(floor1, floor2) = abs(floor1 - floor2)
 get_direction(current, destination) = destination > current ? Up : Down
@@ -75,6 +140,113 @@ function people_waiting(people, floor, dirn)
     return waiters
 end
 
+################ Validators
+
+"""
+Validate that Julia state matches TLA+ type invariants
+"""
+function validate_type_invariant(physical::ElevatorSystem)
+    errors = String[]
+
+    # Check PersonState types
+    for (i, person) in enumerate(physical.person)
+        # Check mutually exclusive location/elevator constraint
+        if !(
+            (person.location > 0 && person.elevator == 0) ||
+            (person.location == 0 && person.elevator > 0)
+        )
+            push!(
+                errors,
+                "Person $i has invalid state: location=$(person.location), elevator=$(person.elevator)",
+            )
+        end
+        if person.destination < 1 || person.destination > physical.floor_cnt
+            push!(errors, "Person $i has invalid destination $(person.destination)")
+        end
+        if person.elevator > length(physical.elevator)
+            push!(errors, "Person $i in non-existent elevator $(person.elevator)")
+        end
+    end
+
+    # Check ElevatorState types
+    for (i, elevator) in enumerate(physical.elevator)
+        if elevator.floor < 1 || elevator.floor > physical.floor_cnt
+            push!(errors, "Elevator $i has invalid floor $(elevator.floor)")
+        end
+        for button in elevator.buttons_pressed
+            if button < 1 || button > physical.floor_cnt
+                push!(errors, "Elevator $i has invalid button pressed: $button")
+            end
+        end
+    end
+
+    return errors
+end
+
+"""
+Check safety invariants from TLA+ spec
+"""
+function check_safety_invariant(physical::ElevatorSystem)
+    violations = String[]
+
+    # Check: elevator has button pressed only if person going to that floor
+    for (eidx, elevator) in enumerate(physical.elevator)
+        for floor_button in elevator.buttons_pressed
+            found_person = false
+            for person in physical.person
+                if person.elevator == eidx && person.destination == floor_button
+                    found_person = true
+                    break
+                end
+            end
+            if !found_person
+                push!(
+                    violations,
+                    "Elevator $eidx has button $floor_button pressed but no passenger going there",
+                )
+            end
+        end
+    end
+
+    # Check: person in elevator only if elevator moving toward destination
+    for (pidx, person) in enumerate(physical.person)
+        if person.elevator > 0  # In elevator
+            elevator = physical.elevator[person.elevator]
+            if elevator.floor != person.destination
+                expected_dir = person.destination > elevator.floor ? Up : Down
+                if elevator.direction != expected_dir && elevator.direction != Stationary
+                    push!(
+                        violations,
+                        "Person $pidx in elevator $(person.elevator) going wrong direction",
+                    )
+                end
+            end
+        end
+    end
+
+    # Check: no ghost calls
+    for ((flidx, direction), active_call) in physical.calls
+        if active_call.requested
+            found_waiting = false
+            for person in physical.person
+                if person.location == flidx && person.waiting
+                    person_dir = person.destination > person.location ? Up : Down
+                    if person_dir == direction
+                        found_waiting = true
+                        break
+                    end
+                end
+            end
+            if !found_waiting
+                push!(violations, "Ghost call at floor $flidx direction $(string(direction))")
+            end
+        end
+    end
+
+    return violations
+end
+
+################# Events follow
 
 struct PickNewDestination <: SimEvent
     person::Int64
@@ -89,13 +261,14 @@ end
 
 function precondition(evt::PickNewDestination, system)
     person = system.person[evt.person]
-    @debug "PickNewDestination $(person.waiting) $(person.location)"
+    @show ("PickNewDestination", person.waiting, person.location)
     return !person.waiting && person.location != 0
 end
 
 enable(evt::PickNewDestination, system, when) = (Exponential(1.0), when)
 
 function fire!(evt::PickNewDestination, system, when, rng)
+    who = system.person[evt.person]
     dests = Set(collect(1:system.floor_cnt))
     delete!(dests, system.person[evt.person].location)
     system.person[evt.person].destination = rand(rng, dests)
@@ -130,41 +303,49 @@ function fire!(evt::CallElevator, system, when, rng)
     if !any_open
         system.calls[(person.location, direction)].requested = true
     end
+    @assert system.person[evt.person].waiting
 end
 
 
-struct OpenElevatorDoor <: SimEvent
+struct OpenElevatorDoors <: SimEvent
     elevator_idx::Int64
 end
 
-@conditionsfor OpenElevatorDoor begin
+@conditionsfor OpenElevatorDoors begin
     @reactto changed(elevator[elidx].floor) do system
-        generate(OpenElevatorDoor(elidx))
+        generate(OpenElevatorDoors(elidx))
+    end
+    @reactto changed(elevator[elidx].direction) do system
+        generate(OpenElevatorDoors(elidx))
     end
     @reactto changed(elevator[elidx].buttons_pressed) do system
-        generate(OpenElevatorDoor(elidx))
+        generate(OpenElevatorDoors(elidx))
     end
     @reactto changed(calls[callkey].requested) do system
         # Check all elevators when a new call is made
         for elidx in 1:length(system.elevator)
-            generate(OpenElevatorDoor(elidx))
+            generate(OpenElevatorDoors(elidx))
         end
     end
 end
 
-function precondition(evt::OpenElevatorDoor, system)
+function precondition(evt::OpenElevatorDoors, system)
     elevator = system.elevator[evt.elevator_idx]
-    elevator.doors_open && return false
 
-    call_exists = system.calls[(elevator.floor, elevator.direction)].requested
+    # This is a faster way to say there exists a call this elevator can service,
+    # which means there is a call in the same direction as the elevator on the
+    # same floor as the elevator.
+    call_exists =
+        elevator.direction != Stationary &&
+        system.calls[(elevator.floor, elevator.direction)].requested
     button_pressed = elevator.floor ∈ elevator.buttons_pressed
 
-    return call_exists || button_pressed
+    return !elevator.doors_open && (call_exists || button_pressed)
 end
 
-enable(evt::OpenElevatorDoor, system, when) = (Exponential(1.0), when)
+enable(evt::OpenElevatorDoors, system, when) = (Exponential(1.0), when)
 
-function fire!(evt::OpenElevatorDoor, system, when, rng)
+function fire!(evt::OpenElevatorDoors, system, when, rng)
     elevator = system.elevator[evt.elevator_idx]
     elevator.doors_open = true
 
@@ -206,6 +387,7 @@ function fire!(evt::EnterElevator, system, when, rng)
     elevator = system.elevator[evt.elevator_idx]
 
     # Find all people who can enter
+    entered_cnt = 0
     for pidx in 1:length(system.person)
         person = system.person[pidx]
         if person.location == elevator.floor && person.waiting
@@ -216,11 +398,14 @@ function fire!(evt::EnterElevator, system, when, rng)
                 person.elevator = evt.elevator_idx
                 person.waiting = false
 
-                # Add destination to buttons pressed
-                elevator.buttons_pressed = union(elevator.buttons_presed, person.destination)
+                # If we pushed the destination to buttons_pressed it wouldn't show
+                # up as a changed Place in the Petri net.
+                elevator.buttons_pressed = union(elevator.buttons_pressed, person.destination)
+                entered_cnt += 1
             end
         end
     end
+    @assert entered_cnt > 0
 end
 
 
@@ -289,11 +474,6 @@ end
 function precondition(evt::CloseElevatorDoors, system)
     elevator = system.elevator[evt.elevator_idx]
 
-    # Doors must be open
-    if !elevator.doors_open
-        return false
-    end
-
     # No one can enter or exit
     # Check no one waiting at this floor can board
     person_needs_to_board = false
@@ -315,8 +495,8 @@ function precondition(evt::CloseElevatorDoors, system)
         end
     end
 
-    enabled_enter = !precondition(EnterElevator(evt.elevator_idx), system)
-    enabled_exit = !precondition(ExitElevator(evt.elevator_idx), system)
+    enabled_enter = precondition(EnterElevator(evt.elevator_idx), system)
+    enabled_exit = precondition(ExitElevator(evt.elevator_idx), system)
 
     return elevator.doors_open &&
            !(person_needs_to_board || person_needs_to_exit) &&
@@ -347,6 +527,13 @@ end
     @reactto changed(elevator[elidx].floor) do system
         generate(MoveElevator(elidx))
     end
+    @reactto changed(calls[callkey].requested) do system
+        # When a call appears, make sure movement keeps progressing so that
+        # a single elevator can eventually reach a stationary/approaching state.
+        for elidx in 1:length(system.elevator)
+            generate(MoveElevator(elidx))
+        end
+    end
 end
 
 function precondition(evt::MoveElevator, system)
@@ -359,8 +546,9 @@ function precondition(evt::MoveElevator, system)
     #         /\ \E e2 \in Elevator :
     #             /\ e /= e2
     #             /\ CanServiceCall[e2, call]
-    for (floor, direction) in keys(system.calls)
-        other_calls_serviced = true
+    other_calls_serviced = true
+    for ((floor, direction), call) in system.calls
+        call.requested || continue  # skip inactive calls
         if can_service_call(elevator, floor, direction)
             another_can_service = false
             for other_elev in eachindex(system.elevator)
@@ -402,7 +590,7 @@ function precondition(evt::StopElevator, system)
     next_floor_valid = 1 <= next_floor <= system.floor_cnt
     return !elevator.doors_open &&
            !next_floor_valid &&
-           !precondition(OpenElevatorDoor(evt.elevator_idx), system)
+           !precondition(OpenElevatorDoors(evt.elevator_idx), system)
 end
 
 enable(evt::StopElevator, system, when) = (Exponential(1.0), when)
@@ -437,13 +625,14 @@ end
 
 function precondition(evt::DispatchElevator, system)
     # Call must exist and be active
-    call_active = system.calls[(evt.floor, evt.direction)]
+    call_active = system.calls[(evt.floor, evt.direction)].requested
     any_stationary = any(elevator.direction == Stationary for elevator in system.elevator)
     any_approaching = any(
         elevator.direction == evt.direction &&
         (elevator.floor == evt.floor || get_direction(elevator.floor, evt.floor) == evt.direction)
         for elevator in system.elevator
     )
+    @show (call_active, any_stationary, any_approaching)
     return call_active && (any_stationary || any_approaching)
 end
 
@@ -468,8 +657,13 @@ function fire!(evt::DispatchElevator, system, when, rng)
         end
     end
     @assert close_elev > 0
-    if system.elevator[close_elev].direction == Stationary
-        system.elevator[close_elev].direction = get_direction(elevator.floor, evt.floor)
+    elevator = system.elevator[close_elev]
+    if elevator.direction == Stationary
+        # Set to the call's direction per TLA spec, not computed from current floor,
+        # to handle the case where the elevator is already at the call floor.
+        elevator.direction = evt.direction
+        elevator.floor = evt.floor
+        # Doors will open via OpenElevatorDoors event reacting to floor change.
     end
 end
 
@@ -488,21 +682,28 @@ struct TrajectoryEntry
     when::Float64
 end
 
-struct TrajectorySave
+mutable struct TrajectorySave
     trajectory::Vector{TrajectoryEntry}
+    sim::SimulationFSM
     TrajectorySave() = new(Vector{TrajectoryEntry}())
 end
 
-function observe(te::TrajectoryEntry, physical, when, event, changed_places)
-    @debug "Firing $event at $when"
-    push!(te.trajectory, TrajectoryEntry(clock_key(event), when))
+function (te::TrajectorySave)(physical, when, event, changed_places)
+    @info "Firing $event at $when"
+    @info "Enabled events $(keys(te.sim.enabled_events))"
+    # push!(te.trajectory, TrajectoryEntry(clock_key(event), when))
+    println(physical)
+    err_str = vcat(validate_type_invariant(physical), check_safety_invariant(physical))
+    if !isempty(err_str)
+        error(join(err_str, "\n"))
+    end
 end
 
 
 function run_elevator()
-    person_cnt = 10
-    elevator_cnt = 3
-    floor_cnt = 10
+    person_cnt = 1
+    elevator_cnt = 1
+    floor_cnt = 3
     minutes = 120.0
     ClockKey=Tuple
     Sampler = CombinedNextReaction{ClockKey,Float64}
@@ -510,7 +711,7 @@ function run_elevator()
     included_transitions = [
         PickNewDestination,
         CallElevator,
-        OpenElevatorDoor,
+        OpenElevatorDoors,
         EnterElevator,
         ExitElevator,
         CloseElevatorDoors,
@@ -519,15 +720,58 @@ function run_elevator()
         DispatchElevator,
     ]
     @assert length(included_transitions) == 9
-    sim = SimulationFSM(physical, Sampler(), included_transitions; rng=Xoshiro(93472934))
+    trajectory = TrajectorySave()
+    sim = SimulationFSM(
+        physical, Sampler(), included_transitions; rng=Xoshiro(93472934), observer=trajectory
+    )
+    trajectory.sim = sim
     # Stop-condition is called after the next event is chosen but before the
     # next event is fired. This way you can stop at an end time between events.
     stop_condition = function (physical, step_idx, event, when)
         return when > minutes
     end
     ChronoSim.run(sim, init_physical, stop_condition)
+    println("Simulation ended at $(sim.when) minutes.")
+    return sim.when
 end
 
-# include("elevatortla.jl")
+include("elevatortla.jl")
+
+function run_with_trace()
+    person_cnt = 3
+    elevator_cnt = 2
+    floor_cnt = 5
+    minutes = 120.0
+    ClockKey=Tuple
+    Sampler = CombinedNextReaction{ClockKey,Float64}
+    physical = ElevatorSystem(person_cnt, elevator_cnt, floor_cnt)
+    included_transitions = [
+        PickNewDestination,
+        CallElevator,
+        OpenElevatorDoors,
+        EnterElevator,
+        ExitElevator,
+        CloseElevatorDoors,
+        MoveElevator,
+        StopElevator,
+        DispatchElevator,
+    ]
+    @assert length(included_transitions) == 9
+    tla_recorder = TLATraceRecorder()
+    sim = SimulationFSM(
+        physical, Sampler(), included_transitions; rng=Xoshiro(93472934), observer=tla_recorder
+    )
+    tla_recorder.sim = sim
+    # Stop-condition is called after the next event is chosen but before the
+    # next event is fired. This way you can stop at an end time between events.
+    stop_condition = function (physical, step_idx, event, when)
+        return step_idx > 1
+    end
+    ChronoSim.run(sim, init_physical, stop_condition)
+    # Validate the trace with TLC
+    println("\nValidating trace with TLC...")
+    validate_trace(tla_recorder, person_cnt, elevator_cnt, floor_cnt)
+    return sim.when
+end
 
 end

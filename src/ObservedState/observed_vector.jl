@@ -25,7 +25,8 @@ Base.size(v::ObservedArray) = size(v.arr)
 Base.size(v::ObservedArray, n) = size(v.arr, n)
 Base.length(v::ObservedArray) = length(v.arr)
 Base.eachindex(v::ObservedArray) = eachindex(v.arr)
-Base.iterate(v::ObservedArray) = iterate(v.arr)
+Base.iterate(v::ObservedArray) = isempty(v) ? nothing : (v[1], 2)
+Base.iterate(v::ObservedArray, state) = state > length(v) ? nothing : (v[state], state + 1)
 Base.axes(v::ObservedArray) = axes(v.arr)
 
 function Base.getindex(v::ObservedArray{T,1}, i::Int) where {T}
