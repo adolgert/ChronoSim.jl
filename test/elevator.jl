@@ -261,7 +261,6 @@ end
 
 function precondition(evt::PickNewDestination, system)
     person = system.person[evt.person]
-    @show ("PickNewDestination", person.waiting, person.location)
     return !person.waiting && person.location != 0
 end
 
@@ -582,15 +581,17 @@ end
     @reactto changed(elevator[elidx].floor) do system
         generate(StopElevator(elidx))
     end
+    @reactto changed(elevator[elidx].doors_open) do system
+        generate(StopElevator(elidx))
+    end
 end
 
 function precondition(evt::StopElevator, system)
     elevator = system.elevator[evt.elevator_idx]
     next_floor = elevator.direction == Up ? elevator.floor + 1 : elevator.floor - 1
     next_floor_valid = 1 <= next_floor <= system.floor_cnt
-    return !elevator.doors_open &&
-           !next_floor_valid &&
-           !precondition(OpenElevatorDoors(evt.elevator_idx), system)
+    doors_will_open = precondition(OpenElevatorDoors(evt.elevator_idx), system)
+    return !elevator.doors_open && !next_floor_valid && !doors_will_open
 end
 
 enable(evt::StopElevator, system, when) = (Exponential(1.0), when)
@@ -632,7 +633,6 @@ function precondition(evt::DispatchElevator, system)
         (elevator.floor == evt.floor || get_direction(elevator.floor, evt.floor) == evt.direction)
         for elevator in system.elevator
     )
-    @show (call_active, any_stationary, any_approaching)
     return call_active && (any_stationary || any_approaching)
 end
 
