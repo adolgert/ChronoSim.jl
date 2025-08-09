@@ -1,21 +1,32 @@
 # Plan
- 
-## Current Features
+
+## Current Capabilities
+
+### Features
  
 1. Rule-based events
 1. Sampling methods
 1. Dirac delta function times (for ODEs)
-1. Deterministic
-   * Ferret out uses of Set that cause randomization.
+1. Deterministic once random seed is set.
 1. Re-enabling of events
 1. Rules that depend on events instead of just states.
    * Macro and struct for event(key)
 1. Observers on events
 1. Observers of state changes
 1. Immediate events
- 
 
-## Future features
+### Examples
+
+ 1. Elevators with TLA+.
+
+### Known bugs
+
+ 1. Observe macro needs hygeine to evaluate methods in defining context.
+
+
+## Future Capabilities
+
+### Features
 
 1. Importance sampling
 1. Pregeneration of all rule-based events.
@@ -23,7 +34,7 @@
 1. HMC sampling from trajectories
 
 
-## Example Simulations
+### Example Simulations
 
  1. Movement and infection.
  1. Move, infect, age, birth.
@@ -35,7 +46,7 @@
  1. Job shop problem.
  1. Cars driving on a map.
 
-## Example Uses of Simulations
+### Example Uses of Simulations
 
  1. Hook into standard Julia analysis tools.
  1. Sampling rare events.
@@ -44,7 +55,7 @@
  1. HMC on trajectories to find a most likely event stream.
  1. POMDP
 
- ## Performance Questions
+ ### Performance Questions
 
  1. How stable can I make the type system in the running simulation? It uses Events in places and tuples in others.
  1. The TrackedEntry needs to be timed and gamed.
@@ -54,31 +65,36 @@
  1. Measure performance with profiling. Look for the memory leaks.
 
 
-# Improvements to the Framework User Interface
+## Improvements to the Framework User Interface
 
-## generator functions use do-function syntax so make it easier.
+This section is from conversations with AI about the spectrum of
+ways to improve the user interface. There were some good ideas in there
+so they are recorded here.
+
+
+### generator functions use do-function syntax so make it easier.
 
 Create a macro for generator functions that looks like you call
 `generate(event)` but really calls a do-function callback underneath.
 
-## Simplify enabling/reenabling
+### Simplify enabling/reenabling
 
 Ask the simulation to define the distribution and when but not the
 sampler, rng, or clock_key.
 
-## Explicitly register functions
+### Explicitly register functions
   In framework.jl - automatic method generation
   function register_event(event_type::Type{<:SimEvent}, spec::EventSpec)
       # Generate precondition, generators, enable, fire! automatically
       # Based on declarative specification
   end
 
-## Macro to say what generators trigger on
+### Macro to say what generators trigger on
   Framework provides path builder
   @watches actors[*].state  # Instead of [:actors, ℤ, :state]
   @watches board[*].occupant
 
-## Put common event patterns into template structs
+### Put common event patterns into template structs
   Framework could provide base types:
   - ActorEvent{T} - for single-actor events
   - InteractionEvent{T} - for multi-actor events
@@ -95,7 +111,7 @@ or make it a function:
       age_tracking = true
   )
 
-## Put common enabling patterns into template structs
+### Put common enabling patterns into template structs
 
   Common patterns built into framework
   abstract type RateModel end
@@ -103,7 +119,7 @@ or make it a function:
   struct ActorRate <: RateModel; field::Symbol; end
   struct TimeBasedRate <: RateModel; calc::Function; end
 
-## Help build the simulation itself
+### Help build the simulation itself
 
   In framework.jl
   @simulation MySimulation begin
@@ -118,7 +134,7 @@ or make it a function:
       stop_when = (physical, step, event, when) -> when > days
   end
 
-## Make tools with which to make simulation DSLs
+### Make tools with which to make simulation DSLs
 
 ```
   # Framework should export these primitives
@@ -139,7 +155,7 @@ or make it a function:
   end
 ```
 
-## Use traits more than inheritance
+### Use traits more than inheritance
 
 Maybe both traits and hooks, where a user registers a function to call for
 a particular event.
@@ -180,7 +196,7 @@ This could also help the functions on events.
   end
 ```
 
-## Make Syntax Trees Accessible
+### Make Syntax Trees Accessible
 
 ```
   # If framework uses macros, expose the AST
@@ -195,7 +211,7 @@ This could also help the functions on events.
   register_ast_transform!(my_reliability_transform)
 ```
 
-## Macro advice
+### Macro advice
 
 Macro Design Best Practices
 
@@ -239,9 +255,9 @@ PREFER These Patterns:
   end
 ```
 
-# Sample Implementation
+## Sample Implementation
 
-## Of a framework that enables user DSLs
+### Of a framework that enables user DSLs
 
 ```
   # Framework provides:
@@ -314,7 +330,7 @@ PREFER These Patterns:
   end # module
 ```
 
-## Of an ActorEvent{T}
+### Of an ActorEvent{T}
 
 ```
   abstract type ActorEvent{T} <: SimEvent end
@@ -436,7 +452,7 @@ And what it does to the simulation code:
   end
 ```
 
-## Event generation in particular
+### Event generation in particular
 
 This is a macro language to generate events. This one would create a function
 called `generators(::Type{MoveTransition})` that contains a list of EventGenerator
