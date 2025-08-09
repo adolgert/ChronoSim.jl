@@ -73,6 +73,11 @@ makedocs(;
         "Examples" => ["Getting Started" => "getting_started.md"],
         "Manual" => ["Simulation State" => "simulation_state.md"],
         "Reference" => "reference.md",
+        "Development" => [
+            "Plan" => "plan.md",
+            "Event Updates" => "event_update.md",
+            "Architecture" => "architecture_diagram.md",
+        ],
     ],
     warnonly=true,
 )
