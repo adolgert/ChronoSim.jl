@@ -73,7 +73,7 @@
 </head>
 <body class="p-4">
     <div class="diagram-container">
-        <h2 class="text-xl font-bold text-center mb-4 text-gray-800">Event-Driven Simulation Diagram (D3.js)</h2>
+        <h2 class="text-xl font-bold text-center mb-4 text-gray-800">Event-to-Event Simulation Diagram</h2>
         <svg id="d3-diagram" viewBox="0 0 700 300" preserveAspectRatio="xMidYMid meet"></svg>
     </div>
 
@@ -100,6 +100,7 @@
             // Define links between nodes
             const links = [
                 { source: "enabled", target: "firing", type: "dashed" },
+                { source: "enabled", target: "firing", type: "solid" }, // New solid line with arrow
                 { source: "firing", target: "affectedB", type: "solid" },
                 { source: "firing", target: "affectedC", type: "solid" }
             ];
@@ -108,7 +109,7 @@
             svg.append("defs").append("marker")
                 .attr("id", "arrowhead")
                 .attr("viewBox", "0 -5 10 10")
-                .attr("refX", 8) // Position of the arrowhead on the line
+                .attr("refX", 35) // Move arrowhead to the edge of the circle (radius)
                 .attr("refY", 0)
                 .attr("orient", "auto")
                 .attr("markerWidth", 8)
@@ -126,7 +127,8 @@
                 .attr("x1", d => nodes.find(n => n.id === d.source).x)
                 .attr("y1", d => nodes.find(n => n.id === d.source).y)
                 .attr("x2", d => nodes.find(n => n.id === d.target).x)
-                .attr("y2", d => nodes.find(n => n.id === d.target).y);
+                .attr("y2", d => nodes.find(n => n.id === d.target).y)
+                .attr("marker-end", d => d.type === "solid" ? "url(#arrowhead)" : null); // Only solid lines get arrows
 
             // Draw the nodes (circles)
             const nodeSelection = svg.selectAll(".node")
