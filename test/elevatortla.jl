@@ -3,12 +3,9 @@ using ChronoSim: get_enabled_events
 
 mutable struct TLATraceRecorder
     states::Vector{Dict{String,Any}}
-    transitions::Vector{Dict{String,Any}}
-    enabled_events::Vector{Vector{String}}
-    enabled_before_transition::Vector{Vector{String}}
-    export_every_state::Bool
+    transitions::Vector{Dict{String,Any}}  # Keep for action comments only
     sim::ChronoSim.SimulationFSM
-    TLATraceRecorder() = new([], [], [], [], false)
+    TLATraceRecorder() = new([], [])
 end
 
 
@@ -25,27 +22,10 @@ function (recorder::TLATraceRecorder)(physical, when, event, changed_places)
 
     push!(recorder.states, tla_state)
 
-    # Record the transition that led to this state
+    # Record the transition for comments only (not for validation)
     if length(recorder.states) > 1
-        transition = Dict(
-            "action" => format_action(event),
-            "time" => when,
-            "changed" => format_changed_places(changed_places),
-        )
+        transition = Dict("action" => format_action(event), "time" => when)
         push!(recorder.transitions, transition)
-
-        if length(recorder.enabled_events) > 0
-            push!(recorder.enabled_before_transition, recorder.enabled_events[end])
-        end
-    end
-
-    # Record currently enabled events (after this transition)
-    enabled = get_enabled_events(recorder.sim)
-    enabled_names = [format_action(e) for e in enabled]
-    push!(recorder.enabled_events, enabled_names)
-
-    if recorder.export_every_state
-        export_current_state(recorder.sim, physical, "Elevator_state$(length(recorder.states)).txt")
     end
 end
 
@@ -119,7 +99,6 @@ function format_action_impl(e::DispatchElevator)
 end
 format_action_impl(e) = "Unknown($(typeof(e)))"
 
-format_changed_places(changed_places) = [string(cp) for cp in changed_places]
 
 function format_person_entry(pid, pstate)
     loc_str = isa(pstate["location"], String) ? pstate["location"] : string(pstate["location"])
@@ -136,18 +115,18 @@ format_call_entry(call) = "[floor |-> $(call["floor"]), direction |-> \"$(call["
 function format_state_to_tla(state::Dict{String,Any}, indent::String="")
     lines = String[]
 
-    # PersonState -> ps
-    push!(lines, "$(indent)ps |-> [")
+    # PersonState
+    push!(lines, "$(indent)PersonState |-> [")
     person_items = [format_person_entry(pid, pstate) for (pid, pstate) in state["PersonState"]]
     push!(lines, join(person_items, ",\n"))
     push!(lines, "$(indent)],")
 
-    # ActiveElevatorCalls -> calls
+    # ActiveElevatorCalls
     call_items = [format_call_entry(call) for call in state["ActiveElevatorCalls"]]
-    push!(lines, "$(indent)calls |-> {$(join(call_items, ", "))},")
+    push!(lines, "$(indent)ActiveElevatorCalls |-> {$(join(call_items, ", "))},")
 
-    # ElevatorState -> es
-    push!(lines, "$(indent)es |-> [")
+    # ElevatorState
+    push!(lines, "$(indent)ElevatorState |-> [")
     elevator_items = [
         format_elevator_entry(eid, estate) for (eid, estate) in state["ElevatorState"]
     ]
@@ -158,23 +137,26 @@ function format_state_to_tla(state::Dict{String,Any}, indent::String="")
 end
 
 function export_tlc_trace(recorder::TLATraceRecorder, filename::String)
+    @info "Writing $filename"
     open(filename, "w") do io
         for (i, state) in enumerate(recorder.states)
-            println(io, "State $i:")
-            println(io, format_state_to_tla(state))
-
-            # Add transition info if available
+            # Add action comment if this is not the initial state
             if i > 1 && i-1 <= length(recorder.transitions)
                 trans = recorder.transitions[i - 1]
-                println(io, "\n-- Transition: $(trans["action"]) at time $(trans["time"])")
+                println(io, "\\* After $(trans["action"])")
+            elseif i == 1
+                println(io, "\\* Initial state")
             end
 
-            # Add enabled events info
-            if i <= length(recorder.enabled_events)
-                println(io, "-- Enabled: [$(join(recorder.enabled_events[i], ", "))]")
-            end
+            # Write the state in TLA+ format
+            println(io, "[")
+            println(io, format_state_to_tla(state, "  "))
+            println(io, "]")
 
-            println(io)  # Empty line between states
+            # Add separator between states (except after last state)
+            if i < length(recorder.states)
+                println(io, "----")
+            end
         end
     end
 end
@@ -183,6 +165,7 @@ end
 Export state and enabled events for a specific point in simulation
 """
 function export_current_state(sim, physical, filename::String)
+    @info "Writing $filename"
     open(filename, "w") do io
         # Current state
         state = Dict(
@@ -219,6 +202,7 @@ function create_config_file(
     invariants::Vector{String},
     properties::Vector{String}=String[],
 )
+    @info "Writing $filename"
     open(filename, "w") do io
         println(
             io,
@@ -246,13 +230,26 @@ function create_tlc_config(pc, ec, fc, fn)
 end
 
 function create_trace_config(pc, ec, fc, fn)
-    create_config_file(
-        pc,
-        ec,
-        fc,
-        fn,
-        ["TraceTypeInvariant", "TraceSafetyInvariant", "ValidTransitions", "CorrectEnabledActions"],
-    )
+    @info "Writing $fn"
+    # For trace checking, we need a dummy INIT and NEXT
+    open(fn, "w") do io
+        println(
+            io,
+            """
+CONSTANTS
+  Person = {$(join(["\"p$i\"" for i in 1:pc], ", "))}
+  Elevator = {$(join(["\"e$i\"" for i in 1:ec], ", "))}
+  FloorCount = $fc
+
+INIT Init
+NEXT Next
+
+INVARIANTS
+  TraceTypeInvariant
+  TraceSafetyInvariant
+""",
+        )
+    end
 end
 
 """
@@ -283,6 +280,9 @@ function validate_trace(
     tla_tools_path::String="~/dev/tla",
 )
     tla_tools_path = expanduser(tla_tools_path)
+
+    export_tlc_trace(recorder, "Elevator_trace.txt")
+
     # Export the trace as a TLA+ spec
     trace_spec_file = "ElevatorTrace.tla"
     export_trace_spec(recorder, trace_spec_file)
@@ -321,6 +321,7 @@ Generate a TLA+ module that represents the trace as a sequence of states
 This can be model-checked to verify the trace satisfies the specification
 """
 function export_trace_spec(recorder::TLATraceRecorder, spec_filename::String)
+    @info "Writing $spec_filename"
     open(spec_filename, "w") do io
         # Module header
         module_name = replace(basename(spec_filename), ".tla" => "")
@@ -336,68 +337,81 @@ CONSTANTS   Person,     \\* The set of all people using the elevator system
             Elevator,   \\* The set of all elevators
             FloorCount  \\* The number of floors serviced by the elevator system
 
+(* Define Floor and Direction for invariant checking *)
+Floor == 1..FloorCount
+Direction == {"Up", "Down"}
+
 (* The recorded trace as a sequence of states *)
 TraceStates == <<""",
         )
 
-        # Output each state
+        # Output each state with action comments
         for (i, state) in enumerate(recorder.states)
-            println(io, "    (* State $i *)")
-            println(io, "    [")
+            # Add comment about what action led to this state
+            if i == 1
+                println(io, "    (* Initial state *)")
+            elseif i-1 <= length(recorder.transitions)
+                trans = recorder.transitions[i - 1]
+                println(io, "    (* After $(trans["action"]) *)")
+            else
+                println(io, "    (* State $i *)")
+            end
 
+            println(io, "    [")
             # Format the state with proper indentation
             state_lines = split(format_state_to_tla(state, "        "), "\n")
             println(io, join(state_lines, "\n"))
-
             print(io, "    ]")
             println(io, i < length(recorder.states) ? "," : "")
         end
 
         println(io, ">>\n")
 
-        # Verification sections
-        println(io, "(* Verify each state in the trace satisfies the invariants *)")
-        println(io, "TraceTypeInvariant == \\A i \\in 1..Len(TraceStates) : TRUE\n")
-        println(io, "TraceSafetyInvariant == \\A i \\in 1..Len(TraceStates) : TRUE")
-
-        # Verify transitions
+        # Add dummy state variables and actions for TLC
         println(
             io,
-            """\n(* Verify each transition in the trace is valid according to Next *)
-ValidTransitions == \\A i \\in 1..(Len(TraceStates)-1) : TRUE
-""",
-        )
+            """
+(* Dummy variables for TLC - we're just checking a static trace *)
+VARIABLES dummy
 
-        # Add enabled actions information if available
-        if length(recorder.enabled_events) > 0
-            println(
-                io,
-                """(* Enabled actions recorded at each state *)
-EnabledActions == <<""",
-            )
+(* Dummy initial state *)
+Init == dummy = 0
 
-            for (i, enabled) in enumerate(recorder.enabled_events)
-                enabled_str = "{$(join(["\"$e\"" for e in enabled], ", "))}"
-                comment = i < length(recorder.enabled_events) ? "," : ""
-                println(io, "    $enabled_str$comment  (* State $i *)")
-            end
-            println(io, ">>\n")
+(* Dummy next state - never actually used *)
+Next == dummy' = dummy
 
-            println(
-                io,
-                """\n(* Verify that recorded enabled actions match the specification *)
-CorrectEnabledActions == TRUE
-""",
-            )
-        end
+(* Type invariant: check structural constraints *)
+TraceTypeInvariant == 
+    \\A i \\in 1..Len(TraceStates) :
+        LET s == TraceStates[i] IN
+        /\\ \\A p \\in Person : 
+            /\\ \\/ s.PersonState[p].location \\in Floor
+               \\/ s.PersonState[p].location \\in {"e1", "e2"}  \\* In an elevator
+            /\\ s.PersonState[p].destination \\in Floor
+            /\\ s.PersonState[p].waiting \\in BOOLEAN
+        /\\ \\A e \\in Elevator :
+            /\\ s.ElevatorState[e].floor \\in Floor
+            /\\ s.ElevatorState[e].direction \\in (Direction \\cup {"Stationary"})
+            /\\ s.ElevatorState[e].doorsOpen \\in BOOLEAN
+            /\\ s.ElevatorState[e].buttonsPressed \\subseteq Floor
 
-        # Properties to check
-        println(
-            io,
-            """(* Properties to check *)
-ASSUME TraceTypeInvariant
-ASSUME TraceSafetyInvariant
-ASSUME ValidTransitions
+(* Safety invariant: check semantic constraints *)
+TraceSafetyInvariant == 
+    \\A i \\in 1..Len(TraceStates) :
+        LET s == TraceStates[i] IN
+        (* Elevator buttons pressed only if passenger going there *)
+        /\\ \\A e \\in Elevator : \\A f \\in s.ElevatorState[e].buttonsPressed :
+            \\E p \\in Person :
+                /\\ s.PersonState[p].location = e  \\* In elevator e
+                /\\ s.PersonState[p].destination = f
+        (* Active calls must have someone waiting *)
+        /\\ \\A call \\in s.ActiveElevatorCalls :
+            \\E p \\in Person :
+                LET pState == s.PersonState[p] IN
+                /\\ pState.location = call.floor
+                /\\ pState.waiting = TRUE
+                /\\ (IF pState.destination > call.floor 
+                    THEN "Up" ELSE "Down") = call.direction
 
 $(repeat("=", 77))""",
         )
