@@ -2,6 +2,10 @@
 
 ## Current Capabilities
 
+```@raw html
+<iframe src="assets/d3_event_diagram.html" style="width: 100%; height: 500px; border: none;"></iframe>
+```
+
 ### Features
  
 1. Rule-based events
