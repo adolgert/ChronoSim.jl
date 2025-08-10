@@ -72,7 +72,10 @@ makedocs(;
         "Home" =>
             ["index.md", "Why Not Hand Made" => "not_chrono.md", "What It Does" => "whatitis.md"],
         "Examples" => ["Getting Started" => "getting_started.md"],
-        "Manual" => ["Simulation State" => "simulation_state.md"],
+        "Manual" => [
+            "Simulation State" => "simulation_state.md",
+            "Category of Simulation" => "categorize.md",
+        ],
         "Reference" => "reference.md",
         "Development" => [
             "Plan" => "plan.md",
