@@ -1,6 +1,7 @@
 /docs/Manifest*.toml
 /docs/build/
 /docs/src/getting_started.md
+/docs/src/not_chrono.md
 /test/Manifest.toml
 /notes
 *.local.md

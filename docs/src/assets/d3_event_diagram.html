@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>D3 Event Simulation Diagram</title>
+    <!-- Tailwind CSS CDN for basic styling of the body/container -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8f8f8; /* Light background for the overall page */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+        .diagram-container {
+            background-color: #ffffff;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            max-width: 900px; /* Max width for the container */
+            width: 100%;
+            box-sizing: border-box;
+        }
+        svg {
+            display: block;
+            margin: 0 auto;
+            /* Make SVG responsive by using viewBox and width/height as percentages */
+            width: 100%;
+            height: auto; /* Maintain aspect ratio */
+        }
+        /* Custom styles for D3 elements */
+        .node-circle {
+            stroke: #374151; /* Dark grey stroke */
+            stroke-width: 2px;
+            fill: #DAF0EE; /* Light teal fill */
+        }
+        .node-circle.firing {
+            fill: #92B4A7; /* Darker teal for firing event */
+        }
+        .event-label {
+            font-family: 'Inter', sans-serif;
+            font-size: 14px;
+            text-anchor: middle;
+            fill: #374151; /* Dark grey text */
+        }
+        .time-label {
+            font-family: 'Inter', sans-serif;
+            font-size: 12px;
+            text-anchor: middle;
+            fill: #6B7280; /* Medium grey text */
+        }
+        .timeline-line {
+            stroke: #6B7280; /* Medium grey line */
+            stroke-width: 1.5px;
+        }
+        .dashed-line {
+            stroke-dasharray: 5 5; /* Dashed style for enabled-to-firing */
+        }
+        .solid-line {
+            stroke: #374151; /* Dark grey solid line */
+            stroke-width: 1.5px;
+            marker-end: url(#arrowhead); /* Add arrowhead */
+        }
+        .arrowhead {
+            fill: #374151; /* Match arrowhead fill to line color */
+        }
+    </style>
+</head>
+<body class="p-4">
+    <div class="diagram-container">
+        <h2 class="text-xl font-bold text-center mb-4 text-gray-800">Event-to-Event Simulation Diagram</h2>
+        <svg id="d3-diagram" viewBox="0 0 700 300" preserveAspectRatio="xMidYMid meet"></svg>
+    </div>
+
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script>
+        // Wait for the DOM to be fully loaded before running D3 code
+        document.addEventListener('DOMContentLoaded', function() {
+            // Select the SVG element by its ID
+            const svg = d3.select("#d3-diagram");
+
+            // Define SVG dimensions and margins relative to the viewBox
+            const width = 700;
+            const height = 300;
+            const margin = { top: 40, right: 40, bottom: 40, left: 40 };
+
+            // Define node positions based on the desired layout
+            const nodes = [
+                { id: "enabled", label: "Event A\nEnabled", x: width * 0.2, y: height * 0.5, className: "" },
+                { id: "firing", label: "Event A\nFiring", x: width * 0.5, y: height * 0.5, className: "firing" },
+                { id: "affectedB", label: "Event B\nAffected", x: width * 0.8, y: height * 0.35, className: "" },
+                { id: "affectedC", label: "Event C\nAffected", x: width * 0.8, y: height * 0.65, className: "" }
+            ];
+
+            // Define links between nodes
+            const links = [
+                { source: "enabled", target: "firing", type: "dashed" },
+                { source: "enabled", target: "firing", type: "solid" }, // New solid line with arrow
+                { source: "firing", target: "affectedB", type: "solid" },
+                { source: "firing", target: "affectedC", type: "solid" }
+            ];
+
+            // Add arrowhead marker definition for solid lines
+            svg.append("defs").append("marker")
+                .attr("id", "arrowhead")
+                .attr("viewBox", "0 -5 10 10")
+                .attr("refX", 35) // Move arrowhead to the edge of the circle (radius)
+                .attr("refY", 0)
+                .attr("orient", "auto")
+                .attr("markerWidth", 8)
+                .attr("markerHeight", 8)
+                .attr("xoverflow", "visible")
+                .append("path")
+                .attr("d", "M0,-5L10,0L0,5")
+                .attr("class", "arrowhead"); // Apply arrowhead styling class
+
+            // Draw the links (lines)
+            const linkSelection = svg.selectAll(".link")
+                .data(links)
+                .enter().append("line")
+                .attr("class", d => `link ${d.type}-line`) // Apply dashed or solid style
+                .attr("x1", d => nodes.find(n => n.id === d.source).x)
+                .attr("y1", d => nodes.find(n => n.id === d.source).y)
+                .attr("x2", d => nodes.find(n => n.id === d.target).x)
+                .attr("y2", d => nodes.find(n => n.id === d.target).y)
+                .attr("marker-end", d => d.type === "solid" ? "url(#arrowhead)" : null); // Only solid lines get arrows
+
+            // Draw the nodes (circles)
+            const nodeSelection = svg.selectAll(".node")
+                .data(nodes)
+                .enter().append("circle")
+                .attr("class", d => `node-circle ${d.className}`) // Apply base and specific class
+                .attr("r", 35) // Radius of the circles
+                .attr("cx", d => d.x)
+                .attr("cy", d => d.y);
+
+            // Add text labels to nodes (handling multiline text)
+            const nodeTextSelection = svg.selectAll(".node-text")
+                .data(nodes)
+                .enter().append("text")
+                .attr("class", "event-label")
+                .attr("x", d => d.x)
+                .attr("y", d => d.y);
+
+            nodeTextSelection.each(function(d) {
+                const textNode = d3.select(this);
+                const lines = d.label.split('\n');
+                // Adjust vertical position for multi-line text to center it
+                const lineHeight = 1.2; // Em units
+                const startY = d.y - (lines.length - 1) * lineHeight * 6; // Roughly center multi-line text
+
+                lines.forEach((line, i) => {
+                    textNode.append("tspan")
+                        .attr("x", d.x)
+                        .attr("y", startY + i * lineHeight * 12) // Line height approximation
+                        .text(line);
+                });
+            });
+
+            // Add the timeline line
+            svg.append("line")
+                .attr("class", "timeline-line")
+                .attr("x1", margin.left)
+                .attr("y1", height - margin.bottom)
+                .attr("x2", width - margin.right)
+                .attr("y2", height - margin.bottom);
+
+            // Add time labels to the timeline
+            const timeLabels = [
+                { text: "T1 (Enabled Time)", x: nodes.find(n => n.id === "enabled").x },
+                { text: "T2 (Firing Time)", x: nodes.find(n => n.id === "firing").x },
+                { text: "T3 (Affecting Future Events)", x: nodes.find(n => n.id === "affectedB").x + (nodes.find(n => n.id === "affectedC").x - nodes.find(n => n.id === "affectedB").x)/2 }
+            ];
+
+            svg.selectAll(".time-label-marker")
+                .data(timeLabels)
+                .enter().append("line")
+                .attr("class", "timeline-line")
+                .attr("x1", d => d.x)
+                .attr("y1", height - margin.bottom - 5)
+                .attr("x2", d => d.x)
+                .attr("y2", height - margin.bottom + 5);
+
+            svg.selectAll(".time-label-text")
+                .data(timeLabels)
+                .enter().append("text")
+                .attr("class", "time-label")
+                .attr("x", d => d.x)
+                .attr("y", height - margin.bottom + 20)
+                .text(d => d.text);
+        });
+    </script>
+</body>
+</html>
