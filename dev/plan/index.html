@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Plan · ChronoSim.jl</title><meta name="title" content="Plan · ChronoSim.jl"/><meta property="og:title" content="Plan · ChronoSim.jl"/><meta property="twitter:title" content="Plan · ChronoSim.jl"/><meta name="description" content="Documentation for ChronoSim.jl."/><meta property="og:description" content="Documentation for ChronoSim.jl."/><meta property="twitter:description" content="Documentation for ChronoSim.jl."/><meta property="og:url" content="https://adolgert.github.io/ChronoSim.jl/plan/"/><meta property="twitter:url" content="https://adolgert.github.io/ChronoSim.jl/plan/"/><link rel="canonical" href="https://adolgert.github.io/ChronoSim.jl/plan/"/><script data-outdated-warner src="../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL=".."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../assets/documenter.js"></script><script src="../search_index.js"></script><script src="../siteinfo.js"></script><script src="../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../assets/themeswap.js"></script><link href="../assets/custom.css" rel="stylesheet" type="text/css"/></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../">ChronoSim.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><span class="tocitem">Home</span><ul><li><a class="tocitem" href="../">ChronoSim</a></li><li><a class="tocitem" href="../not_chrono/">Why Not Hand Made</a></li><li><a class="tocitem" href="../whatitis/">What It Does</a></li></ul></li><li><span class="tocitem">Examples</span><ul><li><a class="tocitem" href="../getting_started/">Getting Started</a></li></ul></li><li><span class="tocitem">Manual</span><ul><li><a class="tocitem" href="../simulation_state/">Simulation State</a></li><li><a class="tocitem" href="../categorize/">Category of Simulation</a></li></ul></li><li><a class="tocitem" href="../reference/">Reference</a></li><li><span class="tocitem">Development</span><ul><li class="is-active"><a class="tocitem" href>Plan</a><ul class="internal"><li><a class="tocitem" href="#Current-Capabilities"><span>Current Capabilities</span></a></li><li><a class="tocitem" href="#Future-Capabilities"><span>Future Capabilities</span></a></li><li><a class="tocitem" href="#Improvements-to-the-Framework-User-Interface"><span>Improvements to the Framework User Interface</span></a></li><li><a class="tocitem" href="#Sample-Implementation"><span>Sample Implementation</span></a></li></ul></li><li><a class="tocitem" href="../event_update/">Event Updates</a></li><li><a class="tocitem" href="../architecture_diagram/">Architecture</a></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Development</a></li><li class="is-active"><a href>Plan</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Plan</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/adolgert/ChronoSim.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/adolgert/ChronoSim.jl/blob/main/docs/src/plan.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Plan"><a class="docs-heading-anchor" href="#Plan">Plan</a><a id="Plan-1"></a><a class="docs-heading-anchor-permalink" href="#Plan" title="Permalink"></a></h1><h2 id="Current-Capabilities"><a class="docs-heading-anchor" href="#Current-Capabilities">Current Capabilities</a><a id="Current-Capabilities-1"></a><a class="docs-heading-anchor-permalink" href="#Current-Capabilities" title="Permalink"></a></h2><iframe src="assets/d3_event_diagram.html" style="width: 100%; height: 500px; border: none;"></iframe><h3 id="Features"><a class="docs-heading-anchor" href="#Features">Features</a><a id="Features-1"></a><a class="docs-heading-anchor-permalink" href="#Features" title="Permalink"></a></h3><ol><li>Rule-based events</li><li>Sampling methods</li><li>Dirac delta function times (for ODEs)</li><li>Deterministic once random seed is set.</li><li>Re-enabling of events</li><li>Rules that depend on events instead of just states.<ul><li>Macro and struct for event(key)</li></ul></li><li>Observers on events</li><li>Observers of state changes</li><li>Immediate events</li></ol><h3 id="Examples"><a class="docs-heading-anchor" href="#Examples">Examples</a><a id="Examples-1"></a><a class="docs-heading-anchor-permalink" href="#Examples" title="Permalink"></a></h3><ol><li>Elevators with TLA+.</li></ol><h3 id="Known-bugs"><a class="docs-heading-anchor" href="#Known-bugs">Known bugs</a><a id="Known-bugs-1"></a><a class="docs-heading-anchor-permalink" href="#Known-bugs" title="Permalink"></a></h3><ol><li>Observe macro needs hygeine to evaluate methods in defining context.</li></ol><h2 id="Future-Capabilities"><a class="docs-heading-anchor" href="#Future-Capabilities">Future Capabilities</a><a id="Future-Capabilities-1"></a><a class="docs-heading-anchor-permalink" href="#Future-Capabilities" title="Permalink"></a></h2><h3 id="Features-2"><a class="docs-heading-anchor" href="#Features-2">Features</a><a class="docs-heading-anchor-permalink" href="#Features-2" title="Permalink"></a></h3><ol><li>Importance sampling</li><li>Pregeneration of all rule-based events.</li><li>Transactional firing (for estimation of derivatives)</li><li>HMC sampling from trajectories</li></ol><h3 id="Example-Simulations"><a class="docs-heading-anchor" href="#Example-Simulations">Example Simulations</a><a id="Example-Simulations-1"></a><a class="docs-heading-anchor-permalink" href="#Example-Simulations" title="Permalink"></a></h3><ol><li>Movement and infection.</li><li>Move, infect, age, birth.</li><li>Policy-driven movement.</li><li>Queuing model.</li><li>Chemical equations.</li><li>Drone search pattern with geometry.</li><li>HMC for house-to-house infestation.</li><li>Job shop problem.</li><li>Cars driving on a map.</li></ol><h3 id="Example-Uses-of-Simulations"><a class="docs-heading-anchor" href="#Example-Uses-of-Simulations">Example Uses of Simulations</a><a id="Example-Uses-of-Simulations-1"></a><a class="docs-heading-anchor-permalink" href="#Example-Uses-of-Simulations" title="Permalink"></a></h3><ol><li>Hook into standard Julia analysis tools.</li><li>Sampling rare events.</li><li>Parameter fitting to world data.</li><li>Optimization of parameters to minimize a goal function.</li><li>HMC on trajectories to find a most likely event stream.</li><li>POMDP</li></ol><h3 id="Performance-Questions"><a class="docs-heading-anchor" href="#Performance-Questions">Performance Questions</a><a id="Performance-Questions-1"></a><a class="docs-heading-anchor-permalink" href="#Performance-Questions" title="Permalink"></a></h3><ol><li>How stable can I make the type system in the running simulation? It uses Events in places and tuples in others.</li><li>The TrackedEntry needs to be timed and gamed.</li><li>Could the TrackedEntry be an N-dimensional array? Could each entry be an array? A dictionary?</li><li>Can the main simulation look over the keys to determine types before it instantiates?</li><li>The depnet is absolutely wrong for the current main loop. It might be closer to right for another mainloop. Should try various implementations.</li><li>Measure performance with profiling. Look for the memory leaks.</li></ol><h2 id="Improvements-to-the-Framework-User-Interface"><a class="docs-heading-anchor" href="#Improvements-to-the-Framework-User-Interface">Improvements to the Framework User Interface</a><a id="Improvements-to-the-Framework-User-Interface-1"></a><a class="docs-heading-anchor-permalink" href="#Improvements-to-the-Framework-User-Interface" title="Permalink"></a></h2><p>This section is from conversations with AI about the spectrum of ways to improve the user interface. There were some good ideas in there so they are recorded here.</p><h3 id="generator-functions-use-do-function-syntax-so-make-it-easier."><a class="docs-heading-anchor" href="#generator-functions-use-do-function-syntax-so-make-it-easier.">generator functions use do-function syntax so make it easier.</a><a id="generator-functions-use-do-function-syntax-so-make-it-easier.-1"></a><a class="docs-heading-anchor-permalink" href="#generator-functions-use-do-function-syntax-so-make-it-easier." title="Permalink"></a></h3><p>Create a macro for generator functions that looks like you call <code>generate(event)</code> but really calls a do-function callback underneath.</p><h3 id="Simplify-enabling/reenabling"><a class="docs-heading-anchor" href="#Simplify-enabling/reenabling">Simplify enabling/reenabling</a><a id="Simplify-enabling/reenabling-1"></a><a class="docs-heading-anchor-permalink" href="#Simplify-enabling/reenabling" title="Permalink"></a></h3><p>Ask the simulation to define the distribution and when but not the sampler, rng, or clock_key.</p><h3 id="Explicitly-register-functions"><a class="docs-heading-anchor" href="#Explicitly-register-functions">Explicitly register functions</a><a id="Explicitly-register-functions-1"></a><a class="docs-heading-anchor-permalink" href="#Explicitly-register-functions" title="Permalink"></a></h3><p>In framework.jl - automatic method generation   function register<em>event(event</em>type::Type{&lt;:SimEvent}, spec::EventSpec)       # Generate precondition, generators, enable, fire! automatically       # Based on declarative specification   end</p><h3 id="Macro-to-say-what-generators-trigger-on"><a class="docs-heading-anchor" href="#Macro-to-say-what-generators-trigger-on">Macro to say what generators trigger on</a><a id="Macro-to-say-what-generators-trigger-on-1"></a><a class="docs-heading-anchor-permalink" href="#Macro-to-say-what-generators-trigger-on" title="Permalink"></a></h3><p>Framework provides path builder   @watches actors[<em>].state  # Instead of [:actors, ℤ, :state]   @watches board[</em>].occupant</p><h3 id="Put-common-event-patterns-into-template-structs"><a class="docs-heading-anchor" href="#Put-common-event-patterns-into-template-structs">Put common event patterns into template structs</a><a id="Put-common-event-patterns-into-template-structs-1"></a><a class="docs-heading-anchor-permalink" href="#Put-common-event-patterns-into-template-structs" title="Permalink"></a></h3><p>Framework could provide base types:</p><ul><li>ActorEvent{T} - for single-actor events</li><li>InteractionEvent{T} - for multi-actor events</li><li>ScheduledEvent{T} - for time-based events</li><li>StateTransitionEvent{T} - for state machine transitions</li></ul><p>or make it a function:   Framework provides factory for common patterns   create<em>state</em>transition<em>event(       :Break,       from</em>state = :working,       to<em>state = :broken,       rate</em>field = :fail<em>dist,       age</em>tracking = true   )</p><h3 id="Put-common-enabling-patterns-into-template-structs"><a class="docs-heading-anchor" href="#Put-common-enabling-patterns-into-template-structs">Put common enabling patterns into template structs</a><a id="Put-common-enabling-patterns-into-template-structs-1"></a><a class="docs-heading-anchor-permalink" href="#Put-common-enabling-patterns-into-template-structs" title="Permalink"></a></h3><p>Common patterns built into framework   abstract type RateModel end   struct ConstantRate &lt;: RateModel; dist; end   struct ActorRate &lt;: RateModel; field::Symbol; end   struct TimeBasedRate &lt;: RateModel; calc::Function; end</p><h3 id="Help-build-the-simulation-itself"><a class="docs-heading-anchor" href="#Help-build-the-simulation-itself">Help build the simulation itself</a><a id="Help-build-the-simulation-itself-1"></a><a class="docs-heading-anchor-permalink" href="#Help-build-the-simulation-itself" title="Permalink"></a></h3><p>In framework.jl   @simulation MySimulation begin       state_type = IndividualState       events = [StartDay, EndDay, Break, Repair]       sampler = CombinedNextReaction</p><pre><code class="nohighlight hljs">  initialize = function(physical, rng)
+      # initialization code
+  end
+
+  stop_when = (physical, step, event, when) -&gt; when &gt; days</code></pre><p>end</p><h3 id="Make-tools-with-which-to-make-simulation-DSLs"><a class="docs-heading-anchor" href="#Make-tools-with-which-to-make-simulation-DSLs">Make tools with which to make simulation DSLs</a><a id="Make-tools-with-which-to-make-simulation-DSLs-1"></a><a class="docs-heading-anchor-permalink" href="#Make-tools-with-which-to-make-simulation-DSLs" title="Permalink"></a></h3><pre><code class="nohighlight hljs">  # Framework should export these primitives
+  export create_generator, register_precondition, add_rate_function
+  export EventSpecification, GeneratorSpec, RateSpec
+
+  # So users can build their own DSLs:
+  macro my_reliability_event(name, spec)
+      quote
+          struct $(esc(name)) &lt;: ActorEvent{IndividualState}
+              actor_idx::Int
+          end
+
+          # Use framework primitives
+          register_precondition($(esc(name)), $(spec.precondition))
+          add_rate_function($(esc(name)), $(spec.rate))
+      end
+  end</code></pre><h3 id="Use-traits-more-than-inheritance"><a class="docs-heading-anchor" href="#Use-traits-more-than-inheritance">Use traits more than inheritance</a><a id="Use-traits-more-than-inheritance-1"></a><a class="docs-heading-anchor-permalink" href="#Use-traits-more-than-inheritance" title="Permalink"></a></h3><p>Maybe both traits and hooks, where a user registers a function to call for a particular event.</p><pre><code class="nohighlight hljs">  # Framework defines traits
+  abstract type EventTrait end
+  struct HasActor &lt;: EventTrait end
+  struct HasSchedule &lt;: EventTrait end
+  struct HasInteraction &lt;: EventTrait end
+
+  # Users can mix traits freely
+  event_traits(::Type{&lt;:SimEvent}) = ()
+  event_traits(::Type{Break}) = (HasActor(), HasSchedule())
+
+  # Framework dispatches on traits
+  function generate_precondition(evt::Type{T}) where T
+      traits = event_traits(T)
+      # Compose behavior from traits
+  end</code></pre><p>This could also help the functions on events.</p><pre><code class="nohighlight hljs">  # Instead of storing functions, use traits
+  abstract type PreconditionTrait end
+  struct StateCheck{S} &lt;: PreconditionTrait
+      required_state::S
+  end
+
+  struct EventConfig{P &lt;: PreconditionTrait}
+      precondition_trait::P
+  end
+
+  # Fast dispatch
+  @inline function check_precondition(evt::ActorEvent, physical, ::StateCheck{S}) where S
+      physical.actors[evt.actor_idx].state == S
+  end</code></pre><h3 id="Make-Syntax-Trees-Accessible"><a class="docs-heading-anchor" href="#Make-Syntax-Trees-Accessible">Make Syntax Trees Accessible</a><a id="Make-Syntax-Trees-Accessible-1"></a><a class="docs-heading-anchor-permalink" href="#Make-Syntax-Trees-Accessible" title="Permalink"></a></h3><pre><code class="nohighlight hljs">  # If framework uses macros, expose the AST
+  macro framework_helper(expr)
+      ast = parse_event_ast(expr)
+      # Let users transform it
+      transformed = apply_user_transforms(ast)
+      return generate_code(transformed)
+  end
+
+  # Users can register transforms
+  register_ast_transform!(my_reliability_transform)</code></pre><h3 id="Macro-advice"><a class="docs-heading-anchor" href="#Macro-advice">Macro advice</a><a id="Macro-advice-1"></a><a class="docs-heading-anchor-permalink" href="#Macro-advice" title="Permalink"></a></h3><p>Macro Design Best Practices</p><p>AVOID These Patterns:</p><pre><code class="nohighlight hljs">  # 1. Rigid syntax requirements
+  @framework_event name::Type = value  # Forces specific syntax
+
+  # 2. Closed evaluation contexts
+  @framework_event Break begin
+      eval(:(struct Break ... end))  # Evaluates in framework module
+  end
+
+  # 3. Monolithic macros
+  @define_entire_event Break working broken fail_dist ...</code></pre><p>PREFER These Patterns:</p><pre><code class="nohighlight hljs">  # 1. Composable macro fragments
+  @event_struct Break actor_idx::Int
+  @event_precondition Break (evt, phys) -&gt; phys.actors[evt.actor_idx].state == working
+  @event_rate Break (evt, phys) -&gt; phys.params[evt.actor_idx].fail_dist
+
+  # 2. Pass-through to user context
+  macro framework_helper(name, user_expr)
+      quote
+          # Evaluate in caller&#39;s context
+          local user_result = $(esc(user_expr))
+          framework_process($(QuoteNode(name)), user_result)
+      end
+  end
+
+  # 3. Metadata-based approach
+  @event_metadata Break begin
+      traits = [:actor_based, :state_transition]
+      watches = [:actors]
+      # Users can add custom metadata
+  end</code></pre><h2 id="Sample-Implementation"><a class="docs-heading-anchor" href="#Sample-Implementation">Sample Implementation</a><a id="Sample-Implementation-1"></a><a class="docs-heading-anchor-permalink" href="#Sample-Implementation" title="Permalink"></a></h2><h3 id="Of-a-framework-that-enables-user-DSLs"><a class="docs-heading-anchor" href="#Of-a-framework-that-enables-user-DSLs">Of a framework that enables user DSLs</a><a id="Of-a-framework-that-enables-user-DSLs-1"></a><a class="docs-heading-anchor-permalink" href="#Of-a-framework-that-enables-user-DSLs" title="Permalink"></a></h3><pre><code class="nohighlight hljs">  # Framework provides:
+    module ChronoSim
+
+  # Low-level registration API
+  function register_event_type(T::Type, config::EventConfig)
+      # Store in global registry
+  end
+
+  # Composable specifications
+  # This should use parametric types
+  struct EventConfig{P,G,E,F}
+      precondition::Union{Function, Nothing}
+      generators::Vector{GeneratorSpec}
+      enable::Union{Function, Nothing}
+      fire::Union{Function, Nothing}
+      metadata::Dict{Symbol, Any}
+  end
+
+  # Give the parametric event config a solid constructor.
+  function actor_event_behavior(;
+      required_state::Symbol,
+      rate_field::Symbol,
+      fire_action::Function
+  )
+      EventBehavior(
+          # Specialized, inlinable functions
+          (evt, physical) -&gt; getfield(physical.actors[evt.actor_idx], :state) == required_state,
+          (evt, sampler, physical, when, rng) -&gt; enable!(
+              sampler,
+              clock_key(evt),
+              getfield(getfield(physical.params[evt.actor_idx], rate_field)),
+              when, when, rng
+          ),
+          fire_action,
+          default_actor_generators()
+      )
+  end
+
+  end # module
+
+  # User&#39;s DSL:
+  module ReliabilityDSL
+    using ChronoSim
+
+  macro reliability_event(name, from, to, rate_field)
+      quote
+          struct $(esc(name)) &lt;: SimEvent
+              actor_idx::Int
+          end
+
+          config = actor_event_config(
+              precondition_state = $(esc(from)),
+              rate_distribution = evt -&gt; evt.physical.params[evt.actor_idx].$rate_field,
+              fire_action = (evt, phys, when) -&gt; begin
+                  phys.actors[evt.actor_idx].state = $(esc(to))
+                  # Custom reliability logic here
+              end
+          )
+
+          register_event_type($(esc(name)), config)
+      end
+  end
+
+  # Clean syntax for users
+  @reliability_event Break working broken fail_dist
+  @reliability_event Repair broken ready repair_dist
+
+  end # module</code></pre><h3 id="Of-an-ActorEvent{T}"><a class="docs-heading-anchor" href="#Of-an-ActorEvent{T}">Of an ActorEvent{T}</a><a id="Of-an-ActorEvent{T}-1"></a><a class="docs-heading-anchor-permalink" href="#Of-an-ActorEvent{T}" title="Permalink"></a></h3><pre><code class="nohighlight hljs">  abstract type ActorEvent{T} &lt;: SimEvent end
+
+  # Default implementation that concrete types can override
+  actor_index(evt::ActorEvent) = evt.actor_idx
+  actor_collection(::Type{&lt;:ActorEvent{T}}) where T = :actors
+  actor_state_field(::Type{&lt;:ActorEvent{T}}) where T = :state
+
+  # Generic precondition - can be overridden
+  function precondition(evt::E, physical) where E &lt;: ActorEvent
+      actor_idx = actor_index(evt)
+      checkbounds(Bool, getfield(physical, actor_collection(E)), actor_idx) || return false
+
+      # Allow custom precondition logic
+      actor_precondition(evt, physical)
+  end
+
+  # Subtype must implement this
+  actor_precondition(evt::ActorEvent, physical) =
+      error(&quot;Must implement actor_precondition for $(typeof(evt))&quot;)
+
+  # Generic generators for any ActorEvent
+  function generators(::Type{E}) where E &lt;: ActorEvent{T} where T
+      collection = actor_collection(E)
+      state_field = actor_state_field(E)
+
+      return [
+          EventGenerator(
+              ToPlace,
+              [collection, ℤ, state_field],
+              function (f::Function, physical, actor)
+                  evt = try_create_event(E, actor, physical)
+                  !isnothing(evt) &amp;&amp; f(evt)
+              end
+          )
+      ]
+  end
+
+  # Helper to create event if valid
+  try_create_event(::Type{E}, actor_idx, physical) where E &lt;: ActorEvent = E(actor_idx)
+
+  # Generic enable with rate lookup
+  function enable(evt::E, sampler, physical, when, rng) where E &lt;: ActorEvent
+      rate_dist = get_rate_distribution(evt, physical)
+      enable_time_args = get_enable_times(evt, physical, when)
+      enable!(sampler, clock_key(evt), rate_dist, enable_time_args..., rng)
+  end
+
+  # Default reenable delegates to enable
+  function reenable(evt::E, sampler, physical, first_enabled, curtime, rng) where E &lt;: ActorEvent
+      rate_dist = get_rate_distribution(evt, physical)
+      reenable_time_args = get_reenable_times(evt, physical, first_enabled, curtime)
+      enable!(sampler, clock_key(evt), rate_dist, reenable_time_args..., rng)
+  end
+
+  # Subtype must implement rate lookup
+  get_rate_distribution(evt::ActorEvent, physical) =
+      error(&quot;Must implement get_rate_distribution for $(typeof(evt))&quot;)
+
+  # Default time arguments
+  get_enable_times(evt::ActorEvent, physical, when) = (when, when)
+  get_reenable_times(evt::ActorEvent, physical, first_enabled, curtime) = (first_enabled, curtime)</code></pre><p>And what it does to the simulation code:</p><pre><code class="nohighlight hljs"> struct Break &lt;: ActorEvent{IndividualState}
+      actor_idx::Int
+  end
+
+  # Only need to specify unique behavior
+  actor_precondition(evt::Break, physical) =
+      physical.actors[evt.actor_idx].state == working
+
+  get_rate_distribution(evt::Break, physical) =
+      physical.params[evt.actor_idx].fail_dist
+
+  # Custom time calculation for non-memoryless distributions
+  get_enable_times(evt::Break, physical, when) =
+      (when - physical.actors[evt.actor_idx].work_age, when)
+
+  function fire!(evt::Break, physical, when, rng)
+      physical.actors[evt.actor_idx].state = broken
+      started_work = physical.actors[evt.actor_idx].started_working_time
+      physical.actors[evt.actor_idx].work_age += when - started_work
+  end
+
+  # EndDay is even simpler
+  struct EndDay &lt;: ActorEvent{IndividualState}
+      actor_idx::Int
+  end
+
+  actor_precondition(evt::EndDay, physical) =
+      physical.actors[evt.actor_idx].state == working
+
+  get_rate_distribution(evt::EndDay, physical) =
+      physical.params[evt.actor_idx].done_dist
+
+  function fire!(evt::EndDay, physical, when, rng)
+      physical.actors[evt.actor_idx].state = ready
+      started_work = physical.actors[evt.actor_idx].started_working_time
+      physical.actors[evt.actor_idx].work_age += when - started_work
+  end
+
+  # Repair
+  struct Repair &lt;: ActorEvent{IndividualState}
+      actor_idx::Int
+  end
+
+  actor_precondition(evt::Repair, physical) =
+      physical.actors[evt.actor_idx].state == broken
+
+  get_rate_distribution(evt::Repair, physical) =
+      physical.params[evt.actor_idx].repair_dist
+
+  function fire!(evt::Repair, physical, when, rng)
+      physical.actors[evt.actor_idx].state = ready
+      physical.actors[evt.actor_idx].work_age = 0.0
+  end</code></pre><h3 id="Event-generation-in-particular"><a class="docs-heading-anchor" href="#Event-generation-in-particular">Event generation in particular</a><a id="Event-generation-in-particular-1"></a><a class="docs-heading-anchor-permalink" href="#Event-generation-in-particular" title="Permalink"></a></h3><p>This is a macro language to generate events. This one would create a function called <code>generators(::Type{MoveTransition})</code> that contains a list of EventGenerator objects.</p><pre><code class="nohighlight hljs">@conditionsfor MoveTransition begin
+    @reactto changed(agent[i].loc) begin physical
+        agent_loc = physical.agent[i].loc
+        for direction in valid_directions(physical.geom, agent_loc)
+            generate(MoveTransition(agent_who, direction))
+        end
+    end
+    @reactto fired(InfectTransition(sick, healthy)) begin physical
+        for neigh in neighborsof(physical, healthy)
+            for nextneigh in neighborsof(physical, neigh)
+            generate(InfectTransition(neigh, nextneigh))
+        end
+    end
+end</code></pre><p>The <code>@reactto changed(agent[i].loc)</code> creates a generator that reacts <code>ToPlace</code> where the search string is <code>[:agent, ℤ, :loc]</code>. Then it makes a function closure with the arguments <code>(generate::Function, physical, i)</code> where the value passed to <code>i</code> is the <code>ℤ</code> match.</p><p>The <code>@reactto fired(InfectTransition(sick, healthy))</code> creates a generator that reacts <code>ToEvent</code> where the search string is <code>[:InfectTransition]</code> and the function closure has the arguments <code>(generate::Function, physical, sick, healthy)</code>. The values for sick and health are taken from the matched event.</p><script type="module">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({
+    startOnLoad: true,
+    theme: "neutral"
+});
+</script></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../reference/">« Reference</a><a class="docs-footer-nextpage" href="../event_update/">Event Updates »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.14.1 on <span class="colophon-date" title="Sunday 10 August 2025 18:22">Sunday 10 August 2025</span>. Using Julia version 1.11.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
