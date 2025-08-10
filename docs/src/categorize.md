@@ -24,6 +24,13 @@ There is a book by Anderson and Kurtz, called <i>Stochastic Analysis of Biochemi
 
 What was important for ChronoSim.jl is that Anderson and Kurtz showed that all of the sampling machinery can be pulled out of the simulation. Only the states and times of each counting process need to be known to the sampler. That's enough to make a complete, highly-optimized sampler in CompetingClocks.jl while pulling out into the ChronoSim framework the logic of what happens when an event fires.
 
+## Actuarial Simulation and Reliability Simulation
+
+Both actuaries and reliability modelers pay close attention to whether simulations accurately reflect measured and estimated hazard rates of events. Both bodies of literature contain closed-form solutions for muli-state simulations with time-varying hazard rates. These fields focus less on engineering methods for simulation.
+
+ChronoSim.jl is an attempt to be the inverse of survival analysis. The goal of the care in defining events and distributions in time to to be faithful to how hazard rates depend on state. We're taking engineering approaches and bringing the statistical tools to the fore.
+
+
 ## Generalized Stochastic Petri Nets
 
 The Generalized Stochastic Petri Net (GSPN) was popular in the 1990's and more popular after 2000 when Gibson and Bruck's work (and the uncited work of Kurtz) contributed to the speed of sampling.
