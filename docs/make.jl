@@ -69,7 +69,8 @@ makedocs(;
         assets=["assets/custom.css"],
     ),
     pages=[
-        "Home" => ["index.md", "Why" => "not_chrono.md"],
+        "Home" =>
+            ["index.md", "Why Not Hand Made" => "not_chrono.md", "What It Does" => "whatitis.md"],
         "Examples" => ["Getting Started" => "getting_started.md"],
         "Manual" => ["Simulation State" => "simulation_state.md"],
         "Reference" => "reference.md",
