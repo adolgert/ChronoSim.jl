@@ -54,6 +54,35 @@ end
     @test size(arr) == dims
 end
 
+
+@testset "ObservedState 1D push!" begin
+    using ChronoSim.ObservedState
+    Contained1D = ObserveContained{Int}
+    cnt = 32
+    arr = ObservedArray{Contained1D}(undef, cnt)
+    for init in eachindex(arr)
+        arr[init] = Contained1D(-init)
+    end
+    push!(arr, Contained1D(42))
+    @assert length(arr) == cnt + 1
+    @assert arr[cnt + 1]._index == cnt + 1
+    @assert arr[cnt + 1].val == 42
+end
+
+
+@testset "ObservedState 1D pop!" begin
+    using ChronoSim.ObservedState
+    Contained1D = ObserveContained{Int}
+    cnt = 32
+    arr = ObservedArray{Contained1D}(undef, cnt)
+    for init in eachindex(arr)
+        arr[init] = Contained1D(-init)
+    end
+    pop!(arr)
+    @assert length(arr) == cnt - 1
+end
+
+
 @testset "keyedby macro" begin
     using ChronoSim.ObservedState
 
