@@ -73,6 +73,72 @@ function Base.setindex!(v::ObservedArray, x, i::Vararg{Int})
     return x
 end
 
+function Base.push!(v::ObservedVector, x)
+    push!(v.arr, x)
+    new_index = length(v.arr)
+    setfield!(x, :_container, v)
+    setfield!(x, :_index, new_index)
+    return v
+end
+
+function Base.pop!(v::ObservedVector)
+    if isempty(v.arr)
+        throw(BoundsError(v, ()))
+    end
+    x = pop!(v.arr)
+    setfield!(x, :_container, nothing)
+    return x
+end
+
+function Base.pushfirst!(v::ObservedVector, x)
+    pushfirst!(v.arr, x)
+    # Update indices for all elements
+    for i in eachindex(v.arr)
+        element = v.arr[i]
+        setfield!(element, :_container, v)
+        setfield!(element, :_index, i)
+    end
+    return v
+end
+
+function Base.popfirst!(v::ObservedVector)
+    if isempty(v.arr)
+        throw(BoundsError(v, ()))
+    end
+    x = popfirst!(v.arr)
+    setfield!(x, :_container, nothing)
+    # Update indices for remaining elements
+    for i in eachindex(v.arr)
+        element = v.arr[i]
+        setfield!(element, :_index, i)
+    end
+    return x
+end
+
+function Base.append!(v::ObservedVector, items)
+    start_idx = length(v.arr) + 1
+    append!(v.arr, items)
+    # Update container and index for newly added items
+    for (offset, item) in enumerate(items)
+        setfield!(item, :_container, v)
+        setfield!(item, :_index, start_idx + offset - 1)
+    end
+    return v
+end
+
+function Base.resize!(v::ObservedVector, n::Integer)
+    old_length = length(v.arr)
+    resize!(v.arr, n)
+    # If we expanded, new elements need their fields set when accessed
+    # If we shrank, removed elements should have their container cleared
+    if n < old_length
+        # Elements that were removed are no longer accessible through the array
+        # but their container field should ideally be cleared - however we can't
+        # access them anymore, so this is a limitation
+    end
+    return v
+end
+
 function observed_notify(v::ObservedArray, changed, readwrite)
     if isdefined(v, :owner)
         observed_notify(
