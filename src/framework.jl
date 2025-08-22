@@ -104,6 +104,13 @@ function process_generated_events_from_changes(sim::SimulationFSM, fired_event_k
             precond = capture_state_reads(sim.physical) do
                 precondition(newevent, sim.physical)
             end
+            if isnothing(precond)
+                error("""The precondition for $newevent returned `nothing` which may
+                mean that the precondition function doesn't return a true/false or
+                that the interface stub for precondition was called because the
+                function signature for $(newevent)'s precondition doesn't match.
+                """)
+            end
             if precond.result
                 input_places = precond.reads
                 sim.enabled_events[evtkey] = newevent
