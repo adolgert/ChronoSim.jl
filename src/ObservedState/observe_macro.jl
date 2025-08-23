@@ -76,7 +76,7 @@ macro observe(expr)
 
         return quote
             local _physical = $(esc(physical_obj))
-            local _placekey = $placekey_expr
+            local _placekey = $(esc(placekey_expr))
             push!(_physical.obs_modified, _placekey)
             $(esc(lhs)) = $(esc(rhs))
         end
@@ -97,7 +97,7 @@ macro observe(expr)
 
         return quote
             local _physical = $(esc(physical_obj))
-            local _placekey = $placekey_expr
+            local _placekey = $(esc(placekey_expr))
             push!(_physical.obs_read, _placekey)
             $(esc(expr))
         end

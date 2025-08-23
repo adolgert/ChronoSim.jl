@@ -38,7 +38,7 @@ Override this to verify the physical state of your simulation.
 """
 isconsistent(::PhysicalState) = true
 
-"""
+"""e
     over_tracked_physical_state(fcallback::Function, physical::PhysicalState)
 
 Iterate over all tracked vectors in the physical state.
@@ -53,6 +53,8 @@ records which parts of the state were modified. The callback should have
 no arguments and may return a result.
 """
 function capture_state_changes(f::Function, physical)
+    # This is an interface definition. If the physical is of type ObservedPhysical,
+    # then there is an overload that will handle this.
     @assert false
 end
 

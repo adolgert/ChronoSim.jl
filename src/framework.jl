@@ -102,14 +102,28 @@ function process_generated_events_from_changes(sim::SimulationFSM, fired_event_k
         evtkey = clock_key(newevent)
         if evtkey ∉ keys(sim.enabled_events)
             precond = capture_state_reads(sim.physical) do
-                precondition(newevent, sim.physical)
+                result = precondition(newevent, sim.physical)
+                if isnothing(result)
+                    error("""The precondition for $newevent returned `nothing` which may
+                        mean that the precondition function doesn't return a true/false or
+                        that the interface stub for precondition was called because the
+                        function signature for $(newevent)'s precondition doesn't match.
+                        """)
+                end
+                return result
             end
             if precond.result
                 input_places = precond.reads
                 sim.enabled_events[evtkey] = newevent
                 sim.enabling_times[evtkey] = sim.when
                 reads_result = capture_state_reads(sim.physical) do
-                    (dist, enable_time) = enable(newevent, sim.physical, sim.when)
+                    enabling_spec = enable(newevent, sim.physical, sim.when)
+                    if length(enabling_spec) != 2
+                        error("""The enable() function for $newevent should return a
+                            distribution and a time. This one returns $enabling_spec.
+                            """)
+                    end
+                    (dist, enable_time) = enabling_spec
                     enable!(sim.sampler, evtkey, dist, enable_time, sim.when, sim.rng)
                 end
                 rate_deps = reads_result.reads
