@@ -1,6 +1,8 @@
 using Logging
 using Random
-using CompetingClocks: SSA, CombinedNextReaction, enable!, disable!, next, keytype
+using CompetingClocks:
+    SSA, CombinedNextReaction, enable!, disable!, next, keytype, steploglikelihood
+
 using Distributions
 
 export SimulationFSM
@@ -356,6 +358,8 @@ function run(sim::SimulationFSM, initializer::Function, stop_condition::Function
 end
 
 """
+The `trace` is a `Vector{Tuple{Float64,SimEvent}}`. That is, it's a list of
+tuples containing `(when, what event)`.
 In order to calculate log-likelihood of a simulation, pass it a sampler that
 tracks log-likelihood. For instance,
 ```julia
