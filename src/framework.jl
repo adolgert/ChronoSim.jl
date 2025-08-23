@@ -1,6 +1,6 @@
 using Logging
 using Random
-using CompetingClocks: SSA, CombinedNextReaction, enable!, disable!, next
+using CompetingClocks: SSA, CombinedNextReaction, enable!, disable!, next, keytype
 using Distributions
 
 export SimulationFSM
@@ -22,7 +22,20 @@ end
 
 
 """
-    SimulationFSM(physical_state, sampler, trans_rules, seed; observer=nothing)
+Look at events and determine a common base type.
+Internally the simulation tracks events with sets of tuples by turning
+each event instance into a tuple. If all the tuples have the same type,
+this should turn out to be performant.
+"""
+function common_base_key_tuple(events)
+    all_field_types = [Tuple{Symbol,fieldtypes(T)...} for T in events]
+    typejoined = reduce(typejoin, all_field_types)
+    return typejoined
+end
+
+
+"""
+    SimulationFSM(physical_state, trans_rules; seed, rng, sampler, observer=nothing)
 
 Create a simulation.
 
@@ -39,8 +52,8 @@ The `changed_places` argument is a set-like object with tuples that are keys tha
 represent which places were changed.
 """
 function SimulationFSM(
-    physical, sampler::SSA{CK}, events; observer=nothing, rng=nothing, seed=nothing
-) where {CK}
+    physical, events; sampler=nothing, observer=nothing, rng=nothing, seed=nothing
+)
     randgen = if !isnothing(rng)
         rng
     elseif !isnothing(seed)
@@ -49,6 +62,13 @@ function SimulationFSM(
         Xoshiro()
     end
 
+    if isnothing(sampler)
+        ClockKey = common_base_key_tuple(events)
+        sampler = CombinedNextReaction{ClockKey,Float64}()
+        @debug "Creating a sampler with clock key type $ClockKey"
+    else
+        ClockKey = keytype(sampler)
+    end
     no_generator_event = Any[]
     generator_searches = Dict{String,GeneratorSearch}()
     for (idx, filter_condition) in Dict("timed" => !isimmediate, "immediate" => isimmediate)
@@ -80,16 +100,16 @@ function SimulationFSM(
     if isnothing(observer)
         observer = (args...) -> nothing
     end
-    return SimulationFSM{typeof(physical),typeof(sampler),CK}(
+    return SimulationFSM{typeof(physical),typeof(sampler),ClockKey}(
         physical,
         sampler,
         generator_searches["timed"],
         generator_searches["immediate"],
         0.0,
         randgen,
-        DependencyNetwork{CK}(),
-        Dict{CK,SimEvent}(),
-        Dict{CK,Float64}(),
+        DependencyNetwork{ClockKey}(),
+        Dict{ClockKey,SimEvent}(),
+        Dict{ClockKey,Float64}(),
         observer,
     )
 end

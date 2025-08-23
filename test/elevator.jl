@@ -721,9 +721,7 @@ function run_elevator()
     ]
     @assert length(included_transitions) == 9
     trajectory = TrajectorySave()
-    sim = SimulationFSM(
-        physical, Sampler(), included_transitions; rng=Xoshiro(93472934), observer=trajectory
-    )
+    sim = SimulationFSM(physical, included_transitions; rng=Xoshiro(93472934), observer=trajectory)
     trajectory.sim = sim
     # Stop-condition is called after the next event is chosen but before the
     # next event is fired. This way you can stop at an end time between events.
@@ -759,7 +757,11 @@ function run_with_trace()
     @assert length(included_transitions) == 9
     tla_recorder = TLATraceRecorder()
     sim = SimulationFSM(
-        physical, Sampler(), included_transitions; rng=Xoshiro(93472934), observer=tla_recorder
+        physical,
+        included_transitions;
+        sampler=Sampler(),
+        rng=Xoshiro(93472934),
+        observer=tla_recorder,
     )
     tla_recorder.sim = sim
     # Stop-condition is called after the next event is chosen but before the
