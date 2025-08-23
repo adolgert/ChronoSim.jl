@@ -346,9 +346,9 @@ function run(sim::SimulationFSM, init_evt::SimEvent, init_func::Function, stop_c
     step_idx
 end
 
-function run(sim::SimulationFSM, initializer::SimEvent, stop_condition::Function)
+function run(sim::SimulationFSM, init_evt::SimEvent, stop_condition::Function)
     init_func = (physical, when, rng) -> fire!(init_evt, physical, when, rng)
-    run(sim, initializer, init_func, stop_condition)
+    run(sim, init_evt, init_func, stop_condition)
 end
 
 function run(sim::SimulationFSM, initializer::Function, stop_condition::Function)
