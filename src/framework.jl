@@ -354,3 +354,37 @@ end
 function run(sim::SimulationFSM, initializer::Function, stop_condition::Function)
     run(sim, InitializeEvent(), initializer, stop_condition)
 end
+
+"""
+In order to calculate log-likelihood of a simulation, pass it a sampler that
+tracks log-likelihood. For instance,
+```julia
+base_sampler = CombinedNextReaction{K,T}()
+memory_sampler = MemorySampler(base_sampler)
+```
+"""
+function trace_likelihood(sim::SimulationFSM, init_evt::SimEvent, init_func::Function, trace)
+    loglikelihood = zero(Float64)
+    initialize!(init_evt, init_func, sim)
+    for (step_idx, step_evt) in enumerate(trace)
+        (when, what) = step_evt
+        if isfinite(when) && !isnothing(what)
+            @debug "Firing $what at $when"
+            loglikelihood += steploglikelihood(sim.sampler.track, sim.when, when, what)
+            fire!(sim, when, what)
+        else
+            @info "No more events to process after $step_idx iterations."
+            break
+        end
+    end
+    loglikelihood
+end
+
+function trace_likelihood(sim::SimulationFSM, initializer::SimEvent, trace)
+    init_func = (physical, when, rng) -> fire!(init_evt, physical, when, rng)
+    trace_likelihood(sim, initializer, init_func, trace)
+end
+
+function trace_likelihood(sim::SimulationFSM, initializer::Function, trace)
+    trace_likelihood(sim, InitializeEvent(), initializer, trace)
+end
