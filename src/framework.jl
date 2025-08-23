@@ -49,19 +49,33 @@ function SimulationFSM(
         Xoshiro()
     end
 
-    generator_searches = Vector{GeneratorSearch}(undef, 2)
-    for (idx, filter_condition) in enumerate([!isimmediate, isimmediate])
+    no_generator_event = Any[]
+    generator_searches = Dict{String,GeneratorSearch}()
+    for (idx, filter_condition) in Dict("timed" => !isimmediate, "immediate" => isimmediate)
         event_set = filter(filter_condition, events)
         generator_set = EventGenerator[]
         for event in event_set
-            append!(generator_set, generators(event))
+            gen_for_event = generators(event)
+            if !isempty(gen_for_event)
+                append!(generator_set, gen_for_event)
+            else
+                push!(no_generator_event, gen_for_event)
+            end
         end
         generator_searches[idx] = GeneratorSearch(generator_set)
     end
-    if isempty(generator_searches[1])
-        error("There are no timed events and immediate events are $(generator_searches[2])")
+    if isempty(generator_searches["timed"])
+        imm_str = str(generator_searches["immediate"])
+        error("There are no timed events and immediate events are $imm_str")
     end
-    @debug generator_searches[1]
+    if length(no_generator_event) > 1
+        error("""More than one event has no generators. Check function signatures
+            because only one should be the initializer event. $(no_generator_event)
+            """)
+    elseif !isempty(no_generator_event)
+        @debug "Possible initialization event $(no_generator_event[1])"
+    end
+    @debug generator_searches["timed"]
 
     if isnothing(observer)
         observer = (args...) -> nothing
@@ -69,8 +83,8 @@ function SimulationFSM(
     return SimulationFSM{typeof(physical),typeof(sampler),CK}(
         physical,
         sampler,
-        generator_searches[1],
-        generator_searches[2],
+        generator_searches["timed"],
+        generator_searches["immediate"],
         0.0,
         randgen,
         DependencyNetwork{CK}(),
@@ -264,11 +278,10 @@ physical state.
     end
 ```
 """
-function initialize!(callback::Function, sim::SimulationFSM)
+function initialize!(init_evt, callback::Function, sim::SimulationFSM)
     changes_result = capture_state_changes(sim.physical) do
         callback(sim.physical, sim.when, sim.rng)
     end
-    init_evt = InitializeEvent()
     deal_with_changes(sim, init_evt, changes_result.changes)
     process_generated_events_from_changes(sim, clock_key(init_evt), changes_result.changes)
     checksim(sim)
@@ -281,7 +294,8 @@ end
 
 Given a simulation, this initializes the physical state and generates a
 trajectory from the simulation until the stop condition is met. The `initializer`
-is a function whose argument is a physical state and returns nothing. The
+is either a function whose argument is a physical state and returns nothing, or
+it is an event key for an event that initializes the system. The
 stop condition is a function with the signature:
 
 ```
@@ -292,10 +306,10 @@ The event and when passed into the stop condition are the event and time that ar
 about to fire but have not yet fired. This lets you enforce a stopping time that
 is between events.
 """
-function run(sim::SimulationFSM, initializer, stop_condition)
+function run(sim::SimulationFSM, init_evt::SimEvent, init_func::Function, stop_condition::Function)
     step_idx = 0
-    initialize!(initializer, sim)
-    stop_condition(sim.physical, step_idx, InitializeEvent(), sim.when) && return nothing
+    initialize!(init_evt, init_func, sim)
+    stop_condition(sim.physical, step_idx, init_evt, sim.when) && return nothing
     step_idx += 1
     while true
         (when, what) = next(sim.sampler, sim.when, sim.rng)
@@ -310,4 +324,13 @@ function run(sim::SimulationFSM, initializer, stop_condition)
         step_idx += 1
     end
     step_idx
+end
+
+function run(sim::SimulationFSM, initializer::SimEvent, stop_condition::Function)
+    init_func = (physical, when, rng) -> fire!(init_evt, physical, when, rng)
+    run(sim, initializer, init_func, stop_condition)
+end
+
+function run(sim::SimulationFSM, initializer::Function, stop_condition::Function)
+    run(sim, InitializeEvent(), initializer, stop_condition)
 end
