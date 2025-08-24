@@ -374,6 +374,7 @@ function trace_likelihood(sim::SimulationFSM, init_evt::SimEvent, init_func::Fun
         (when, what) = step_evt
         if isfinite(when) && !isnothing(what)
             @debug "Firing $what at $when"
+            @assert when > sim.when
             loglikelihood += steploglikelihood(sim.sampler.track, sim.when, when, what)
             fire!(sim, when, what)
         else
