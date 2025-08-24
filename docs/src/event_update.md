@@ -1,6 +1,6 @@
 # How Event States are Updated
 
-The main loop of the framework for simulation will fire an event, look at changed places, and then update the events in the system. This turns is complicated, so let's discuss it here.
+The main loop of the framework for simulation will fire an event, look at changed places, and then update the events in the system. This turns out to be complicated, so let's discuss it here.
 
 An event has
 

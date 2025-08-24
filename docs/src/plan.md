@@ -25,7 +25,7 @@
 
 ### Known bugs
 
- 1. Observe macro needs hygeine to evaluate methods in defining context.
+ 1. Observe macro needs hygiene to evaluate methods in defining context.
 
 
 ## Future Capabilities
@@ -485,5 +485,5 @@ to `i` is the `ℤ` match.
 The `@reactto fired(InfectTransition(sick, healthy))` creates a generator that
 reacts `ToEvent` where the search string is `[:InfectTransition]` and the function
 closure has the arguments `(generate::Function, physical, sick, healthy)`.
-The values for sick and health are taken from the matched event.
+The values for sick and healthy are taken from the matched event.
 

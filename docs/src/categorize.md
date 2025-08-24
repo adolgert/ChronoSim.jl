@@ -6,7 +6,7 @@ The ChronoSim.jl simulation framework doesn't fit exactly into some of the major
 
 ## Exact, Stochastic, Continuous-time
 
-The sampling algorithms used are exact, continuous-time sampling. Wikipedia calls these algorithms [Gillsepie Algorithms](https://en.wikipedia.org/wiki/Gillespie_algorithm), but I would argue that is a misnomer because a simple heap-based first-to-fire style of sampling is an exact sampling of one of these systems, and this method was known well before Gillespie. It was known before Doob's algorithm, which was also before Gillespie.
+The sampling algorithms used are exact, continuous-time sampling. Wikipedia calls these algorithms [Gillespie Algorithms](https://en.wikipedia.org/wiki/Gillespie_algorithm), but I would argue that is a misnomer because a simple heap-based first-to-fire style of sampling is an exact sampling of one of these systems, and this method was known well before Gillespie. It was known before Doob's algorithm, which was also before Gillespie.
 
 ## The Generalized Semi-Markov Process
 
@@ -26,9 +26,9 @@ What was important for ChronoSim.jl is that Anderson and Kurtz showed that all o
 
 ## Actuarial Simulation and Reliability Simulation
 
-Both actuaries and reliability modelers pay close attention to whether simulations accurately reflect measured and estimated hazard rates of events. Both bodies of literature contain closed-form solutions for muli-state simulations with time-varying hazard rates. These fields focus less on engineering methods for simulation.
+Both actuaries and reliability modelers pay close attention to whether simulations accurately reflect measured and estimated hazard rates of events. Both bodies of literature contain closed-form solutions for multi-state simulations with time-varying hazard rates. These fields focus less on engineering methods for simulation.
 
-ChronoSim.jl is an attempt to be the inverse of survival analysis. The goal of the care in defining events and distributions in time to to be faithful to how hazard rates depend on state. We're taking engineering approaches and bringing the statistical tools to the fore.
+ChronoSim.jl is an attempt to be the inverse of survival analysis. The goal of the care in defining events and distributions in time is to be faithful to how hazard rates depend on state. We're taking engineering approaches and bringing the statistical tools to the fore.
 
 
 ## Generalized Stochastic Petri Nets
@@ -58,7 +58,7 @@ In a GSPN, the enabling of transitions depends only on the state. That's the onl
 
 From the perspective above, agent-based simulation can be done with any of the above methods. What makes a simulation agent-based is the imposition of the invariants on the system. For instance, if we make a rule that a rabbit is in a field, the invariant that makes the simulation agent-based would be that the rabbit doesn't disappear and reappear.
 
-Whether a simulation made with ChronoSim.jl is agent-based depends on what you define in the simulation. It's not intrinsic to the simulation framewor. It's also not difficult to implement.
+Whether a simulation made with ChronoSim.jl is agent-based depends on what you define in the simulation. It's not intrinsic to the simulation framework. It's also not difficult to implement.
 
 ## Formal methods
 
