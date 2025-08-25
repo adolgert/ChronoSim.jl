@@ -126,7 +126,7 @@ function rate_reenable(sim::SimulationFSM, event, clock_key)
         return reenable(event, sim.physical, first_enable, sim.when)
     end
     if !isnothing(reads_result.result)
-        (dist, enable_time) = distwhen
+        (dist, enable_time) = reads_result.result
         enable!(sim.sampler, clock_key, dist, enable_time, sim.when, sim.rng)
     end
     return reads_result.reads
@@ -386,7 +386,7 @@ function trace_likelihood(sim::SimulationFSM, init_evt::SimEvent, init_func::Fun
 end
 
 function trace_likelihood(sim::SimulationFSM, initializer::SimEvent, trace)
-    init_func = (physical, when, rng) -> fire!(init_evt, physical, when, rng)
+    init_func = (physical, when, rng) -> fire!(initializer, physical, when, rng)
     trace_likelihood(sim, initializer, init_func, trace)
 end
 
