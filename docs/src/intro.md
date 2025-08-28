@@ -83,10 +83,12 @@ This style of simulation has the same number of possible problems as other simul
 
 The generation of extra events isn't any worse than a normal for-loop when you create a new event. It's just broken into a generator and a separate checker, so it feels like it costs more.
 
-## 
+## Advantages
 
- - model checking
- - composition of models through the state dependencies
- - canceling ghost events
- - log-likelihood for model-fitting and uncertainty quantification, Bayesian inference, rare event simulation
+ - Model checking. The set of preconditions defines what events should be enabled at any time in the simulation. Checking all preconditions is a great correctness check. The model itself also has a strong correspondence to TLA+ models.
 
+ - Canceling ghost events. There are cases where firing one event makes another event no longer relevant. Some simulations deal with these ghost events by ignoring them later, but they can create confusion when an event is enabled, then ghosted, then should be enabled again. This simulation is clear about canceling events whose preconditions are no longer met.
+
+ - Composition of models through the state dependencies. If you make a model of how people move and then a model of how disease spreads, you don't need to modify those models in order to compose them. Because each model's events are enabled by state changes, they will implicitly share resources correctly, where in this example the resources are the location and health states of people.
+
+ - This framework can calculate log-likelihood for model-fitting and uncertainty quantification, Bayesian inference, and rare event simulation. It defines a stochastic process.

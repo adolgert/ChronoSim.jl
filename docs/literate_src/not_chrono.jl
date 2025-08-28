@@ -71,34 +71,34 @@ mutable struct Board
     locations::Array{Int,2}
     Board(n) = new(Agent[], zeros(Int, n, n))
 end
-function run_until(event_cnt)
-    N = 10
-    state = Board(N)
-    for aidx in 1:N
-        loc_found = false
-        agent_loc = [0, 0]
-        while !loc_found
-            agent_loc = rand(rng, 1:N, 2)
-            loc_found = state.locations[agent_loc[1], agent_loc[2]] == 0
-        end
-        agent = Agent(agent_loc, rand(rng, instances(Matter)))
-        state.locations[agent_loc[1], agent_loc[2]] = aidx
-        push!(state.agent, agent)
-        schedule(queue, Exponential(μ), (:move, aidx, rand(rng, 1:length(DIRECTIONS))))
-        schedule(queue, Exponential(γ), (:spawn, aidx))
-    end
-    now = 0.0
-    for event_idx in 1:event_cnt
-        (when, (event_type, args...)) = pop!(queue)
-        now = when
-        @show (when, event_type, args)
-        # Skip events if they refer to an agent that has been knocked off the board.
-        if state.agent[args[1]].location[1] != 0
-            event_dict[event_type](state, now, args...)
-        end
-    end
-end
-run_until(10)
+# function run_until(event_cnt)
+#     N = 10
+#     state = Board(N)
+#     for aidx in 1:N
+#         loc_found = false
+#         agent_loc = [0, 0]
+#         while !loc_found
+#             agent_loc = rand(rng, 1:N, 2)
+#             loc_found = state.locations[agent_loc[1], agent_loc[2]] == 0
+#         end
+#         agent = Agent(agent_loc, rand(rng, instances(Matter)))
+#         state.locations[agent_loc[1], agent_loc[2]] = aidx
+#         push!(state.agent, agent)
+#         schedule(queue, Exponential(μ), (:move, aidx, rand(rng, 1:length(DIRECTIONS))))
+#         schedule(queue, Exponential(γ), (:spawn, aidx))
+#     end
+#     now = 0.0
+#     for event_idx in 1:event_cnt
+#         (when, (event_type, args...)) = pop!(queue)
+#         now = when
+#         @show (when, event_type, args)
+#         # Skip events if they refer to an agent that has been knocked off the board.
+#         if state.agent[args[1]].location[1] != 0
+#             event_dict[event_type](state, now, args...)
+#         end
+#     end
+# end
+# run_until(10)
 #
 # This works great because it's very clear how events flow, which makes debugging
 # easy. Why make life any more complicated?

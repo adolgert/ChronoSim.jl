@@ -88,8 +88,12 @@ makedocs(;
     sitename="ChronoSim.jl",
     format=doc_format,
     pages=[
-        "Home" =>
-            ["index.md", "Why Not Hand Made" => "not_chrono.md", "What It Does" => "whatitis.md"],
+        "Home" => [
+            "index.md",
+            "intro.md",
+            "Why Not Hand Made" => "not_chrono.md",
+            "What It Does" => "whatitis.md",
+        ],
         "Examples" => ["Getting Started" => "getting_started.md"],
         "Manual" => [
             "Simulation State" => "simulation_state.md",
