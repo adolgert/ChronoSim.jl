@@ -2,8 +2,7 @@
 
 ## High-level of what defines an event
 
-This is a continuous-time simulation, which means only one event happens at
-at time. This simulation framework structures the firing of an event so that each event maintains responsibility for its own correct behavior given the state of the system.
+This is a continuous-time simulation, which means only one event happens at a time. This simulation framework structures the firing of an event so that each event maintains responsibility for its own correct behavior given the state of the system.
 
  1. The next event is chosen by a Sampler. That event contains a type and a tuple of event-specific identifiers.
  1. The `fire!()` function for that event is called. This `fire!()` function modifies the state.

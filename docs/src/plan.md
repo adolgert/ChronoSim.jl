@@ -22,10 +22,13 @@
 ### Examples
 
  1. Elevators with TLA+.
+ 1. Reliability with a set of trucks.
+ 1. SIR with strain mutation and individual movement models.
+ 1. Movement through a 2D domain for particle filtering.
 
 ### Known bugs
 
- 1. Observe macro needs hygeine to evaluate methods in defining context.
+ 1. Observe macro needs hygiene to evaluate methods in defining context.
 
 
 ## Future Capabilities
@@ -35,12 +38,11 @@
 1. Importance sampling
 1. Pregeneration of all rule-based events.
 1. Transactional firing (for estimation of derivatives)
-1. HMC sampling from trajectories
+1. MCMC sampling from trajectories
 
 
 ### Example Simulations
 
- 1. Movement and infection.
  1. Move, infect, age, birth.
  1. Policy-driven movement.
  1. Queuing model.
@@ -485,5 +487,5 @@ to `i` is the `ℤ` match.
 The `@reactto fired(InfectTransition(sick, healthy))` creates a generator that
 reacts `ToEvent` where the search string is `[:InfectTransition]` and the function
 closure has the arguments `(generate::Function, physical, sick, healthy)`.
-The values for sick and health are taken from the matched event.
+The values for sick and healthy are taken from the matched event.
 

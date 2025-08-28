@@ -45,7 +45,7 @@ board_state.actor[1].speed = 2.0
 ```
 That assignment will be recorded as a modification of `(:actor, 1, :speed)`.
 
-If the simulation changes `params` or `actors_max`, those are note contained in `ObservedArray` or `ObservedDict` so they aren't recorded.
+If the simulation changes `params` or `actors_max`, those are not contained in `ObservedArray` or `ObservedDict` so they aren't recorded.
 
 ## @Observe Macro
 

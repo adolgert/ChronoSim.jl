@@ -38,7 +38,7 @@ Override this to verify the physical state of your simulation.
 """
 isconsistent(::PhysicalState) = true
 
-"""e
+"""
     over_tracked_physical_state(fcallback::Function, physical::PhysicalState)
 
 Iterate over all tracked vectors in the physical state.
