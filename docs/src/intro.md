@@ -5,7 +5,7 @@
 Every simulation framework has a way to decide what events happen next, a core scheduling paradigm. For ChronoSim, every event has one rule for when it is eligible to happen, a `precondition`. Here's an example for a movement event.
 
 ```julia
-function precondition(event::Move, state, time)
+function precondition(event::Move, state)
 	loc = state.agents[event.agent].location
 	return state.location[loc + event.direction] == 0
 end
@@ -13,9 +13,7 @@ end
 As soon as that event returns `true`, the event becomes enabled, which means it will fire at a future time determined by a probability distribution. If that `precondition` later becomes `false`, the event becomes disabled. The precondition associated with an event determines whether it can fire, and the moment that's true, it calls `enable`.
 
 ```julia
-function enable(event::Move, state, time)
-	return (Weibull(2, 1.0), time)
-end
+enable(event::Move, state, time) = (Weibull(2, 1.0), time)
 ```
 That tells the framework that the the time between enabling this event and firing it will follow a Weibull distribution.
 
