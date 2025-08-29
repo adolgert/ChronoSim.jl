@@ -96,7 +96,7 @@ makedocs(;
         ],
         "Examples" => ["Getting Started" => "getting_started.md"],
         "Manual" => [
-            "Simulation State" => "simulation_state.md",
+            "Simulation State" => ["observedphysical.md", "observedmacro.md", "customstate.md"],
             "Category of Simulation" => "categorize.md",
         ],
         "Reference" => "reference.md",
