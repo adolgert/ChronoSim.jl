@@ -10,6 +10,7 @@ is_observed_container(::Any) = false
 
 using ..ChronoSim: Member
 
+include("obs_traits.jl")
 include("observed_physical.jl")
 include("observed_vector.jl")
 include("observed_dict.jl")

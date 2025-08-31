@@ -35,54 +35,68 @@ end
 
 Base.IndexStyle(v::ObservedArray) = Base.IndexStyle(v.arr)
 
-function Base.getindex(v::ObservedArray{T,1}, i::Int) where {T}
-    element = v.arr[i]
-    setfield!(element, :_container, v)
-    setfield!(element, :_index, i)
-    return element
+Base.getindex(v::ObservedArray, i...) = getindex(structure_trait(eltype(v)), v, i...)
+
+_update_index(el, v, i) = (setfield!(el, :_container, v); setfield!(el, :_index, i); el)
+
+function Base.getindex(::PrimitiveTrait, v::ObservedArray{T,1}, i::Int) where {T}
+    observed_notify(v, i, :read)
+    return v.arr[i]
 end
 
-function Base.getindex(v::ObservedArray{T,N}, i::Int) where {T,N}
+function Base.getindex(::CompoundTrait, v::ObservedArray{T,1}, i::Int) where {T}
     element = v.arr[i]
-    setfield!(element, :_container, v)
-    setfield!(element, :_index, Tuple(CartesianIndices(v.arr)[i]))
-    return element
+    return _update_index(element, v, i)
 end
 
-function Base.getindex(v::ObservedArray, i::Vararg{Int})
+function Base.getindex(::PrimitiveTrait, v::ObservedArray{T,N}, i::Int) where {T,N}
+    observed_notify(v, Tuple(CartesianIndices(v.arr)[i]), :read)
+    return v.arr[i]
+end
+
+function Base.getindex(::CompoundTrait, v::ObservedArray{T,N}, i::Int) where {T,N}
+    element = v.arr[i]
+    return _update_index(element, v, Tuple(CartesianIndices(v.arr)[i]))
+end
+
+function Base.getindex(::PrimitiveTrait, v::ObservedArray, i::Vararg{Int})
+    observed_notify(v, i, :read)
+    return v.arr[i...]
+end
+
+function Base.getindex(::CompoundTrait, v::ObservedArray, i::Vararg{Int})
     element = v.arr[i...]
-    setfield!(element, :_container, v)
-    setfield!(element, :_index, i)
-    return element
+    return _update_index(element, v, i)
+end
+
+function Base.getindex(::PrimitiveTrait, v::ObservedArray, i::CartesianIndex)
+    observed_notify(v, Tuple(i), :read)
+    return v.arr[i]
+end
+
+function Base.getindex(::CompoundTrait, v::ObservedArray, i::CartesianIndex)
+    element = v.arr[i]
+    return _update_index(element, v, Tuple(i))
 end
 
 function Base.setindex!(v::ObservedArray{T,1}, x, i::Int) where {T}
     v.arr[i] = x
-    setfield!(x, :_container, v)
-    setfield!(x, :_index, i)
-    return x
+    return _update_index(x, v, i)
 end
 
 function Base.setindex!(v::ObservedArray{T,N}, x, i::Int) where {T,N}
     v.arr[i] = x
-    setfield!(x, :_container, v)
-    setfield!(x, :_index, Tuple(CartesianIndices(v.arr)[i]))
-    return x
+    return _update_index(x, v, Tuple(CartesianIndices(v.arr)[i]))
 end
 
 function Base.setindex!(v::ObservedArray, x, i::Vararg{Int})
     v.arr[i...] = x
-    setfield!(x, :_container, v)
-    setfield!(x, :_index, i)
-    return x
+    return _update_index(x, v, i)
 end
 
 function Base.push!(v::ObservedVector, x)
     push!(v.arr, x)
-    new_index = length(v.arr)
-    setfield!(x, :_container, v)
-    setfield!(x, :_index, new_index)
-    return v
+    return _update_index(x, v, length(v.arr))
 end
 
 function Base.pop!(v::ObservedVector)
