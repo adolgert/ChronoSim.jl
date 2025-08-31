@@ -115,7 +115,7 @@ end
 
 function Base.setindex!(::PrimitiveTrait, v::ObservedArray, x, i::CartesianIndex)
     v.arr[i] = x
-    observed_notify(v, Tuple(i), :write)
+    return observed_notify(v, Tuple(i), :write)
 end
 
 function Base.setindex!(::CompoundTrait, v::ObservedArray, x, i::CartesianIndex)
@@ -245,7 +245,7 @@ function Base.resize!(::CompoundTrait, v::ObservedVector, n::Integer)
     old_length = length(v.arr)
     if n < old_length
         for rem_idx in (n + 1):old_length
-            setfield!(item, :_container, nothing)
+            setfield!(v.arr[rem_idx], :_container, nothing)
         end
         # else New entries will be undef after resize. Don't initialize.
     end

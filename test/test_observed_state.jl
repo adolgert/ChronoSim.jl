@@ -8,7 +8,95 @@ mutable struct ObserveContained{T}
     ObserveContained{T}(v) where {T} = new{T}(v)
 end
 
-@testset "ObservedState smoke 1D" begin
+@testset "ObservedArray construct int undef" begin
+    using ChronoSim.ObservedState
+    cnt = 5
+    arr = ObservedArray{Int}(undef, cnt)
+    for idx in 1:cnt
+        arr[idx] = -idx
+    end
+    for ridx in 1:cnt
+        @test arr[ridx] == -ridx
+    end
+end
+
+@testset "ObservedArray construct int iterator" begin
+    using ChronoSim.ObservedState
+    cnt = 5
+    arr = ObservedArray{Int,1}(2*x for x in 1:cnt)
+    for ridx in 1:cnt
+        @test arr[ridx] == 2*ridx
+    end
+end
+
+@testset "ObservedArray construct int vector" begin
+    using ChronoSim.ObservedState
+    cnt = 5
+    arr = ObservedArray{Int,1}([2*x for x in 1:cnt])
+    for ridx in 1:cnt
+        @test arr[ridx] == 2*ridx
+    end
+end
+
+
+@testset "ObservedVector construct int undef" begin
+    using ChronoSim.ObservedState
+    cnt = 5
+    arr = ObservedVector{Int}(undef, cnt)
+    for idx in 1:cnt
+        arr[idx] = -idx
+    end
+    for ridx in 1:cnt
+        @test arr[ridx] == -ridx
+    end
+end
+
+@testset "ObservedVector construct int iterator" begin
+    using ChronoSim.ObservedState
+    cnt = 5
+    arr = ObservedVector{Int}(2*x for x in 1:cnt)
+    for ridx in 1:cnt
+        @test arr[ridx] == 2*ridx
+    end
+end
+
+@testset "ObservedVector construct int vector" begin
+    using ChronoSim.ObservedState
+    cnt = 5
+    arr = ObservedVector{Int}([2*x for x in 1:cnt])
+    for ridx in 1:cnt
+        @test arr[ridx] == 2*ridx
+    end
+end
+
+@testset "ObservedMatrix construct int undef" begin
+    using ChronoSim.ObservedState
+    cnt = 5
+    arr = ObservedMatrix{Int}(undef, cnt, cnt)
+    for idx in 1:cnt, jdx in 1:cnt
+        arr[idx, jdx] = -idx
+    end
+    for ridx in 1:cnt, sidx in 1:cnt
+        @test arr[ridx, sidx] == -ridx
+    end
+end
+
+@testset "ObservedMatrix construct int iterator" begin
+    using ChronoSim.ObservedState
+    arr = ObservedMatrix{Int}(2*x for x in 1:3, j in 1:2)
+    @test length(arr) == 6
+    @test arr[2, 1] == 4
+end
+
+@testset "ObservedMatrix construct int vector" begin
+    using ChronoSim.ObservedState
+    cnt = 5
+    arr = ObservedMatrix{Int}([2*x for x in 1:3, j in 1:2])
+    @test length(arr) == 6
+    @test arr[2, 1] == 4
+end
+
+@testset "ObservedArray smoke 1D" begin
     using ChronoSim.ObservedState
     Contained1D = ObserveContained{Int}
     cnt = 32
@@ -26,7 +114,7 @@ end
     @test size(arr) == (cnt,)
 end
 
-@testset "ObservedState smoke 2D" begin
+@testset "ObservedArray smoke 2D" begin
     using ChronoSim.ObservedState
     Contained2D = ObserveContained{NTuple{2,Int64}}
     dims = (4, 2)
