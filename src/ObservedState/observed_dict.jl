@@ -8,24 +8,28 @@ end
 # Constructors
 ObservedDict{K,V}() where {K,V} = ObservedDict{K,V}(Dict{K,V}())
 ObservedDict() = ObservedDict{Any,Any}()
+function ObservedDict(pairs...)
+    K = typejoin([typeof(k) for (k, _) in pairs])
+    V = typejoin([typeof(v) for (_, v) in pairs])
+    od = ObservedDict{K,V}(Dict{K,V}())
+    for (k, v) in pairs
+        setindex!(od, v, k)
+    end
+    return od
+end
+function ObservedDict(other::AbstractDict{K,V}) where {K,V}
+    od = ObservedDict{K,V}(Dict{K,V}())
+    for (k, v) in other
+        setindex!(od, v, k)
+    end
+    return od
+end
 
 is_observed_container(v::ObservedDict) = true
 
 
 # Forward read-only operations
-for op in [
-    :eltype,
-    :empty!,
-    :haskey,
-    :isempty,
-    :iterate,
-    :keys,
-    :length,
-    :pairs,
-    :size,
-    :sizehint!,
-    :values,
-]
+for op in [:eltype, :haskey, :isempty, :iterate, :keys, :length, :pairs, :size, :sizehint!, :values]
     @eval Base.$op(tv::ObservedDict, args...; kwargs...) = $op(tv.dict, args...; kwargs...)
 end
 
@@ -48,11 +52,39 @@ function Base.delete!(d::ObservedDict, key)
     if haskey(d.dict, key)
         element = d.dict[key]
         setfield!(element, :_container, nothing)
+        # missing: notify all fields of this element
         # Note: _index is left as-is since it might still be meaningful
         delete!(d.dict, key)
     end
     return d
 end
+
+
+function Base.pop!(d::ObservedDict, key)
+    if haskey(d.dict, key)
+        element = d.dict[key]
+        # missing: notify all fields of this element
+        setfield!(element, :_container, nothing)
+        return pop!(d.dict, key)
+    end
+    return nothing
+end
+
+function Base.pop!(d::ObservedDict, key, default)
+    if haskey(d.dict, key)
+        element = d.dict[key]
+        # missing: notify all fields of this element
+        setfield!(element, :_container, nothing)
+        return pop!(d.dict, key, default)
+    end
+    return nothing
+end
+
+# popfirest!, poplast!
+# merge!, empty!, merge
+# similar(d) and similar(d, ::Type{Pair{K,V}})
+# filter!(f, d)
+# in(pair, d) for pair membership
 
 Base.get(d::ObservedDict, key, default) =
     if haskey(d.dict, key)
