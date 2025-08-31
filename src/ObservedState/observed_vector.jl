@@ -35,6 +35,8 @@ end
 
 Base.IndexStyle(v::ObservedArray) = Base.IndexStyle(v.arr)
 
+# Use a trait type to treat primitive element types as leaf nodes but treat
+# compound element types as branch nodes.
 Base.getindex(v::ObservedArray, i...) = getindex(structure_trait(eltype(v)), v, i...)
 
 _update_index(el, v, i) = (setfield!(el, :_container, v); setfield!(el, :_index, i); el)
@@ -79,27 +81,72 @@ function Base.getindex(::CompoundTrait, v::ObservedArray, i::CartesianIndex)
     return _update_index(element, v, Tuple(i))
 end
 
-function Base.setindex!(v::ObservedArray{T,1}, x, i::Int) where {T}
+Base.setindex!(v::ObservedArray, x, i...) = setindex!(structure_trait(eltype(v)), v, x, i...)
+
+function Base.setindex!(::PrimitiveTrait, v::ObservedArray{T,1}, x, i::Int) where {T}
+    observed_notify(v, i, :write)
+    return v.arr[i] = x
+end
+
+function Base.setindex!(::CompoundTrait, v::ObservedArray{T,1}, x, i::Int) where {T}
     v.arr[i] = x
     return _update_index(x, v, i)
 end
 
-function Base.setindex!(v::ObservedArray{T,N}, x, i::Int) where {T,N}
+function Base.setindex!(::PrimitiveTrait, v::ObservedArray{T,N}, x, i::Int) where {T,N}
+    observed_notify(v, Tuple(CartesianIndices(v.arr)[i]), :write)
+    return v.arr[i] = x
+end
+
+function Base.setindex!(::CompoundTrait, v::ObservedArray{T,N}, x, i::Int) where {T,N}
     v.arr[i] = x
     return _update_index(x, v, Tuple(CartesianIndices(v.arr)[i]))
 end
 
-function Base.setindex!(v::ObservedArray, x, i::Vararg{Int})
+function Base.setindex!(::PrimitiveTrait, v::ObservedArray, x, i::Vararg{Int})
+    observed_notify(v, i, :write)
+    return v.arr[i...] = x
+end
+
+function Base.setindex!(::CompoundTrait, v::ObservedArray, x, i::Vararg{Int})
     v.arr[i...] = x
     return _update_index(x, v, i)
 end
 
-function Base.push!(v::ObservedVector, x)
+function Base.setindex!(::PrimitiveTrait, v::ObservedArray, x, i::CartesianIndex)
+    v.arr[i] = x
+    observed_notify(v, Tuple(i), :write)
+end
+
+function Base.setindex!(::CompoundTrait, v::ObservedArray, x, i::CartesianIndex)
+    v.arr[i] = x
+    return _update_index(x, v, Tuple(i))
+end
+
+Base.push!(v::ObservedVector, x) = push!(structure_trait(eltype(v)), v, x)
+
+function Base.push!(::PrimitiveTrait, v::ObservedVector, x)
+    observed_notify(v, length(v.arr) + 1, :write)
+    return push!(v.arr, x)
+end
+
+function Base.push!(::CompoundTrait, v::ObservedVector, x)
     push!(v.arr, x)
     return _update_index(x, v, length(v.arr))
 end
 
-function Base.pop!(v::ObservedVector)
+Base.pop!(v::ObservedVector) = pop!(structure_trait(eltype(v)), v)
+
+function Base.pop!(::PrimitiveTrait, v::ObservedVector)
+    if isempty(v.arr)
+        throw(BoundsError(v, ()))
+    end
+    observed_notify(v, length(v), :write)
+    x = pop!(v.arr)
+    return x
+end
+
+function Base.pop!(::CompoundTrait, v::ObservedVector)
     if isempty(v.arr)
         throw(BoundsError(v, ()))
     end
@@ -108,18 +155,40 @@ function Base.pop!(v::ObservedVector)
     return x
 end
 
-function Base.pushfirst!(v::ObservedVector, x)
+Base.pushfirst!(v::ObservedVector, x) = pushfirst!(structure_trait(eltype(v)), v, x)
+
+function Base.pushfirst!(::PrimitiveTrait, v::ObservedVector, x)
     pushfirst!(v.arr, x)
-    # Update indices for all elements
     for i in eachindex(v.arr)
-        element = v.arr[i]
-        setfield!(element, :_container, v)
-        setfield!(element, :_index, i)
+        observed_notify(v, i, :write)
     end
     return v
 end
 
-function Base.popfirst!(v::ObservedVector)
+function Base.pushfirst!(::CompoundTrait, v::ObservedVector, x)
+    pushfirst!(v.arr, x)
+    # Update indices for all elements
+    for i in eachindex(v.arr)
+        element = v.arr[i]
+        _update_index(element, v, i)
+    end
+    return v
+end
+
+Base.popfirst!(v::ObservedVector) = popfirst!(structure_trait(eltype(v)), v)
+
+function Base.popfirst!(::PrimitiveTrait, v::ObservedVector)
+    if isempty(v.arr)
+        throw(BoundsError(v, ()))
+    end
+    x = popfirst!(v.arr)
+    for i in eachindex(v.arr)
+        observed_notify(v, i, :write)
+    end
+    return x
+end
+
+function Base.popfirst!(::CompoundTrait, v::ObservedVector)
     if isempty(v.arr)
         throw(BoundsError(v, ()))
     end
@@ -128,32 +197,59 @@ function Base.popfirst!(v::ObservedVector)
     # Update indices for remaining elements
     for i in eachindex(v.arr)
         element = v.arr[i]
-        setfield!(element, :_index, i)
+        _update_index(element, v, i)
     end
     return x
 end
 
-function Base.append!(v::ObservedVector, items)
+Base.append!(v::ObservedVector, items) = append!(structure_trait(eltype(v)), v, items)
+
+function Base.append!(::PrimitiveTrait, v::ObservedVector, items)
     start_idx = length(v.arr) + 1
     append!(v.arr, items)
     # Update container and index for newly added items
-    for (offset, item) in enumerate(items)
-        setfield!(item, :_container, v)
-        setfield!(item, :_index, start_idx + offset - 1)
+    for idx in start_idx:length(v.arr)
+        observed_notify(v, idx, :write)
     end
     return v
 end
 
-function Base.resize!(v::ObservedVector, n::Integer)
-    old_length = length(v.arr)
-    resize!(v.arr, n)
-    # If we expanded, new elements need their fields set when accessed
-    # If we shrank, removed elements should have their container cleared
-    if n < old_length
-        # Elements that were removed are no longer accessible through the array
-        # but their container field should ideally be cleared - however we can't
-        # access them anymore, so this is a limitation
+function Base.append!(::CompoundTrait, v::ObservedVector, items)
+    start_idx = length(v.arr) + 1
+    append!(v.arr, items)
+    # Update container and index for newly added items
+    for (offset, item) in enumerate(items)
+        _update_index(item, v, start_idx + offset - 1)
     end
+    return v
+end
+
+Base.resize!(v::ObservedVector, n::Integer) = resize!(structure_trait(eltype(v)), v, n)
+
+function Base.resize!(::PrimitiveTrait, v::ObservedVector, n::Integer)
+    old_length = length(v.arr)
+    if n < old_length
+        for rem_idx in (n + 1):old_length
+            observed_notify(v, rem_idx, :write)
+        end
+    else
+        for add_idx in (old_length + 1):n
+            observed_notify(v, add_idx, :write)
+        end
+    end
+    resize!(v.arr, n)
+    return v
+end
+
+function Base.resize!(::CompoundTrait, v::ObservedVector, n::Integer)
+    old_length = length(v.arr)
+    if n < old_length
+        for rem_idx in (n + 1):old_length
+            setfield!(item, :_container, nothing)
+        end
+        # else New entries will be undef after resize. Don't initialize.
+    end
+    resize!(v.arr, n)
     return v
 end
 
