@@ -5,7 +5,7 @@ mutable struct ObservedArray{T,N} <: DenseArray{T,N}
     const arr::Array{T,N}
     field_name::Symbol
     owner::Any
-    ObservedArray{T,N}(arr) where {T,N} = new{T,N}(arr)
+    ObservedArray{T,N}(arr) where {T,N} = new{T,N}(collect(arr))
 end
 
 const ObservedVector{T} = ObservedArray{T,1}
