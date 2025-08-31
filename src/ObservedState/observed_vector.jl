@@ -29,7 +29,7 @@ function Base.getproperty(tv::ObservedArray, name::Symbol)
 end
 
 # Forward read-only operations
-for op in [:axes, :eltype, :haskey, :iterate, :keys, :length, :pairs, :size, :values]
+for op in [:axes, :eltype, :haskey, :isempty, :iterate, :keys, :length, :pairs, :size, :values]
     @eval Base.$op(tv::ObservedArray, args...; kwargs...) = $op(tv.arr, args...; kwargs...)
 end
 

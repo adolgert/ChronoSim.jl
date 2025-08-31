@@ -11,13 +11,24 @@ ObservedDict() = ObservedDict{Any,Any}()
 
 is_observed_container(v::ObservedDict) = true
 
-# Required AbstractDict interface methods
-Base.length(d::ObservedDict) = length(d.dict)
-Base.isempty(d::ObservedDict) = isempty(d.dict)
-Base.haskey(d::ObservedDict, key) = haskey(d.dict, key)
-Base.keys(d::ObservedDict) = keys(d.dict)
-Base.values(d::ObservedDict) = values(d.dict)
-Base.pairs(d::ObservedDict) = pairs(d.dict)
+
+# Forward read-only operations
+for op in [
+    :eltype,
+    :empty!,
+    :haskey,
+    :isempty,
+    :iterate,
+    :keys,
+    :length,
+    :pairs,
+    :size,
+    :sizehint!,
+    :values,
+]
+    @eval Base.$op(tv::ObservedDict, args...; kwargs...) = $op(tv.dict, args...; kwargs...)
+end
+
 
 function Base.getindex(d::ObservedDict, key)
     element = d.dict[key]
@@ -79,9 +90,6 @@ function Base.iterate(d::ObservedDict, state)
     end
 end
 
-# Other useful methods
-Base.empty!(d::ObservedDict) = (empty!(d.dict); d)
-Base.sizehint!(d::ObservedDict, n) = (sizehint!(d.dict, n); d)
 
 function observed_notify(v::ObservedDict, changed, readwrite)
     if isdefined(v, :owner)
