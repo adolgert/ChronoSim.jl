@@ -17,17 +17,23 @@ function ObservedArray{T}(::UndefInitializer, dims...) where {T}
     ObservedArray{T,N}(arr)
 end
 
+ObservedVector{T}(::UndefInitializer, dim) where {T} = ObservedArray{T,1}(Array{T}(undef, dim))
+function ObservedMatrix{T}(::UndefInitializer, dim1, dim2) where {T}
+    ObservedArray{T,2}(Array{T}(undef, dim1, dim2))
+end
+
 is_observed_container(v::ObservedArray) = true
 
-Base.eltype(::ObservedArray{T}) where {T} = T
-Base.ndims(v::ObservedArray) = ndims(v.arr)
-Base.size(v::ObservedArray) = size(v.arr)
-Base.size(v::ObservedArray, n) = size(v.arr, n)
-Base.length(v::ObservedArray) = length(v.arr)
-Base.eachindex(v::ObservedArray) = eachindex(v.arr)
-Base.iterate(v::ObservedArray) = isempty(v) ? nothing : (v[1], 2)
-Base.iterate(v::ObservedArray, state) = state > length(v) ? nothing : (v[state], state + 1)
-Base.axes(v::ObservedArray) = axes(v.arr)
+function Base.getproperty(tv::ObservedArray, name::Symbol)
+    name ∈ (:arr, :field_name, :owner) ? getfield(tv, name) : getproperty(tv.arr, name)
+end
+
+# Forward read-only operations
+for op in [:axes, :eltype, :haskey, :iterate, :keys, :length, :pairs, :size, :values]
+    @eval Base.$op(tv::ObservedArray, args...; kwargs...) = $op(tv.arr, args...; kwargs...)
+end
+
+Base.IndexStyle(v::ObservedArray) = Base.IndexStyle(v.arr)
 
 function Base.getindex(v::ObservedArray{T,1}, i::Int) where {T}
     element = v.arr[i]
@@ -49,8 +55,6 @@ function Base.getindex(v::ObservedArray, i::Vararg{Int})
     setfield!(element, :_index, i)
     return element
 end
-
-Base.IndexStyle(v::ObservedArray) = Base.IndexStyle(v.arr)
 
 function Base.setindex!(v::ObservedArray{T,1}, x, i::Int) where {T}
     v.arr[i] = x
