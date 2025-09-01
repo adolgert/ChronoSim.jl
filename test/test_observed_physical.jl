@@ -118,10 +118,10 @@ using ChronoSim.ObservedState
         game = GameState(inventory, pieces, "default")
 
         # Verify all observed fields have correct owner references
-        @test game.inventory.field_name == :inventory
-        @test game.inventory.owner === game
-        @test game.pieces.field_name == :pieces
-        @test game.pieces.owner === game
+        @test game.inventory._address.index == Member(:inventory)
+        @test game.inventory._address.container === game
+        @test game.pieces._address.index == Member(:pieces)
+        @test game.pieces._address.container === game
 
         # Verify elements get correct container references
         item = game.inventory[:sword]
