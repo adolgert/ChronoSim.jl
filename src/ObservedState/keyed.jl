@@ -1,30 +1,13 @@
 abstract type KeyedBy end
 export KeyedBy
 
-# Mostly for debugging where we make types that have the right members.
-function notify_all(obj)
-    issubset([:_container, :_index], fieldnames(typeof(obj))) || return nothing
-    isdefined(obj, :_container) || return nothing
-    container = getfield(obj, :_container)
-    index = getfield(obj, :_index)
-    for prop_name in propertynames(obj)
-        prop_obj = getfield(obj, prop_name)
-        if isa(structure_trait(typeof(prop_obj)), PrimitiveTrait)
-            observed_notify(container, (index, Member(prop_name)), :write)
-        else
-            notify_all(prop_obj)
-        end
-    end
-end
-
-
 """
-    notify_all(obj::KeyedBy)
+    notify_all(obj)
 
 When a struct is deleted or has its index changed, it should create a notification
 for every member of the struct.
 """
-function notify_all(obj::KeyedBy)
+function notify_all(obj)
     isdefined(obj, :_container) || return nothing
     container = getfield(obj, :_container)
     index = getfield(obj, :_index)
