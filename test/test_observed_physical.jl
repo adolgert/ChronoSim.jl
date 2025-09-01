@@ -210,7 +210,7 @@ using ChronoSim.ObservedState
 
             # Check that all reads were captured
             reads = reads_result.reads
-            @test length(reads) == 6
+            @test length(reads) == 7
 
             # Convert to set for easier testing (order doesn't matter)
             reads_set = Set(reads)
@@ -220,6 +220,7 @@ using ChronoSim.ObservedState
             @test (Member(:sym_dict), :alpha, Member(:value)) in reads_set
             @test (Member(:sym_dict), :beta, Member(:label)) in reads_set
             @test (Member(:int_dict), 100, Member(:value)) in reads_set
+            @test (Member(:counter),) in reads_set
         end
 
         # Test capture_state_changes
@@ -250,7 +251,7 @@ using ChronoSim.ObservedState
 
             # Check that all modifications were captured
             changes = changes_result.changes
-            @test length(changes) == 6
+            @test length(changes) == 7
 
             # Convert to set for easier testing
             changes_set = Set(changes)
@@ -260,6 +261,7 @@ using ChronoSim.ObservedState
             @test (Member(:sym_dict), :alpha, Member(:label)) in changes_set
             @test (Member(:sym_dict), :gamma, Member(:value)) in changes_set
             @test (Member(:int_dict), 200, Member(:value)) in changes_set
+            @test (Member(:counter),) in changes_set
 
             # Verify the actual values were changed
             @test state.grid1d[1].value ≈ 99.0

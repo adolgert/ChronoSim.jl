@@ -124,6 +124,47 @@ macro observedphysical(struct_name, struct_block)
     return esc(struct_def)
 end
 
+function Base.getproperty(op::ObservedPhysical, field::Symbol)
+    _getproperty(structure_trait(fieldtype(typeof(op), field)), op, field)
+end
+
+function _getproperty(::PrimitiveTrait, op::ObservedPhysical, field::Symbol)
+    observed_notify(op, (Member(field),), :read)
+    return getfield(op, field)
+end
+
+_getproperty(::CompoundTrait, op::ObservedPhysical, field::Symbol) = getfield(op, field)
+
+
+_getproperty(::UnObservableTrait, op::ObservedPhysical, field::Symbol) = getfield(op, field)
+
+function Base.setproperty!(op::ObservedPhysical, field::Symbol, value)
+    _setproperty!(structure_trait(fieldtype(typeof(op), field)), op, field, value)
+end
+
+
+function _setproperty!(::PrimitiveTrait, op::ObservedPhysical, field::Symbol, value)
+    retval = setfield!(op, field, value)
+    if field != :_address
+        observed_notify(op, (Member(field),), :write)
+    end
+    return retval
+end
+
+function _setproperty!(::CompoundTrait, op::ObservedPhysical, field::Symbol, value)
+    retval = setfield!(op, field, value)
+    if field != :_address
+        update_index(op._address, op, Member(field))
+        notify_all(value)
+    end
+    return retval
+end
+
+
+function _setproperty!(::UnObservableTrait, op::ObservedPhysical, field::Symbol, value)
+    return setfield!(op, field, value)
+end
+
 """
     capture_state_changes(f::Function, physical_state)
 
