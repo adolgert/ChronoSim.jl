@@ -132,7 +132,9 @@ end
 
 function Base.push!(::CompoundTrait, v::ObservedVector, x)
     push!(v.arr, x)
-    return _update_index(x, v, length(v.arr))
+    _update_index(x, v, length(v.arr))
+    notify_all(x)
+    return x
 end
 
 Base.pop!(v::ObservedVector) = pop!(structure_trait(eltype(v)), v)
@@ -151,6 +153,7 @@ function Base.pop!(::CompoundTrait, v::ObservedVector)
         throw(BoundsError(v, ()))
     end
     x = pop!(v.arr)
+    notify_all(x)
     setfield!(x, :_container, nothing)
     return x
 end
@@ -171,6 +174,7 @@ function Base.pushfirst!(::CompoundTrait, v::ObservedVector, x)
     for i in eachindex(v.arr)
         element = v.arr[i]
         _update_index(element, v, i)
+        notify_all(element)
     end
     return v
 end

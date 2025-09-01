@@ -1,6 +1,18 @@
 abstract type KeyedBy end
 export KeyedBy
 
+# Mostly for debugging where we make types that have the right members.
+function notify_all(obj)
+    issubset([:_container, :_index], fieldnames(typeof(obj))) || return nothing
+    isdefined(obj, :_container) || return nothing
+    container = getfield(obj, :_container)
+    index = getfield(obj, :_index)
+    for prop_name in propertynames(obj)
+        observed_notify(container, (index, Member(prop_name)), :write)
+    end
+end
+
+
 """
     notify_all(obj::KeyedBy)
 
