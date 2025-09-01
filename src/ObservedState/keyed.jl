@@ -38,6 +38,8 @@ function notify_all(obj::KeyedBy)
     end
 end
 
+is_observed_container(::KeyedBy) = true
+is_observed_container(::Type{<:KeyedBy}) = true
 
 """
     @keyedby StructName IndexType begin

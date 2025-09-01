@@ -8,6 +8,8 @@ mutable struct ObserveContained{T}
     ObserveContained{T}(v) where {T} = new{T}(v)
 end
 
+ChronoSim.ObservedState.is_observed_container(::Type{ObserveContained{T}}) where {T} = true
+
 @testset "ObservedArray construct int undef" begin
     using ChronoSim.ObservedState
     cnt = 5
