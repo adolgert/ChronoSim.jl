@@ -57,7 +57,9 @@ end
 
 function Base.setindex!(::CompoundTrait, d::ObservedDict, value, key)
     d.dict[key] = value
-    return _update_index(value, d, key)
+    _update_index(value, d, key)
+    notify_all(value)
+    return value
 end
 Base.delete!(v::ObservedDict, i...) = delete!(structure_trait(valtype(v)), v, i...)
 
@@ -72,9 +74,8 @@ end
 function Base.delete!(::CompoundTrait, d::ObservedDict, key)
     if haskey(d.dict, key)
         element = d.dict[key]
+        notify_all(element)
         setfield!(element, :_container, nothing)
-        # missing: notify all fields of this element
-        # Note: _index is left as-is since it might still be meaningful
         delete!(d.dict, key)
     end
     return d
@@ -93,7 +94,7 @@ end
 function Base.pop!(::CompoundTrait, d::ObservedDict, key, default)
     if haskey(d.dict, key)
         element = d.dict[key]
-        # missing: notify all fields of this element
+        notify_all(element)
         setfield!(element, :_container, nothing)
         return pop!(d.dict, key, default)
     end

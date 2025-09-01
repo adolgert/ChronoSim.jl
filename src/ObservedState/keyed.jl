@@ -1,3 +1,22 @@
+abstract type KeyedBy end
+export KeyedBy
+
+"""
+    notify_all(obj::KeyedBy)
+
+When a struct is deleted or has its index changed, it should create a notification
+for every member of the struct.
+"""
+function notify_all(obj::KeyedBy)
+    isdefined(obj, :_container) || return nothing
+    container = getfield(obj, :_container)
+    index = getfield(obj, :_index)
+    for prop_name in propertynames(obj)
+        observed_notify(container, (index, Member(prop_name)), :write)
+    end
+end
+
+
 """
     @keyedby StructName IndexType begin
         field1::Type1
@@ -18,7 +37,7 @@ end
 
 This generates a struct equivalent to:
 ```julia
-mutable struct MyElement
+mutable struct MyElement <: KeyedBy
     val::Int64
     name::String
     _container::Any
@@ -66,7 +85,7 @@ macro keyedby(struct_name, index_type, struct_block)
 
     # Create the struct definition
     struct_def = quote
-        mutable struct $struct_name
+        mutable struct $struct_name <: KeyedBy
             $(user_fields...)
             _container::Any
             _index::$index_type
