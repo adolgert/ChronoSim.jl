@@ -69,7 +69,7 @@ function capture_state_reads(f::Function, physical) end
 
 """
 This represents a field in a struct. It is a wrapper around Symbol.
-We wrap the Symbol so that it doesn't conflict with dictionary keys that
+Wrap the Symbol so that it doesn't conflict with dictionary keys that
 are symbols.
 """
 struct Member
@@ -79,3 +79,6 @@ end
 Base.show(io::IO, m::Member) = print(io, m.name)
 Base.Symbol(m::Member) = m.name
 Base.convert(::Type{Symbol}, m::Member) = m.name
+# Define iterate so that this user-defined struct will (member...) as one element.
+Base.iterate(m::Member) = (m, nothing)
+Base.iterate(m::Member, state) = nothing

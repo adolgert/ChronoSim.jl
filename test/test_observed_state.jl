@@ -3,9 +3,8 @@ using ChronoSim
 
 mutable struct ObserveContained{T}
     val::Int
-    _container::Any
-    _index::T
-    ObserveContained{T}(v) where {T} = new{T}(v)
+    _address::ChronoSim.ObservedState.Address{T}
+    ObserveContained{T}(v) where {T} = new{T}(v, ChronoSim.ObservedState.Address{T}())
 end
 
 ChronoSim.ObservedState.is_observed_container(::Type{<: ObserveContained}) = true
@@ -107,8 +106,8 @@ end
         arr[init] = Contained1D(-init)
     end
     for i in eachindex(arr)
-        @test getproperty(arr[i], :_index) == i
-        @test getproperty(arr[i], :_container) == arr
+        @test getproperty(arr[i], :_address).index == i
+        @test getproperty(arr[i], :_address).container == arr
         @test arr[i].val == -i
     end
     @test length(arr) == cnt
@@ -130,12 +129,12 @@ end
     # This is linear indexing.
     for i in eachindex(arr)
         @test typeof(i) == Int64
-        @test getproperty(arr[i], :_container) == arr
+        @test getproperty(arr[i], :_address).container == arr
         @test arr[i].val == -i
     end
     # This gives you the 2D indices.
     for idx in CartesianIndices(arr)
-        @test getproperty(arr[idx], :_index) == Tuple(idx)
+        @test getproperty(arr[idx], :_address).index == Tuple(idx)
     end
     @test arr[1, 2].val == -5
     @test length(arr) == dims[1] * dims[2]
@@ -155,7 +154,7 @@ end
     end
     push!(arr, Contained1D(42))
     @assert length(arr) == cnt + 1
-    @assert arr[cnt + 1]._index == cnt + 1
+    @assert arr[cnt + 1]._address.index == cnt + 1
     @assert arr[cnt + 1].val == 42
 end
 
@@ -191,8 +190,8 @@ end
     elem = arr1d[3]
     @test elem.val == 30
     @test elem.name == "item3"
-    @test elem._index == 3
-    @test elem._container === arr1d
+    @test elem._address.index == 3
+    @test elem._address.container === arr1d
 
     # Test 2D indexing
     @keyedby MyElement2D NTuple{2,Int64} begin
@@ -209,12 +208,12 @@ end
     elem2d = arr2d[2, 3]
     @test elem2d.value ≈ 2.3
     @test elem2d.active == false  # 2 + 3 = 5, which is odd
-    @test elem2d._index == (2, 3)
-    @test elem2d._container === arr2d
+    @test elem2d._address.index == (2, 3)
+    @test elem2d._address.container === arr2d
 
     # Test linear indexing on 2D array
     elem2d_linear = arr2d[4]  # Linear index 4 corresponds to [2, 2] in column-major order
-    @test elem2d_linear._index == (2, 2)
+    @test elem2d_linear._address.index == (2, 2)
     @test elem2d_linear.value ≈ 2.2
 end
 
@@ -237,21 +236,21 @@ end
     elem = dict["second"]
     @test elem.value == 200
     @test elem.label == "Second Item"
-    @test elem._index == "second"
-    @test elem._container === dict
+    @test elem._address.index == "second"
+    @test elem._address.container === dict
 
     # Test updating an existing key
     dict["second"] = DictElement(250, "Updated Second")
     elem2 = dict["second"]
     @test elem2.value == 250
-    @test elem2._index == "second"
-    @test elem2._container === dict
+    @test elem2._address.index == "second"
+    @test elem2._address.container === dict
 
     # Test delete! clears _container
     to_delete = dict["first"]
-    @test to_delete._container === dict
+    @test to_delete._address.container === dict
     delete!(dict, "first")
-    @test to_delete._container === nothing
+    @test to_delete._address.container === nothing
     @test !haskey(dict, "first")
 
     # Test iteration doesn't update fields
@@ -276,6 +275,6 @@ end
 
     elem_sym = symdict[:alpha]
     @test elem_sym.data == 1.5
-    @test elem_sym._index == :alpha
-    @test elem_sym._container === symdict
+    @test elem_sym._address.index == :alpha
+    @test elem_sym._address.container === symdict
 end

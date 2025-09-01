@@ -110,8 +110,9 @@ macro observedphysical(struct_name, struct_block)
                     end
                     field_val = getfield(instance, fname)
                     if ChronoSim.ObservedState.is_observed_container(field_val)
-                        field_val.field_name = fname
-                        field_val.owner = instance
+                        ChronoSim.ObservedState.update_index(
+                            field_val._address, instance, Member(fname)
+                        )
                     end
                 end
 

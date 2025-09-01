@@ -3,9 +3,8 @@ export ObservedArray, ObservedVector, ObservedMatrix
 
 mutable struct ObservedArray{T,N} <: DenseArray{T,N}
     const arr::Array{T,N}
-    field_name::Symbol
-    owner::Any
-    ObservedArray{T,N}(arr) where {T,N} = new{T,N}(collect(arr))
+    _address::Address{Member}
+    ObservedArray{T,N}(arr) where {T,N} = new{T,N}(collect(arr), Address{Member}())
 end
 
 const ObservedVector{T} = ObservedArray{T,1}
@@ -26,7 +25,7 @@ is_observed_container(v::ObservedArray) = true
 is_observed_container(::Type{ObservedArray}) = true
 
 function Base.getproperty(tv::ObservedArray, name::Symbol)
-    name ∈ (:arr, :field_name, :owner) ? getfield(tv, name) : getproperty(tv.arr, name)
+    name ∈ (:arr, :_address) ? getfield(tv, name) : getproperty(tv.arr, name)
 end
 
 # Forward read-only operations
@@ -40,7 +39,7 @@ Base.IndexStyle(v::ObservedArray) = Base.IndexStyle(v.arr)
 # compound element types as branch nodes.
 Base.getindex(v::ObservedArray, i...) = _getindex(structure_trait(eltype(v)), v, i...)
 
-_update_index(el, v, i) = (setfield!(el, :_container, v); setfield!(el, :_index, i); el)
+_update_index(el, v, i) = (update_index(el._address, v, i); el)
 
 function _getindex(::PrimitiveTrait, v::ObservedArray{T,1}, i::Int) where {T}
     observed_notify(v, i, :read)
@@ -155,7 +154,7 @@ function _pop!(::CompoundTrait, v::ObservedVector)
     end
     x = pop!(v.arr)
     notify_all(x)
-    setfield!(x, :_container, nothing)
+    empty!(x._address)
     return x
 end
 
@@ -198,7 +197,7 @@ function _popfirst!(::CompoundTrait, v::ObservedVector)
         throw(BoundsError(v, ()))
     end
     x = popfirst!(v.arr)
-    setfield!(x, :_container, nothing)
+    empty!(x._address)
     # Update indices for remaining elements
     for i in eachindex(v.arr)
         element = v.arr[i]
@@ -253,7 +252,7 @@ function _resize!(::CompoundTrait, v::ObservedVector, n::Integer)
     if n < old_length
         for rem_idx in (n + 1):old_length
             notify_all(v.arr[rem_idx])
-            setfield!(v.arr[rem_idx], :_container, nothing)
+            empty!(v.arr[rem_idx]._address)
         end
         # else New entries will be undef after resize. Don't initialize.
     end
@@ -262,9 +261,5 @@ function _resize!(::CompoundTrait, v::ObservedVector, n::Integer)
 end
 
 function observed_notify(v::ObservedArray, changed, readwrite)
-    if isdefined(v, :owner)
-        observed_notify(
-            getfield(v, :owner), (Member(getfield(v, :field_name)), changed...), readwrite
-        )
-    end
+    address_notify(v._address, changed, readwrite)
 end

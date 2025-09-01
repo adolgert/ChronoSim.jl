@@ -1,28 +1,26 @@
-abstract type KeyedBy end
-export KeyedBy
+abstract type Addressed end
+export Addressed
 
 """
     notify_all(obj)
-
+e
 When a struct is deleted or has its index changed, it should create a notification
 for every member of the struct.
 """
-function notify_all(obj)
-    isdefined(obj, :_container) || return nothing
-    container = getfield(obj, :_container)
-    index = getfield(obj, :_index)
+notify_all(obj) =
     for prop_name in propertynames(obj)
         prop_obj = getfield(obj, prop_name)
         if isa(structure_trait(typeof(prop_obj)), PrimitiveTrait)
-            observed_notify(container, (index, Member(prop_name)), :write)
+            address_notify(obj._address, Member(prop_name), :write)
         else
             notify_all(prop_obj)
         end
     end
-end
 
-is_observed_container(::KeyedBy) = true
-is_observed_container(::Type{<:KeyedBy}) = true
+notify_all(::Address) = nothing
+
+is_observed_container(::Addressed) = true
+is_observed_container(::Type{<:Addressed}) = true
 
 """
     @keyedby StructName IndexType begin
@@ -44,11 +42,10 @@ end
 
 This generates a struct equivalent to:
 ```julia
-mutable struct MyElement <: KeyedBy
+mutable struct MyElement <: Addressed
     val::Int64
     name::String
-    _container::Any
-    _index::Int64
+    _address::Address{Int64}
     MyElement(val, name) = new(val, name)
 end
 ```
@@ -92,23 +89,20 @@ macro keyedby(struct_name, index_type, struct_block)
 
     # Create the struct definition
     struct_def = quote
-        mutable struct $struct_name <: KeyedBy
+        mutable struct $struct_name <: Addressed
             $(user_fields...)
-            _container::Any
-            _index::$index_type
+            _address::ChronoSim.ObservedState.Address{$index_type}
 
-            # Constructor that only takes user fields
-            $struct_name($(constructor_args...)) = new($(constructor_args...))
+            function $struct_name($(constructor_args...))
+                new($(constructor_args...), ChronoSim.ObservedState.Address{$index_type}())
+            end
         end
     end
 
     getprop_def = quote
         function Base.getproperty(obj::$struct_name, field::Symbol)
-            if field ∉ (:_container, :_index) && isdefined(obj, :_container)
-                container = getfield(obj, :_container)
-                ChronoSim.ObservedState.observed_notify(
-                    container, (getfield(obj, :_index), Member(field)), :read
-                )
+            if field != :_address
+                ChronoSim.ObservedState.address_notify(obj._address, Member(field), :read)
             end
             return getfield(obj, field)
         end
@@ -116,11 +110,8 @@ macro keyedby(struct_name, index_type, struct_block)
 
     setprop_def = quote
         function Base.setproperty!(obj::$struct_name, field::Symbol, value)
-            if field ∉ (:_container, :_index) && isdefined(obj, :_container)
-                container = getfield(obj, :_container)
-                ChronoSim.ObservedState.observed_notify(
-                    container, (getfield(obj, :_index), Member(field)), :write
-                )
+            if field != :_address
+                ChronoSim.ObservedState.address_notify(obj._address, Member(field), :write)
             end
             return setfield!(obj, field, value)
         end

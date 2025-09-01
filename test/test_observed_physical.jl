@@ -47,10 +47,10 @@ using ChronoSim.ObservedState
         @test board_state.obs_read == []
 
         # Test that observed fields have correct owner references
-        @test board_state.board.field_name == :board
-        @test board_state.board.owner === board_state
-        @test board_state.actor.field_name == :actor
-        @test board_state.actor.owner === board_state
+        @test board_state.board._address.index == Member(:board)
+        @test board_state.board._address.container === board_state
+        @test board_state.actor._address.index == Member(:actor)
+        @test board_state.actor._address.container === board_state
     end
 
     @testset "Container and index pointers" begin
@@ -68,29 +68,29 @@ using ChronoSim.ObservedState
 
         # Test ObservedArray element pointers
         square = board_state.board[1, 2]
-        @test square._container === board_state.board
-        @test square._index == (1, 2)
+        @test square._address.container === board_state.board
+        @test square._address.index == (1, 2)
 
         # Test linear indexing
         square_linear = board_state.board[3]  # Linear index 3 corresponds to (1,2) in 2x2
-        @test square_linear._container === board_state.board
-        @test square_linear._index == (1, 2)
+        @test square_linear._address.container === board_state.board
+        @test square_linear._address.index == (1, 2)
 
         # Test ObservedDict element pointers
         piece = board_state.actor[10]
-        @test piece._container === board_state.actor
-        @test piece._index == 10
+        @test piece._address.container === board_state.actor
+        @test piece._address.index == 10
 
         # Test modification updates pointers
         new_square = Square(0.9, 0.8)
         board_state.board[2, 1] = new_square
-        @test new_square._container === board_state.board
-        @test new_square._index == (2, 1)
+        @test new_square._address.container === board_state.board
+        @test new_square._address.index == (2, 1)
 
         new_piece = Piece(4.0, "super")
         board_state.actor[30] = new_piece
-        @test new_piece._container === board_state.actor
-        @test new_piece._index == 30
+        @test new_piece._address.container === board_state.actor
+        @test new_piece._address.index == 30
     end
 
     @testset "Multiple observed fields" begin
@@ -125,12 +125,12 @@ using ChronoSim.ObservedState
 
         # Verify elements get correct container references
         item = game.inventory[:sword]
-        @test item._container === game.inventory
-        @test item._index == :sword
+        @test item._address.container === game.inventory
+        @test item._address.index == :sword
 
         piece = game.pieces[2]
-        @test piece._container === game.pieces
-        @test piece._index == 2
+        @test piece._address.container === game.pieces
+        @test piece._address.index == 2
         @test piece.speed == 2.0
         @test piece.kind == "medium"
     end

@@ -1,8 +1,7 @@
 mutable struct ObservedDict{K,V} <: AbstractDict{K,V}
     const dict::Dict{K,V}
-    field_name::Symbol
-    owner::Any
-    ObservedDict{K,V}(dict) where {K,V} = new{K,V}(dict)
+    _address::Address{Member}
+    ObservedDict{K,V}(dict) where {K,V} = new{K,V}(dict, Address{Member}())
 end
 
 ObservedDict{K,V}() where {K,V} = ObservedDict{K,V}(Dict{K,V}())
@@ -76,7 +75,7 @@ function _delete!(::CompoundTrait, d::ObservedDict, key)
     if haskey(d.dict, key)
         element = d.dict[key]
         notify_all(element)
-        setfield!(element, :_container, nothing)
+        empty!(element._address)
         delete!(d.dict, key)
     end
     return d
@@ -96,7 +95,7 @@ function _pop!(::CompoundTrait, d::ObservedDict, key, default)
     if haskey(d.dict, key)
         element = d.dict[key]
         notify_all(element)
-        setfield!(element, :_container, nothing)
+        empty!(element._address)
         return pop!(d.dict, key, default)
     end
     return nothing
@@ -152,9 +151,5 @@ end
 _iterate(::CompoundTrait, d::ObservedDict, state) = return iterate(d.dict, state)
 
 function observed_notify(v::ObservedDict, changed, readwrite)
-    if isdefined(v, :owner)
-        observed_notify(
-            getfield(v, :owner), (Member(getfield(v, :field_name)), changed...), readwrite
-        )
-    end
+    address_notify(v._address, changed, readwrite)
 end
