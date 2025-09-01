@@ -81,9 +81,9 @@ function Base.delete!(::CompoundTrait, d::ObservedDict, key)
     return d
 end
 
-Base.pop!(v::ObservedDict, key) = pop!(structure_trait(valtype(v)), v, key)
+Base.pop!(v::ObservedDict, key) = _pop!(structure_trait(valtype(v)), v, key)
 
-function Base.pop!(::PrimitiveTrait, d::ObservedDict, key)
+function _pop!(::PrimitiveTrait, d::ObservedDict, key)
     if haskey(d.dict, key)
         observed_notify(d, key, :write)
         return pop!(d.dict, key)
@@ -91,7 +91,7 @@ function Base.pop!(::PrimitiveTrait, d::ObservedDict, key)
     return nothing
 end
 
-function Base.pop!(::CompoundTrait, d::ObservedDict, key, default)
+function _pop!(::CompoundTrait, d::ObservedDict, key, default)
     if haskey(d.dict, key)
         element = d.dict[key]
         notify_all(element)
@@ -101,7 +101,7 @@ function Base.pop!(::CompoundTrait, d::ObservedDict, key, default)
     return nothing
 end
 
-# popfirst!, poplast!
+# Maybe these can rely on AbstractDict implementations.
 # merge!, empty!, merge
 # similar(d) and similar(d, ::Type{Pair{K,V}})
 # filter!(f, d)

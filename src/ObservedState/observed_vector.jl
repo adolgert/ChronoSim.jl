@@ -202,6 +202,7 @@ function Base.popfirst!(::CompoundTrait, v::ObservedVector)
     for i in eachindex(v.arr)
         element = v.arr[i]
         _update_index(element, v, i)
+        notify_all(element)
     end
     return x
 end
@@ -224,6 +225,7 @@ function Base.append!(::CompoundTrait, v::ObservedVector, items)
     # Update container and index for newly added items
     for (offset, item) in enumerate(items)
         _update_index(item, v, start_idx + offset - 1)
+        notify_all(item)
     end
     return v
 end
@@ -249,6 +251,7 @@ function Base.resize!(::CompoundTrait, v::ObservedVector, n::Integer)
     old_length = length(v.arr)
     if n < old_length
         for rem_idx in (n + 1):old_length
+            notify_all(v.arr[rem_idx])
             setfield!(v.arr[rem_idx], :_container, nothing)
         end
         # else New entries will be undef after resize. Don't initialize.
