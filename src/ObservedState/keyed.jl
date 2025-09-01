@@ -8,7 +8,12 @@ function notify_all(obj)
     container = getfield(obj, :_container)
     index = getfield(obj, :_index)
     for prop_name in propertynames(obj)
-        observed_notify(container, (index, Member(prop_name)), :write)
+        prop_obj = getfield(obj, prop_name)
+        if isa(structure_trait(typeof(prop_obj)), PrimitiveTrait)
+            observed_notify(container, (index, Member(prop_name)), :write)
+        else
+            notify_all(prop_obj)
+        end
     end
 end
 
@@ -24,7 +29,12 @@ function notify_all(obj::KeyedBy)
     container = getfield(obj, :_container)
     index = getfield(obj, :_index)
     for prop_name in propertynames(obj)
-        observed_notify(container, (index, Member(prop_name)), :write)
+        prop_obj = getfield(obj, prop_name)
+        if isa(structure_trait(typeof(prop_obj)), PrimitiveTrait)
+            observed_notify(container, (index, Member(prop_name)), :write)
+        else
+            notify_all(prop_obj)
+        end
     end
 end
 

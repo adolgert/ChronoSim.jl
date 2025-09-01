@@ -5,4 +5,6 @@ abstract type StructureTrait end
 struct PrimitiveTrait <: StructureTrait end
 struct CompoundTrait <: StructureTrait end
 
-structure_trait(::Type{T}) where {T} = isprimitivetype(T) ? PrimitiveTrait() : CompoundTrait()
+function structure_trait(::Type{T}) where {T}
+    (isprimitivetype(T) || !ismutable(T)) ? PrimitiveTrait() : CompoundTrait()
+end

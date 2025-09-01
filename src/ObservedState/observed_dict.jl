@@ -32,38 +32,39 @@ for op in [:eltype, :haskey, :isempty, :iterate, :keys, :length, :pairs, :size, 
     @eval Base.$op(tv::ObservedDict, args...; kwargs...) = $op(tv.dict, args...; kwargs...)
 end
 
-Base.getindex(v::ObservedDict, i...) = getindex(structure_trait(valtype(v)), v, i...)
+Base.getindex(v::ObservedDict, i...) = _getindex(structure_trait(valtype(v)), v, i...)
 
-function Base.getindex(::PrimitiveTrait, d::ObservedDict, key)
+function _getindex(::PrimitiveTrait, d::ObservedDict, key)
     element = d.dict[key]
     observed_notify(d, key, :read)
     return element
 end
 
-function Base.getindex(::CompoundTrait, d::ObservedDict, key)
+function _getindex(::CompoundTrait, d::ObservedDict, key)
     element = d.dict[key]
     return _update_index(element, d, key)
 end
 
 function Base.setindex!(v::ObservedDict, value, i...)
-    setindex!(structure_trait(valtype(v)), v, value, i...)
+    _setindex!(structure_trait(valtype(v)), v, value, i...)
 end
 
-function Base.setindex!(::PrimitiveTrait, d::ObservedDict, value, key)
+function _setindex!(::PrimitiveTrait, d::ObservedDict, value, key)
     d.dict[key] = value
     observed_notify(d, key, :write)
     return value
 end
 
-function Base.setindex!(::CompoundTrait, d::ObservedDict, value, key)
+function _setindex!(::CompoundTrait, d::ObservedDict, value, key)
     d.dict[key] = value
     _update_index(value, d, key)
     notify_all(value)
     return value
 end
-Base.delete!(v::ObservedDict, i...) = delete!(structure_trait(valtype(v)), v, i...)
 
-function Base.delete!(::PrimitiveTrait, d::ObservedDict, key)
+Base.delete!(v::ObservedDict, i...) = _delete!(structure_trait(valtype(v)), v, i...)
+
+function _delete!(::PrimitiveTrait, d::ObservedDict, key)
     if haskey(d.dict, key)
         delete!(d.dict, key)
         observed_notify(d, key, :write)
@@ -71,7 +72,7 @@ function Base.delete!(::PrimitiveTrait, d::ObservedDict, key)
     return d
 end
 
-function Base.delete!(::CompoundTrait, d::ObservedDict, key)
+function _delete!(::CompoundTrait, d::ObservedDict, key)
     if haskey(d.dict, key)
         element = d.dict[key]
         notify_all(element)
@@ -123,10 +124,10 @@ Base.get!(d::ObservedDict, key, default) =
     end
 
 # Iteration interface
-Base.iterate(d::ObservedDict) = iterate(structure_trait(valtype(d)), d)
-Base.iterate(d::ObservedDict, state) = iterate(structure_trait(valtype(d)), d, state)
+Base.iterate(d::ObservedDict) = _iterate(structure_trait(valtype(d)), d)
+Base.iterate(d::ObservedDict, state) = _iterate(structure_trait(valtype(d)), d, state)
 
-function Base.iterate(::PrimitiveTrait, d::ObservedDict)
+function _iterate(::PrimitiveTrait, d::ObservedDict)
     next = iterate(d.dict)
     return if next === nothing
         nothing
@@ -136,9 +137,9 @@ function Base.iterate(::PrimitiveTrait, d::ObservedDict)
     end
 end
 
-Base.iterate(::CompoundTrait, d::ObservedDict) = iterate(d.dict)
+_iterate(::CompoundTrait, d::ObservedDict) = iterate(d.dict)
 
-function Base.iterate(::PrimitiveTrait, d::ObservedDict, state)
+function _iterate(::PrimitiveTrait, d::ObservedDict, state)
     next = iterate(d.dict, state)
     if next === nothing
         return nothing
@@ -148,7 +149,7 @@ function Base.iterate(::PrimitiveTrait, d::ObservedDict, state)
     end
 end
 
-Base.iterate(::CompoundTrait, d::ObservedDict, state) = return iterate(d.dict, state)
+_iterate(::CompoundTrait, d::ObservedDict, state) = return iterate(d.dict, state)
 
 function observed_notify(v::ObservedDict, changed, readwrite)
     if isdefined(v, :owner)
