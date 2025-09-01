@@ -37,109 +37,109 @@ Base.IndexStyle(v::ObservedArray) = Base.IndexStyle(v.arr)
 
 # Use a trait type to treat primitive element types as leaf nodes but treat
 # compound element types as branch nodes.
-Base.getindex(v::ObservedArray, i...) = getindex(structure_trait(eltype(v)), v, i...)
+Base.getindex(v::ObservedArray, i...) = _getindex(structure_trait(eltype(v)), v, i...)
 
 _update_index(el, v, i) = (setfield!(el, :_container, v); setfield!(el, :_index, i); el)
 
-function Base.getindex(::PrimitiveTrait, v::ObservedArray{T,1}, i::Int) where {T}
+function _getindex(::PrimitiveTrait, v::ObservedArray{T,1}, i::Int) where {T}
     observed_notify(v, i, :read)
     return v.arr[i]
 end
 
-function Base.getindex(::CompoundTrait, v::ObservedArray{T,1}, i::Int) where {T}
+function _getindex(::CompoundTrait, v::ObservedArray{T,1}, i::Int) where {T}
     element = v.arr[i]
     return _update_index(element, v, i)
 end
 
-function Base.getindex(::PrimitiveTrait, v::ObservedArray{T,N}, i::Int) where {T,N}
+function _getindex(::PrimitiveTrait, v::ObservedArray{T,N}, i::Int) where {T,N}
     observed_notify(v, Tuple(CartesianIndices(v.arr)[i]), :read)
     return v.arr[i]
 end
 
-function Base.getindex(::CompoundTrait, v::ObservedArray{T,N}, i::Int) where {T,N}
+function _getindex(::CompoundTrait, v::ObservedArray{T,N}, i::Int) where {T,N}
     element = v.arr[i]
     return _update_index(element, v, Tuple(CartesianIndices(v.arr)[i]))
 end
 
-function Base.getindex(::PrimitiveTrait, v::ObservedArray, i::Vararg{Int})
+function _getindex(::PrimitiveTrait, v::ObservedArray, i::Vararg{Int})
     observed_notify(v, i, :read)
     return v.arr[i...]
 end
 
-function Base.getindex(::CompoundTrait, v::ObservedArray, i::Vararg{Int})
+function _getindex(::CompoundTrait, v::ObservedArray, i::Vararg{Int})
     element = v.arr[i...]
     return _update_index(element, v, i)
 end
 
-function Base.getindex(::PrimitiveTrait, v::ObservedArray, i::CartesianIndex)
+function _getindex(::PrimitiveTrait, v::ObservedArray, i::CartesianIndex)
     observed_notify(v, Tuple(i), :read)
     return v.arr[i]
 end
 
-function Base.getindex(::CompoundTrait, v::ObservedArray, i::CartesianIndex)
+function _getindex(::CompoundTrait, v::ObservedArray, i::CartesianIndex)
     element = v.arr[i]
     return _update_index(element, v, Tuple(i))
 end
 
-Base.setindex!(v::ObservedArray, x, i...) = setindex!(structure_trait(eltype(v)), v, x, i...)
+Base.setindex!(v::ObservedArray, x, i...) = _setindex!(structure_trait(eltype(v)), v, x, i...)
 
-function Base.setindex!(::PrimitiveTrait, v::ObservedArray{T,1}, x, i::Int) where {T}
+function _setindex!(::PrimitiveTrait, v::ObservedArray{T,1}, x, i::Int) where {T}
     observed_notify(v, i, :write)
     return v.arr[i] = x
 end
 
-function Base.setindex!(::CompoundTrait, v::ObservedArray{T,1}, x, i::Int) where {T}
+function _setindex!(::CompoundTrait, v::ObservedArray{T,1}, x, i::Int) where {T}
     v.arr[i] = x
     return _update_index(x, v, i)
 end
 
-function Base.setindex!(::PrimitiveTrait, v::ObservedArray{T,N}, x, i::Int) where {T,N}
+function _setindex!(::PrimitiveTrait, v::ObservedArray{T,N}, x, i::Int) where {T,N}
     observed_notify(v, Tuple(CartesianIndices(v.arr)[i]), :write)
     return v.arr[i] = x
 end
 
-function Base.setindex!(::CompoundTrait, v::ObservedArray{T,N}, x, i::Int) where {T,N}
+function _setindex!(::CompoundTrait, v::ObservedArray{T,N}, x, i::Int) where {T,N}
     v.arr[i] = x
     return _update_index(x, v, Tuple(CartesianIndices(v.arr)[i]))
 end
 
-function Base.setindex!(::PrimitiveTrait, v::ObservedArray, x, i::Vararg{Int})
+function _setindex!(::PrimitiveTrait, v::ObservedArray, x, i::Vararg{Int})
     observed_notify(v, i, :write)
     return v.arr[i...] = x
 end
 
-function Base.setindex!(::CompoundTrait, v::ObservedArray, x, i::Vararg{Int})
+function _setindex!(::CompoundTrait, v::ObservedArray, x, i::Vararg{Int})
     v.arr[i...] = x
     return _update_index(x, v, i)
 end
 
-function Base.setindex!(::PrimitiveTrait, v::ObservedArray, x, i::CartesianIndex)
+function _setindex!(::PrimitiveTrait, v::ObservedArray, x, i::CartesianIndex)
     v.arr[i] = x
     return observed_notify(v, Tuple(i), :write)
 end
 
-function Base.setindex!(::CompoundTrait, v::ObservedArray, x, i::CartesianIndex)
+function _setindex!(::CompoundTrait, v::ObservedArray, x, i::CartesianIndex)
     v.arr[i] = x
     return _update_index(x, v, Tuple(i))
 end
 
-Base.push!(v::ObservedVector, x) = push!(structure_trait(eltype(v)), v, x)
+Base.push!(v::ObservedVector, x) = _push!(structure_trait(eltype(v)), v, x)
 
-function Base.push!(::PrimitiveTrait, v::ObservedVector, x)
+function _push!(::PrimitiveTrait, v::ObservedVector, x)
     observed_notify(v, length(v.arr) + 1, :write)
     return push!(v.arr, x)
 end
 
-function Base.push!(::CompoundTrait, v::ObservedVector, x)
+function _push!(::CompoundTrait, v::ObservedVector, x)
     push!(v.arr, x)
     _update_index(x, v, length(v.arr))
     notify_all(x)
     return x
 end
 
-Base.pop!(v::ObservedVector) = pop!(structure_trait(eltype(v)), v)
+Base.pop!(v::ObservedVector) = _pop!(structure_trait(eltype(v)), v)
 
-function Base.pop!(::PrimitiveTrait, v::ObservedVector)
+function _pop!(::PrimitiveTrait, v::ObservedVector)
     if isempty(v.arr)
         throw(BoundsError(v, ()))
     end
@@ -148,7 +148,7 @@ function Base.pop!(::PrimitiveTrait, v::ObservedVector)
     return x
 end
 
-function Base.pop!(::CompoundTrait, v::ObservedVector)
+function _pop!(::CompoundTrait, v::ObservedVector)
     if isempty(v.arr)
         throw(BoundsError(v, ()))
     end
@@ -158,9 +158,9 @@ function Base.pop!(::CompoundTrait, v::ObservedVector)
     return x
 end
 
-Base.pushfirst!(v::ObservedVector, x) = pushfirst!(structure_trait(eltype(v)), v, x)
+Base.pushfirst!(v::ObservedVector, x) = _pushfirst!(structure_trait(eltype(v)), v, x)
 
-function Base.pushfirst!(::PrimitiveTrait, v::ObservedVector, x)
+function _pushfirst!(::PrimitiveTrait, v::ObservedVector, x)
     pushfirst!(v.arr, x)
     for i in eachindex(v.arr)
         observed_notify(v, i, :write)
@@ -168,7 +168,7 @@ function Base.pushfirst!(::PrimitiveTrait, v::ObservedVector, x)
     return v
 end
 
-function Base.pushfirst!(::CompoundTrait, v::ObservedVector, x)
+function _pushfirst!(::CompoundTrait, v::ObservedVector, x)
     pushfirst!(v.arr, x)
     # Update indices for all elements
     for i in eachindex(v.arr)
@@ -179,9 +179,9 @@ function Base.pushfirst!(::CompoundTrait, v::ObservedVector, x)
     return v
 end
 
-Base.popfirst!(v::ObservedVector) = popfirst!(structure_trait(eltype(v)), v)
+Base.popfirst!(v::ObservedVector) = _popfirst!(structure_trait(eltype(v)), v)
 
-function Base.popfirst!(::PrimitiveTrait, v::ObservedVector)
+function _popfirst!(::PrimitiveTrait, v::ObservedVector)
     if isempty(v.arr)
         throw(BoundsError(v, ()))
     end
@@ -192,7 +192,7 @@ function Base.popfirst!(::PrimitiveTrait, v::ObservedVector)
     return x
 end
 
-function Base.popfirst!(::CompoundTrait, v::ObservedVector)
+function _popfirst!(::CompoundTrait, v::ObservedVector)
     if isempty(v.arr)
         throw(BoundsError(v, ()))
     end
@@ -207,9 +207,9 @@ function Base.popfirst!(::CompoundTrait, v::ObservedVector)
     return x
 end
 
-Base.append!(v::ObservedVector, items) = append!(structure_trait(eltype(v)), v, items)
+Base.append!(v::ObservedVector, items) = _append!(structure_trait(eltype(v)), v, items)
 
-function Base.append!(::PrimitiveTrait, v::ObservedVector, items)
+function _append!(::PrimitiveTrait, v::ObservedVector, items)
     start_idx = length(v.arr) + 1
     append!(v.arr, items)
     # Update container and index for newly added items
@@ -219,7 +219,7 @@ function Base.append!(::PrimitiveTrait, v::ObservedVector, items)
     return v
 end
 
-function Base.append!(::CompoundTrait, v::ObservedVector, items)
+function _append!(::CompoundTrait, v::ObservedVector, items)
     start_idx = length(v.arr) + 1
     append!(v.arr, items)
     # Update container and index for newly added items
@@ -230,9 +230,9 @@ function Base.append!(::CompoundTrait, v::ObservedVector, items)
     return v
 end
 
-Base.resize!(v::ObservedVector, n::Integer) = resize!(structure_trait(eltype(v)), v, n)
+Base.resize!(v::ObservedVector, n::Integer) = _resize!(structure_trait(eltype(v)), v, n)
 
-function Base.resize!(::PrimitiveTrait, v::ObservedVector, n::Integer)
+function _resize!(::PrimitiveTrait, v::ObservedVector, n::Integer)
     old_length = length(v.arr)
     if n < old_length
         for rem_idx in (n + 1):old_length
@@ -247,7 +247,7 @@ function Base.resize!(::PrimitiveTrait, v::ObservedVector, n::Integer)
     return v
 end
 
-function Base.resize!(::CompoundTrait, v::ObservedVector, n::Integer)
+function _resize!(::CompoundTrait, v::ObservedVector, n::Integer)
     old_length = length(v.arr)
     if n < old_length
         for rem_idx in (n + 1):old_length
