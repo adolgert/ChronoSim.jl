@@ -8,6 +8,11 @@ public is_observed_container
 
 is_observed_container(::Any) = false
 
+struct Param{T}
+    value::T
+end
+export Param, is_observed_container
+
 using ..ChronoSim: Member
 
 include("obs_traits.jl")

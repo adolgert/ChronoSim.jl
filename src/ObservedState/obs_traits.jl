@@ -1,20 +1,24 @@
+export Address
+
 # This helps support ObservedVector and ObservedArray that may contain
 # compound types or primitive types.
+#   - PrimitiveTrait: Tracks reads/writes, calls observed_notify
+#   - CompoundTrait: No read tracking, but on writes calls update_index and notify_all
+#   - UnObservableTrait: No tracking at all, just direct field access
 abstract type StructureTrait end
 struct PrimitiveTrait <: StructureTrait end
 struct CompoundTrait <: StructureTrait end
-
 # Represents a container that doesn't have an Address.
 # If this is in an observed hierarchy, it is an error.
 struct UnObservableTrait <: StructureTrait end
 
 structure_trait(::Type{T}) where {T} =
-    if (isprimitivetype(T) || !ismutable(T))
-        PrimitiveTrait()
+    if T <: Param
+        UnObservableTrait()
     elseif is_observed_container(T)
         CompoundTrait()
     else
-        UnObservableTrait()
+        PrimitiveTrait()
     end
 
 

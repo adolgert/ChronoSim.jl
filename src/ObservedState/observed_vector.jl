@@ -22,7 +22,7 @@ function ObservedMatrix{T}(::UndefInitializer, dim1, dim2) where {T}
 end
 
 is_observed_container(v::ObservedArray) = true
-is_observed_container(::Type{ObservedArray}) = true
+is_observed_container(::Type{<:ObservedArray}) = true
 
 function Base.getproperty(tv::ObservedArray, name::Symbol)
     name ∈ (:arr, :_address) ? getfield(tv, name) : getproperty(tv.arr, name)

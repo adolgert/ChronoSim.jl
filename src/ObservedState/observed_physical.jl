@@ -129,12 +129,13 @@ function Base.getproperty(op::ObservedPhysical, field::Symbol)
 end
 
 function _getproperty(::PrimitiveTrait, op::ObservedPhysical, field::Symbol)
-    observed_notify(op, (Member(field),), :read)
+    if field ∉ (:obs_read, :obs_modified)
+        observed_notify(op, (Member(field),), :read)
+    end
     return getfield(op, field)
 end
 
 _getproperty(::CompoundTrait, op::ObservedPhysical, field::Symbol) = getfield(op, field)
-
 
 _getproperty(::UnObservableTrait, op::ObservedPhysical, field::Symbol) = getfield(op, field)
 
@@ -173,10 +174,10 @@ records which parts of the state were modified. The callback should have
 no arguments and may return a result.
 """
 function capture_state_changes(f::Function, physical::ObservedPhysical)
-    empty!(physical.obs_modified)
+    empty!(getfield(physical, :obs_modified))
     result = f()
     # Use ordered set here so that list is deterministic.
-    changes = OrderedSet(physical.obs_modified)
+    changes = OrderedSet(getfield(physical, :obs_modified))
     return (; result, changes)
 end
 
@@ -188,16 +189,16 @@ records which parts of the state were read. The callback should have
 no arguments and may return a result.
 """
 function capture_state_reads(f::Function, physical::ObservedPhysical)
-    empty!(physical.obs_read)
+    empty!(getfield(physical, :obs_read))
     result = f()
-    reads = OrderedSet(physical.obs_read)
+    reads = OrderedSet(getfield(physical, :obs_read))
     return (; result, reads)
 end
 
 function observed_notify(physical::ObservedPhysical, changed, readwrite)
     if readwrite == :read
-        push!(physical.obs_read, changed)
+        push!(getfield(physical, :obs_read), changed)
     else
-        push!(physical.obs_modified, changed)
+        push!(getfield(physical, :obs_modified), changed)
     end
 end

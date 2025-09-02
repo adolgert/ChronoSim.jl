@@ -24,6 +24,7 @@ function ObservedDict(other::AbstractDict{K,V}) where {K,V}
 end
 
 is_observed_container(v::ObservedDict) = true
+is_observed_container(v::Type{<:ObservedDict}) = true
 
 
 # Forward read-only operations

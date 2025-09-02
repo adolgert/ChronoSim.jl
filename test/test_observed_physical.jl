@@ -4,9 +4,16 @@ using ChronoSim.ObservedState
 
 @testset "ObservedPhysical" begin
     # Define test types using the macros
-    @keyedby Piece Int begin
+    @keyedby PieceMacro Int begin
         speed::Float64
         kind::String
+    end
+    Address = ChronoSim.ObservedState.Address
+    mutable struct Piece <: Addressed
+        speed::Float64
+        kind::String
+        _address::Address{Int}
+        Piece(speed, kind) = new(speed, kind, Address{Int}())
     end
 
     @keyedby Square NTuple{2,Int64} begin
