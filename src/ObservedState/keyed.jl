@@ -11,7 +11,7 @@ notify_all(obj) =
     for prop_name in propertynames(obj)
         prop_obj = getfield(obj, prop_name)
         if isa(structure_trait(typeof(prop_obj)), PrimitiveTrait)
-            address_notify(obj._address, Member(prop_name), :write)
+            address_notify(obj._address, (Member(prop_name),), :write)
         else
             notify_all(prop_obj)
         end
@@ -102,7 +102,7 @@ macro keyedby(struct_name, index_type, struct_block)
     getprop_def = quote
         function Base.getproperty(obj::$struct_name, field::Symbol)
             if field != :_address
-                ChronoSim.ObservedState.address_notify(obj._address, Member(field), :read)
+                ChronoSim.ObservedState.address_notify(obj._address, (Member(field),), :read)
             end
             return getfield(obj, field)
         end
@@ -111,7 +111,7 @@ macro keyedby(struct_name, index_type, struct_block)
     setprop_def = quote
         function Base.setproperty!(obj::$struct_name, field::Symbol, value)
             if field != :_address
-                ChronoSim.ObservedState.address_notify(obj._address, Member(field), :write)
+                ChronoSim.ObservedState.address_notify(obj._address, (Member(field),), :write)
             end
             return setfield!(obj, field, value)
         end

@@ -42,7 +42,7 @@ Base.getindex(v::ObservedArray, i...) = _getindex(structure_trait(eltype(v)), v,
 _update_index(el, v, i) = (update_index(el._address, v, i); el)
 
 function _getindex(::PrimitiveTrait, v::ObservedArray{T,1}, i::Int) where {T}
-    observed_notify(v, i, :read)
+    observed_notify(v, (i,), :read)
     return v.arr[i]
 end
 
@@ -52,7 +52,7 @@ function _getindex(::CompoundTrait, v::ObservedArray{T,1}, i::Int) where {T}
 end
 
 function _getindex(::PrimitiveTrait, v::ObservedArray{T,N}, i::Int) where {T,N}
-    observed_notify(v, Tuple(CartesianIndices(v.arr)[i]), :read)
+    observed_notify(v, (Tuple(CartesianIndices(v.arr)[i]),), :read)
     return v.arr[i]
 end
 
@@ -62,7 +62,7 @@ function _getindex(::CompoundTrait, v::ObservedArray{T,N}, i::Int) where {T,N}
 end
 
 function _getindex(::PrimitiveTrait, v::ObservedArray, i::Vararg{Int})
-    observed_notify(v, i, :read)
+    observed_notify(v, (i,), :read)
     return v.arr[i...]
 end
 
@@ -72,7 +72,7 @@ function _getindex(::CompoundTrait, v::ObservedArray, i::Vararg{Int})
 end
 
 function _getindex(::PrimitiveTrait, v::ObservedArray, i::CartesianIndex)
-    observed_notify(v, Tuple(i), :read)
+    observed_notify(v, (Tuple(i),), :read)
     return v.arr[i]
 end
 
@@ -84,7 +84,7 @@ end
 Base.setindex!(v::ObservedArray, x, i...) = _setindex!(structure_trait(eltype(v)), v, x, i...)
 
 function _setindex!(::PrimitiveTrait, v::ObservedArray{T,1}, x, i::Int) where {T}
-    observed_notify(v, i, :write)
+    observed_notify(v, (i,), :write)
     return v.arr[i] = x
 end
 
@@ -94,7 +94,7 @@ function _setindex!(::CompoundTrait, v::ObservedArray{T,1}, x, i::Int) where {T}
 end
 
 function _setindex!(::PrimitiveTrait, v::ObservedArray{T,N}, x, i::Int) where {T,N}
-    observed_notify(v, Tuple(CartesianIndices(v.arr)[i]), :write)
+    observed_notify(v, (Tuple(CartesianIndices(v.arr)[i]),), :write)
     return v.arr[i] = x
 end
 
@@ -104,7 +104,7 @@ function _setindex!(::CompoundTrait, v::ObservedArray{T,N}, x, i::Int) where {T,
 end
 
 function _setindex!(::PrimitiveTrait, v::ObservedArray, x, i::Vararg{Int})
-    observed_notify(v, i, :write)
+    observed_notify(v, (i,), :write)
     return v.arr[i...] = x
 end
 
@@ -115,7 +115,7 @@ end
 
 function _setindex!(::PrimitiveTrait, v::ObservedArray, x, i::CartesianIndex)
     v.arr[i] = x
-    return observed_notify(v, Tuple(i), :write)
+    return observed_notify(v, (Tuple(i),), :write)
 end
 
 function _setindex!(::CompoundTrait, v::ObservedArray, x, i::CartesianIndex)
@@ -126,7 +126,7 @@ end
 Base.push!(v::ObservedVector, x) = _push!(structure_trait(eltype(v)), v, x)
 
 function _push!(::PrimitiveTrait, v::ObservedVector, x)
-    observed_notify(v, length(v.arr) + 1, :write)
+    observed_notify(v, (length(v.arr) + 1,), :write)
     return push!(v.arr, x)
 end
 
@@ -143,7 +143,7 @@ function _pop!(::PrimitiveTrait, v::ObservedVector)
     if isempty(v.arr)
         throw(BoundsError(v, ()))
     end
-    observed_notify(v, length(v), :write)
+    observed_notify(v, (length(v),), :write)
     x = pop!(v.arr)
     return x
 end
@@ -163,7 +163,7 @@ Base.pushfirst!(v::ObservedVector, x) = _pushfirst!(structure_trait(eltype(v)), 
 function _pushfirst!(::PrimitiveTrait, v::ObservedVector, x)
     pushfirst!(v.arr, x)
     for i in eachindex(v.arr)
-        observed_notify(v, i, :write)
+        observed_notify(v, (i,), :write)
     end
     return v
 end
@@ -187,7 +187,7 @@ function _popfirst!(::PrimitiveTrait, v::ObservedVector)
     end
     x = popfirst!(v.arr)
     for i in eachindex(v.arr)
-        observed_notify(v, i, :write)
+        observed_notify(v, (i,), :write)
     end
     return x
 end
@@ -214,7 +214,7 @@ function _append!(::PrimitiveTrait, v::ObservedVector, items)
     append!(v.arr, items)
     # Update container and index for newly added items
     for idx in start_idx:length(v.arr)
-        observed_notify(v, idx, :write)
+        observed_notify(v, (idx,), :write)
     end
     return v
 end
@@ -236,11 +236,11 @@ function _resize!(::PrimitiveTrait, v::ObservedVector, n::Integer)
     old_length = length(v.arr)
     if n < old_length
         for rem_idx in (n + 1):old_length
-            observed_notify(v, rem_idx, :write)
+            observed_notify(v, (rem_idx,), :write)
         end
     else
         for add_idx in (old_length + 1):n
-            observed_notify(v, add_idx, :write)
+            observed_notify(v, (add_idx,), :write)
         end
     end
     resize!(v.arr, n)

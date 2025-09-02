@@ -36,7 +36,7 @@ Base.getindex(v::ObservedDict, i...) = _getindex(structure_trait(valtype(v)), v,
 
 function _getindex(::PrimitiveTrait, d::ObservedDict, key)
     element = d.dict[key]
-    observed_notify(d, key, :read)
+    observed_notify(d, (key,), :read)
     return element
 end
 
@@ -51,7 +51,7 @@ end
 
 function _setindex!(::PrimitiveTrait, d::ObservedDict, value, key)
     d.dict[key] = value
-    observed_notify(d, key, :write)
+    observed_notify(d, (key,), :write)
     return value
 end
 
@@ -67,7 +67,7 @@ Base.delete!(v::ObservedDict, i...) = _delete!(structure_trait(valtype(v)), v, i
 function _delete!(::PrimitiveTrait, d::ObservedDict, key)
     if haskey(d.dict, key)
         delete!(d.dict, key)
-        observed_notify(d, key, :write)
+        observed_notify(d, (key,), :write)
     end
     return d
 end
@@ -86,7 +86,7 @@ Base.pop!(v::ObservedDict, key) = _pop!(structure_trait(valtype(v)), v, key)
 
 function _pop!(::PrimitiveTrait, d::ObservedDict, key)
     if haskey(d.dict, key)
-        observed_notify(d, key, :write)
+        observed_notify(d, (key,), :write)
         return pop!(d.dict, key)
     end
     return nothing
@@ -132,7 +132,7 @@ function _iterate(::PrimitiveTrait, d::ObservedDict)
     return if next === nothing
         nothing
     else
-        observed_notify(d, next[1].first, :read)
+        observed_notify(d, (next[1].first,), :read)
         next
     end
 end
@@ -144,7 +144,7 @@ function _iterate(::PrimitiveTrait, d::ObservedDict, state)
     if next === nothing
         return nothing
     else
-        observed_notify(d, next[1].first, :read)
+        observed_notify(d, (next[1].first,), :read)
         return next
     end
 end

@@ -57,12 +57,10 @@ end
 
 
 function address_notify(addr::Address, changed, readwrite)
+    @assert changed isa Tuple
     !isnothing(addr.container) || return nothing
     observed_notify(addr.container, (addr.index, changed...), readwrite)
 end
 
 
 Base.empty!(addr::Address) = (addr.container=nothing; nothing)
-
-# If a struct has an Address, that shouldn't count against two instances being equal.
-Base.:(==)(a::Address, b::Address) = true

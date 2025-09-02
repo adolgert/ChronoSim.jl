@@ -21,9 +21,37 @@ using ChronoSim.ObservedState
         (Param{ObservedArray}, ChronoSim.ObservedState.UnObservableTrait()),
     ]
     for obs_idx in eachindex(obstrait_categories)
-        @testset "structure_trait pairs $obs_idx" begin
+        obs_name = string(obstrait_categories[obs_idx][1])
+        @testset "structure_trait pairs $obs_name" begin
             a, b = obstrait_categories[obs_idx]
             @test ChronoSim.ObservedState.structure_trait(a) == b
         end
+    end
+
+    @testset "Address smoke" begin
+        addr = Address{Int}()
+        @test isnothing(addr.container)
+        mutable struct ParentType
+            changed
+            readwrite
+        end
+        ChronoSim.ObservedState.observed_notify(pt::ParentType, changed, rw) = begin
+            pt.changed = changed
+            pt.readwrite = rw
+        end
+        pt = ParentType(nothing, nothing)
+        # Notice that if the index is a single value, it should be a tuple with a single value.
+        ChronoSim.ObservedState.address_notify(addr, (), :write)
+        @test isnothing(pt.changed)
+        ChronoSim.ObservedState.update_index(addr, pt, 27)
+        ChronoSim.ObservedState.address_notify(addr, (), :write)
+        @test pt.changed == (27,)
+        ChronoSim.ObservedState.address_notify(addr, ("changed utterly",), :write)
+        @test pt.changed == (27, "changed utterly")
+        @test pt.readwrite == :write
+        empty!(addr)
+        # Shouldn't do anything once the address is emptied.
+        ChronoSim.ObservedState.address_notify(addr, (:fellow,), :read)
+        @test pt.readwrite == :write
     end
 end
