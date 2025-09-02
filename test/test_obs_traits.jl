@@ -54,4 +54,21 @@ using ChronoSim.ObservedState
         ChronoSim.ObservedState.address_notify(addr, (:fellow,), :read)
         @test pt.readwrite == :write
     end
+
+    @testset "Address show" begin
+        # Test with empty Address
+        addr1 = Address{Int}()
+        @test startswith(string(addr1), "Address(nothing")
+
+        # Test with container but undefined index
+        addr2 = Address{String}()
+        addr2.container = "test_container"
+        @test string(addr2) == "Address(contained, undef)"
+
+        # Test with both container and index defined
+        addr3 = Address{Symbol}()
+        addr3.container = "test_container"
+        addr3.index = :field_name
+        @test string(addr3) == "Address(contained, field_name)"
+    end
 end

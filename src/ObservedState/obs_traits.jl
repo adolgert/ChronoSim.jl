@@ -38,11 +38,15 @@ mutable struct Address{Key}
     Address{Key}() where {Key} = new(nothing)
 end
 
+"""
+The show() function for `Address{Key}` doesn't print the container
+because the type can be quite large.
+"""
 function Base.show(io::IO, addr::Address)
     print(
         io,
         "Address(",
-        isnothing(addr.container) ? "nothing" : "container",
+        isnothing(addr.container) ? "nothing" : "contained",
         ", ",
         isdefined(addr, :index) ? addr.index : "undef",
         ")",
@@ -57,6 +61,7 @@ end
 
 
 function address_notify(addr::Address, changed, readwrite)
+    # Ensure any changed is a tuple so we don't destructure a String.
     @assert changed isa Tuple
     !isnothing(addr.container) || return nothing
     observed_notify(addr.container, (addr.index, changed...), readwrite)
