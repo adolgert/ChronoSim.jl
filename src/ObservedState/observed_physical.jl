@@ -137,7 +137,8 @@ end
 
 _getproperty(::CompoundTrait, op::ObservedPhysical, field::Symbol) = getfield(op, field)
 
-_getproperty(::UnObservableTrait, op::ObservedPhysical, field::Symbol) = getfield(op, field)
+# This is the Param{T} wrapper, so unwrap it.
+_getproperty(::UnObservableTrait, op::ObservedPhysical, field::Symbol) = getfield(op, field).value
 
 function Base.setproperty!(op::ObservedPhysical, field::Symbol, value)
     _setproperty!(structure_trait(fieldtype(typeof(op), field)), op, field, value)

@@ -22,6 +22,44 @@ notify_all(::Address) = nothing
 is_observed_container(::Addressed) = true
 is_observed_container(::Type{<:Addressed}) = true
 
+
+function Base.getproperty(obj::Addressed, field::Symbol)
+    if field != :_address
+        address_notify(obj._address, (Member(field),), :read)
+    end
+    return getfield(obj, field)
+end
+
+
+function Base.setproperty!(obj::Addressed, field::Symbol, value)
+    if field != :_address
+        address_notify(obj._address, (Member(field),), :write)
+    end
+    return setfield!(obj, field, value)
+end
+
+
+function Base.propertynames(obj::Addressed, private::Bool=false)
+    if private
+        return fieldnames(typeof(obj))
+    else
+        return Tuple(filter(x -> x != :_address, fieldnames(typeof(obj))))
+    end
+end
+
+
+function Base.:(==)(a::Addressed, b::Addressed)
+    fa = fieldnames(typeof(a))
+    fb = fieldnames(typeof(b))
+    fa == fb || return false
+    for field in fa
+        if field != :_address
+            getfield(a, field) == getfield(b, field) || return false
+        end
+    end
+    return true
+end
+
 """
     @keyedby StructName IndexType begin
         field1::Type1

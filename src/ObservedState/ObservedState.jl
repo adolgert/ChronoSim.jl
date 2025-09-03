@@ -12,6 +12,7 @@ struct Param{T}
     value::T
 end
 export Param, is_observed_container
+Base.convert(::Type{Param{T}}, x::T) where {T} = Param{T}(x)
 
 using ..ChronoSim: Member
 

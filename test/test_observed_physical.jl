@@ -8,11 +8,12 @@ using ChronoSim.ObservedState
         speed::Float64
         kind::String
     end
-    Address = ChronoSim.ObservedState.Address
+    # This is the same struct without the macro.
     mutable struct Piece <: Addressed
         speed::Float64
         kind::String
         _address::Address{Int}
+        # This internal constructor is generated for you by the @keyedby macro.
         Piece(speed, kind) = new(speed, kind, Address{Int}())
     end
 
@@ -24,7 +25,8 @@ using ChronoSim.ObservedState
     @observedphysical Board begin
         board::ObservedArray{Square,2}
         actor::ObservedDict{Int,Piece}
-        params::Dict{Symbol,Float64}
+        buildings::Set{String}
+        params::Param{Dict{Symbol,Float64}}
         actors_max::Int64
     end
 
@@ -34,15 +36,17 @@ using ChronoSim.ObservedState
         for i in 1:3, j in 1:3
             board_data[i, j] = Square(0.5, 1.0)
         end
+        @test is_observed_container(Piece)
 
         actor_data = ObservedDict{Int,Piece}()
         actor_data[1] = Piece(2.5, "walker")
         actor_data[2] = Piece(3.0, "runner")
 
+        buildings = Set(["domicile", "pit-house"])
         params = Dict(:gravity => 9.8, :friction => 0.1)
 
         # Create the Board instance
-        board_state = Board(board_data, actor_data, params, 10)
+        board_state = Board(board_data, actor_data, buildings, params, 10)
 
         # Test basic properties
         @test board_state isa Board
@@ -58,6 +62,19 @@ using ChronoSim.ObservedState
         @test board_state.board._address.container === board_state
         @test board_state.actor._address.index == Member(:actor)
         @test board_state.actor._address.container === board_state
+
+        board_state.board[3, 2].grass = 2.4
+        @test (Member(:board), (3, 2), Member(:grass)) ∈ board_state.obs_modified
+        akind = board_state.actor[2].kind
+        @show (akind, board_state.obs_read)
+        @test (Member(:actor), 2, Member(:kind)) ∈ board_state.obs_read
+        push!(board_state.buildings, "quonset")
+        @test (Member(:buildings),) ∈ board_state.obs_read
+        board_state.params[:rainbows] = 37.7
+        @test !any(x[1] == :params for x in board_state.obs_modified)
+        @test !any(x[1] == :params for x in board_state.obs_read)
+        actor_cnt = board_state.actors_max
+        @test (Member(:actors_max),) ∈ board_state.obs_read
     end
 
     @testset "Container and index pointers" begin
@@ -109,7 +126,7 @@ using ChronoSim.ObservedState
 
         @observedphysical GameState begin
             inventory::ObservedDict{Symbol,Item}
-            pieces::ObservedArray{Piece,1}
+            pieces::ObservedArray{PieceMacro,1}
             config::String
         end
 
@@ -117,10 +134,10 @@ using ChronoSim.ObservedState
         inventory[:sword] = Item(100.0, 1)
         inventory[:potion] = Item(50.0, 3)
 
-        pieces = ObservedArray{Piece}(undef, 3)
-        pieces[1] = Piece(1.0, "slow")
-        pieces[2] = Piece(2.0, "medium")
-        pieces[3] = Piece(3.0, "fast")
+        pieces = ObservedArray{PieceMacro}(undef, 3)
+        pieces[1] = PieceMacro(1.0, "slow")
+        pieces[2] = PieceMacro(2.0, "medium")
+        pieces[3] = PieceMacro(3.0, "fast")
 
         game = GameState(inventory, pieces, "default")
 
