@@ -65,16 +65,22 @@ using ChronoSim.ObservedState
 
         board_state.board[3, 2].grass = 2.4
         @test (Member(:board), (3, 2), Member(:grass)) ∈ board_state.obs_modified
+        grass = board_state.board[1, 1].grass
+        @test (Member(:board), (1, 1), Member(:grass)) ∈ board_state.obs_read
+        board_state.actor[1].kind = "jogger"
+        @test (Member(:actor), 1, Member(:kind)) ∈ board_state.obs_modified
         akind = board_state.actor[2].kind
-        @show (akind, board_state.obs_read)
         @test (Member(:actor), 2, Member(:kind)) ∈ board_state.obs_read
         push!(board_state.buildings, "quonset")
         @test (Member(:buildings),) ∈ board_state.obs_read
         board_state.params[:rainbows] = 37.7
+        rain = board_state.params[:rainbows]
         @test !any(x[1] == :params for x in board_state.obs_modified)
         @test !any(x[1] == :params for x in board_state.obs_read)
         actor_cnt = board_state.actors_max
         @test (Member(:actors_max),) ∈ board_state.obs_read
+        board_state.actors_max = 14
+        @test (Member(:actors_max),) ∈ board_state.obs_modified
     end
 
     @testset "Container and index pointers" begin
@@ -87,8 +93,9 @@ using ChronoSim.ObservedState
         actor_data = ObservedDict{Int,Piece}()
         actor_data[10] = Piece(1.5, "fast")
         actor_data[20] = Piece(0.5, "slow")
+        buildings = Set(["domicile", "pit-house"])
 
-        board_state = Board(board_data, actor_data, Dict{Symbol,Float64}(), 50)
+        board_state = Board(board_data, actor_data, buildings, Dict{Symbol,Float64}(), 50)
 
         # Test ObservedArray element pointers
         square = board_state.board[1, 2]

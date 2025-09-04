@@ -152,6 +152,5 @@ end
 _iterate(::CompoundTrait, d::ObservedDict, state) = return iterate(d.dict, state)
 
 function observed_notify(v::ObservedDict, changed, readwrite)
-    @show ("observed", changed, readwrite)
     address_notify(v._address, changed, readwrite)
 end
