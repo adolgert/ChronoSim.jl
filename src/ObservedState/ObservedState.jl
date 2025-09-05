@@ -1,7 +1,7 @@
 module ObservedState
 
 using Base: Base
-export ObservedArray, ObservedDict, ObservedPhysical
+export ObservedArray, ObservedDict, ObservedSet, ObservedPhysical
 export @keyedby, @observedphysical, @observe
 export capture_state_reads, capture_state_changes
 public is_observed_container
@@ -20,6 +20,7 @@ include("obs_traits.jl")
 include("observed_physical.jl")
 include("observed_vector.jl")
 include("observed_dict.jl")
+include("observed_set.jl")
 include("keyed.jl")
 include("observe_macro.jl")
 
