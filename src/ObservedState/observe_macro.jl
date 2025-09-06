@@ -47,6 +47,34 @@ function access_to_placekey(expr::Expr)
     return Expr(:tuple, parts...)
 end
 
+
+function _observe_macro(expr, readwrite_field)
+    if isa(expr, Expr) && expr.head == :(=)
+        # Handle assignment (write)
+        expr = expr.args[1]
+    end
+    placekey_expr = access_to_placekey(expr)
+
+    # Extract the physical state object
+    current = expr
+    while current isa Expr && (current.head == :. || current.head == :ref)
+        if current.head == :.
+            current = current.args[1]
+        elseif current.head == :ref
+            current = current.args[1]
+        end
+    end
+    physical_obj = current
+
+    return quote
+        local _physical = $(esc(physical_obj))
+        local _placekey = $(esc(placekey_expr))
+        push!(getfield(_physical, $(QuoteNode(readwrite_field))), _placekey)
+        $(esc(expr))
+    end
+end
+
+
 """
     @obsread expr
 
@@ -54,52 +82,7 @@ Track reads and writes to ObservedPhysical state. Records the access
 in physical state and returns the value.
 """
 macro obsread(expr)
-    if isa(expr, Expr) && expr.head == :(=)
-        # Handle assignment (write)
-        lhs = expr.args[1]
-        rhs = expr.args[2]
-
-        # Get the placekey from the left-hand side
-        placekey_expr = access_to_placekey(lhs)
-
-        # Extract the physical state object (first part of the access chain)
-        current = lhs
-        while current isa Expr && (current.head == :. || current.head == :ref)
-            if current.head == :.
-                current = current.args[1]
-            elseif current.head == :ref
-                current = current.args[1]
-            end
-        end
-        physical_obj = current
-
-        return quote
-            local _physical = $(esc(physical_obj))
-            local _placekey = $(esc(placekey_expr))
-            push!(_physical.obs_read, _placekey)
-            $(esc(lhs)) = $(esc(rhs))
-        end
-    else
-        placekey_expr = access_to_placekey(expr)
-
-        # Extract the physical state object
-        current = expr
-        while current isa Expr && (current.head == :. || current.head == :ref)
-            if current.head == :.
-                current = current.args[1]
-            elseif current.head == :ref
-                current = current.args[1]
-            end
-        end
-        physical_obj = current
-
-        return quote
-            local _physical = $(esc(physical_obj))
-            local _placekey = $(esc(placekey_expr))
-            push!(_physical.obs_read, _placekey)
-            $(esc(expr))
-        end
-    end
+    _observe_macro(expr, :obs_read)
 end
 
 
@@ -110,50 +93,5 @@ Track writes to ObservedPhysical state. Records the access in physical state
 and performs the assignment.
 """
 macro obswrite(expr)
-    if isa(expr, Expr) && expr.head == :(=)
-        # Handle assignment (write)
-        lhs = expr.args[1]
-        rhs = expr.args[2]
-
-        # Get the placekey from the left-hand side
-        placekey_expr = access_to_placekey(lhs)
-
-        # Extract the physical state object (first part of the access chain)
-        current = lhs
-        while current isa Expr && (current.head == :. || current.head == :ref)
-            if current.head == :.
-                current = current.args[1]
-            elseif current.head == :ref
-                current = current.args[1]
-            end
-        end
-        physical_obj = current
-
-        return quote
-            local _physical = $(esc(physical_obj))
-            local _placekey = $(esc(placekey_expr))
-            push!(_physical.obs_modified, _placekey)
-            $(esc(lhs)) = $(esc(rhs))
-        end
-    else
-        placekey_expr = access_to_placekey(expr)
-
-        # Extract the physical state object
-        current = expr
-        while current isa Expr && (current.head == :. || current.head == :ref)
-            if current.head == :.
-                current = current.args[1]
-            elseif current.head == :ref
-                current = current.args[1]
-            end
-        end
-        physical_obj = current
-
-        return quote
-            local _physical = $(esc(physical_obj))
-            local _placekey = $(esc(placekey_expr))
-            push!(_physical.obs_modified, _placekey)
-            $(esc(expr))
-        end
-    end
+    _observe_macro(expr, :obs_modified)
 end
