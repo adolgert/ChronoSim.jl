@@ -1,24 +1,26 @@
 using Base: Base
 export ObservedArray, ObservedVector, ObservedMatrix
 
-mutable struct ObservedArray{T,N} <: DenseArray{T,N}
+mutable struct ObservedArray{T,N,Index} <: DenseArray{T,N}
     const arr::Array{T,N}
-    _address::Address{Member}
-    ObservedArray{T,N}(arr) where {T,N} = new{T,N}(collect(arr), Address{Member}())
+    _address::Address{Index}
+    ObservedArray{T,N,Index}(arr) where {T,N,Index} = new{T,N,Index}(collect(arr), Address{Index}())
 end
 
-const ObservedVector{T} = ObservedArray{T,1}
-const ObservedMatrix{T} = ObservedArray{T,2}
+const ObservedVector{T,Index} = ObservedArray{T,1,Index}
+const ObservedMatrix{T,Index} = ObservedArray{T,2,Index}
 
-function ObservedArray{T}(::UndefInitializer, dims...) where {T}
+function ObservedArray{T,Index}(::UndefInitializer, dims...) where {T,Index}
     N = length(dims)
     arr = Array{T}(undef, dims...)
-    ObservedArray{T,N}(arr)
+    ObservedArray{T,N,Index}(arr)
 end
 
-ObservedVector{T}(::UndefInitializer, dim) where {T} = ObservedArray{T,1}(Array{T}(undef, dim))
-function ObservedMatrix{T}(::UndefInitializer, dim1, dim2) where {T}
-    ObservedArray{T,2}(Array{T}(undef, dim1, dim2))
+function ObservedVector{T,Index}(::UndefInitializer, dim) where {T,Index}
+    ObservedArray{T,1,Index}(Array{T}(undef, dim))
+end
+function ObservedMatrix{T,Index}(::UndefInitializer, dim1, dim2) where {T,Index}
+    ObservedArray{T,2,Index}(Array{T}(undef, dim1, dim2))
 end
 
 is_observed_container(v::ObservedArray) = true

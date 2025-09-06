@@ -1,22 +1,22 @@
-mutable struct ObservedDict{K,V} <: AbstractDict{K,V}
+mutable struct ObservedDict{K,V,Index} <: AbstractDict{K,V}
     const dict::Dict{K,V}
-    _address::Address{Member}
-    ObservedDict{K,V}(dict) where {K,V} = new{K,V}(dict, Address{Member}())
+    _address::Address{Index}
+    ObservedDict{K,V,Index}(dict) where {K,V,Index} = new{K,V,Index}(dict, Address{Index}())
 end
 
-ObservedDict{K,V}() where {K,V} = ObservedDict{K,V}(Dict{K,V}())
-ObservedDict() = ObservedDict{Any,Any}()
-function ObservedDict(pairs...)
+ObservedDict{K,V,Index}() where {K,V,Index} = ObservedDict{K,V,Index}(Dict{K,V}())
+ObservedDict() = ObservedDict{Any,Any,Any}()
+function ObservedDict{Index}(pairs...) where {Index}
     K = typejoin([typeof(k) for (k, _) in pairs])
     V = typejoin([typeof(v) for (_, v) in pairs])
-    od = ObservedDict{K,V}(Dict{K,V}())
+    od = ObservedDict{K,V,Index}(Dict{K,V}())
     for (k, v) in pairs
         setindex!(od, v, k)
     end
     return od
 end
-function ObservedDict(other::AbstractDict{K,V}) where {K,V}
-    od = ObservedDict{K,V}(Dict{K,V}())
+function ObservedDict{Index}(other::AbstractDict{K,V}) where {K,V,Index}
+    od = ObservedDict{K,V,Index}(Dict{K,V}())
     for (k, v) in other
         setindex!(od, v, k)
     end
@@ -27,9 +27,20 @@ is_observed_container(v::ObservedDict) = true
 is_observed_container(v::Type{<:ObservedDict}) = true
 
 
-# Forward read-only operations
-for op in [:eltype, :haskey, :isempty, :iterate, :keys, :length, :pairs, :size, :sizehint!, :values]
+for op in [:eltype, :sizehint!]
     @eval Base.$op(tv::ObservedDict, args...; kwargs...) = $op(tv.dict, args...; kwargs...)
+end
+
+# These operations read the entire dict structure
+# Event generation relies on notifications that are all the way down to the
+# leaf node. Here an isempty will happen with no keys in the Dict, so the leaf
+# node can dynamically be the dictionary itself, which would require another
+# generator.
+for op in [:isempty, :length, :size, :keys, :pairs, :values]
+    @eval function Base.$op(tv::ObservedDict, args...; kwargs...)
+        observed_notify(tv, (), :read)
+        return $op(tv.dict, args...; kwargs...)
+    end
 end
 
 Base.getindex(v::ObservedDict, i...) = _getindex(structure_trait(valtype(v)), v, i...)
@@ -121,6 +132,15 @@ Base.get!(d::ObservedDict, key, default) =
     else
         d[key] = default
         return default
+    end
+
+Base.haskey(d::ObservedDict, key, default) =
+    if haskey(d.dict, key)
+        observed_notify(d, (key,), :read)
+        return true
+    else
+        observed_notify(d, (), :read)
+        return false
     end
 
 # Iteration interface
