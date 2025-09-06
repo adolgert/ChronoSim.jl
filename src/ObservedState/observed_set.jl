@@ -190,10 +190,25 @@ end
 # ============================================================================
 
 # These create new Sets, not ObservedSets, matching Julia's convention
-Base.union(s::ObservedSet, others...) = union(s.set, others...)
-Base.intersect(s::ObservedSet, others...) = intersect(s.set, others...)
-Base.setdiff(s::ObservedSet, others...) = setdiff(s.set, others...)
-Base.symdiff(s::ObservedSet, others...) = symdiff(s.set, others...)
+function Base.union(s::ObservedSet, others...)
+    observed_notify(s, :read)
+    return union(s.set, others...)
+end
+
+function Base.intersect(s::ObservedSet, others...)
+    observed_notify(s, :read)
+    return intersect(s.set, others...)
+end
+
+function Base.setdiff(s::ObservedSet, others...)
+    observed_notify(s, :read)
+    return setdiff(s.set, others...)
+end
+
+function Base.symdiff(s::ObservedSet, others...)
+    observed_notify(s, :read)
+    return symdiff(s.set, others...)
+end
 
 # ============================================================================
 # Equality and hashing
