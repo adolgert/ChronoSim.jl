@@ -25,7 +25,7 @@ using ChronoSim.ObservedState
     @observedphysical Board begin
         board::ObservedArray{Square,2}
         actor::ObservedDict{Int,Piece}
-        buildings::Set{String}
+        buildings::ObservedSet{String,Member}
         params::Param{Dict{Symbol,Float64}}
         actors_max::Int64
     end
@@ -42,7 +42,7 @@ using ChronoSim.ObservedState
         actor_data[1] = Piece(2.5, "walker")
         actor_data[2] = Piece(3.0, "runner")
 
-        buildings = Set(["domicile", "pit-house"])
+        buildings = ObservedSet{String,Member}(["domicile", "pit-house"])
         params = Dict(:gravity => 9.8, :friction => 0.1)
 
         # Create the Board instance
@@ -72,7 +72,7 @@ using ChronoSim.ObservedState
         akind = board_state.actor[2].kind
         @test (Member(:actor), 2, Member(:kind)) ∈ board_state.obs_read
         push!(board_state.buildings, "quonset")
-        @test (Member(:buildings),) ∈ board_state.obs_read
+        @test (Member(:buildings),) ∈ board_state.obs_modified
         board_state.params[:rainbows] = 37.7
         rain = board_state.params[:rainbows]
         @test !any(x[1] == :params for x in board_state.obs_modified)
@@ -93,7 +93,7 @@ using ChronoSim.ObservedState
         actor_data = ObservedDict{Int,Piece}()
         actor_data[10] = Piece(1.5, "fast")
         actor_data[20] = Piece(0.5, "slow")
-        buildings = Set(["domicile", "pit-house"])
+        buildings = ObservedSet{String,Member}(["domicile", "pit-house"])
 
         board_state = Board(board_data, actor_data, buildings, Dict{Symbol,Float64}(), 50)
 
