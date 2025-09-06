@@ -342,4 +342,28 @@ using ChronoSim.ObservedState
             @test (Member(:int_dict), 100, Member(:label)) in reads_set
         end
     end
-end
+
+    @testset "containers of containers" begin
+        mutable struct ContCont <: Addressed
+            i::Float64
+            _address::Address{Int}
+            ContCont(i) = new(i, Address{Int}())
+        end
+        @observedphysical ContContState begin
+            individual::ObservedVector{ObservedVector{ContCont,Int},Member}
+        end
+
+        inner = ObservedVector{ContCont,Int}([ContCont(11), ContCont(22)])
+        outer = ObservedVector{ObservedVector{ContCont,Int},Member}([inner])
+        state = ContContState(outer)
+        res1 = capture_state_reads(state) do
+            num = state.individual[1][2].i
+        end
+        @test (Member(:individual), 1, 2, Member(:i)) ∈ res1.reads
+        res1 = capture_state_changes(state) do
+            obj = state.individual[1][1]
+            obj.i = 2.7
+        end
+        @test (Member(:individual), 1, 1, Member(:i)) ∈ res1.changes
+    end
+end  # ObservedPhysical
