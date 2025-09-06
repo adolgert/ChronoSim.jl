@@ -19,6 +19,8 @@ jobs:
     permissions: # needed to allow julia-actions/cache to proactively delete old caches that it has created
       actions: write
       contents: read
+    env:
+      JULIA_PKG_SERVER_REGISTRY_PREFERENCE: eager
     strategy:
       fail-fast: false
       matrix:
@@ -36,6 +38,10 @@ jobs:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
       - uses: julia-actions/cache@v2
+      - name: Clear Julia depot compiled
+        shell: bash
+        run: |
+          rm -rf ~/.julia/compiled
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
   docs:
