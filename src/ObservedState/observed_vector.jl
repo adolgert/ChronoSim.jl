@@ -19,9 +19,14 @@ end
 function ObservedVector{T,Index}(::UndefInitializer, dim) where {T,Index}
     ObservedArray{T,1,Index}(Array{T}(undef, dim))
 end
+
+ObservedVector{T,Index}() where {T,Index} = ObservedArray{T,1,Index}(Array{T}(undef, 0))
+
 function ObservedMatrix{T,Index}(::UndefInitializer, dim1, dim2) where {T,Index}
     ObservedArray{T,2,Index}(Array{T}(undef, dim1, dim2))
 end
+
+ObservedMatrix{T,Index}() where {T,Index} = ObservedArray{T,2,Index}(Array{T}(undef, 0, 0))
 
 is_observed_container(v::ObservedArray) = true
 is_observed_container(::Type{<:ObservedArray}) = true
@@ -31,7 +36,7 @@ function Base.getproperty(tv::ObservedArray, name::Symbol)
 end
 
 # Forward read-only operations
-for op in [:axes, :eltype, :haskey, :isempty, :iterate, :keys, :length, :pairs, :size, :values]
+for op in [:axes, :eltype, :isempty, :iterate, :length, :size]
     @eval Base.$op(tv::ObservedArray, args...; kwargs...) = $op(tv.arr, args...; kwargs...)
 end
 
@@ -49,6 +54,18 @@ function _getindex(::PrimitiveTrait, v::ObservedArray{T,1}, i::Int) where {T}
 end
 
 function _getindex(::CompoundTrait, v::ObservedArray{T,1}, i::Int) where {T}
+    element = v.arr[i]
+    return _update_index(element, v, i)
+end
+
+function _getindex(::PrimitiveTrait, v::ObservedArray{T,1}, r::AbstractRange) where {T}
+    for idx in r
+        observed_notify(v, (idx,), :read)
+    end
+    return v.arr[r]
+end
+
+function _getindex(::CompoundTrait, v::ObservedArray{T,1}, r::AbstractRange) where {T}
     element = v.arr[i]
     return _update_index(element, v, i)
 end
