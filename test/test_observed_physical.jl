@@ -23,8 +23,8 @@ using ChronoSim.ObservedState
     end
 
     @observedphysical Board begin
-        board::ObservedArray{Square,2}
-        actor::ObservedDict{Int,Piece}
+        board::ObservedArray{Square,2,Member}
+        actor::ObservedDict{Int,Piece,Member}
         buildings::ObservedSet{String,Member}
         params::Param{Dict{Symbol,Float64}}
         actors_max::Int64
@@ -32,13 +32,13 @@ using ChronoSim.ObservedState
 
     @testset "Basic structure" begin
         # Create some test data
-        board_data = ObservedArray{Square}(undef, 3, 3)
+        board_data = ObservedArray{Square,Member}(undef, 3, 3)
         for i in 1:3, j in 1:3
             board_data[i, j] = Square(0.5, 1.0)
         end
         @test is_observed_container(Piece)
 
-        actor_data = ObservedDict{Int,Piece}()
+        actor_data = ObservedDict{Int,Piece,Member}()
         actor_data[1] = Piece(2.5, "walker")
         actor_data[2] = Piece(3.0, "runner")
 
@@ -85,12 +85,12 @@ using ChronoSim.ObservedState
 
     @testset "Container and index pointers" begin
         # Create a Board instance
-        board_data = ObservedArray{Square}(undef, 2, 2)
+        board_data = ObservedArray{Square,Member}(undef, 2, 2)
         for i in 1:2, j in 1:2
             board_data[i, j] = Square(i * 0.1, j * 0.2)
         end
 
-        actor_data = ObservedDict{Int,Piece}()
+        actor_data = ObservedDict{Int,Piece,Member}()
         actor_data[10] = Piece(1.5, "fast")
         actor_data[20] = Piece(0.5, "slow")
         buildings = ObservedSet{String,Member}(["domicile", "pit-house"])
@@ -132,16 +132,16 @@ using ChronoSim.ObservedState
         end
 
         @observedphysical GameState begin
-            inventory::ObservedDict{Symbol,Item}
-            pieces::ObservedArray{PieceMacro,1}
+            inventory::ObservedDict{Symbol,Item,Member}
+            pieces::ObservedArray{PieceMacro,1,Member}
             config::String
         end
 
-        inventory = ObservedDict{Symbol,Item}()
+        inventory = ObservedDict{Symbol,Item,Member}()
         inventory[:sword] = Item(100.0, 1)
         inventory[:potion] = Item(50.0, 3)
 
-        pieces = ObservedArray{PieceMacro}(undef, 3)
+        pieces = ObservedArray{PieceMacro,Member}(undef, 3)
         pieces[1] = PieceMacro(1.0, "slow")
         pieces[2] = PieceMacro(2.0, "medium")
         pieces[3] = PieceMacro(3.0, "fast")
@@ -184,30 +184,30 @@ using ChronoSim.ObservedState
         end
 
         @observedphysical ComplexState begin
-            grid1d::ObservedArray{VectorElement,1}
-            grid2d::ObservedArray{MatrixElement,2}
-            sym_dict::ObservedDict{Symbol,SymbolElement}
-            int_dict::ObservedDict{Int,VectorElement}
+            grid1d::ObservedArray{VectorElement,1,Member}
+            grid2d::ObservedArray{MatrixElement,2,Member}
+            sym_dict::ObservedDict{Symbol,SymbolElement,Member}
+            int_dict::ObservedDict{Int,VectorElement,Member}
             counter::Int
         end
 
         # Initialize the state
-        grid1d = ObservedArray{VectorElement}(undef, 4)
+        grid1d = ObservedArray{VectorElement,Member}(undef, 4)
         for i in 1:4
             grid1d[i] = VectorElement(i * 1.0, "elem$i")
         end
 
-        grid2d = ObservedArray{MatrixElement}(undef, 2, 3)
+        grid2d = ObservedArray{MatrixElement,Member}(undef, 2, 3)
         for i in 1:2, j in 1:3
             grid2d[i, j] = MatrixElement(i + j * 0.1, "grid_$(i)_$(j)")
         end
 
-        sym_dict = ObservedDict{Symbol,SymbolElement}()
+        sym_dict = ObservedDict{Symbol,SymbolElement,Member}()
         sym_dict[:alpha] = SymbolElement(1.5, "alpha_elem")
         sym_dict[:beta] = SymbolElement(2.5, "beta_elem")
         sym_dict[:gamma] = SymbolElement(3.5, "gamma_elem")
 
-        int_dict = ObservedDict{Int,VectorElement}()
+        int_dict = ObservedDict{Int,VectorElement,Member}()
         int_dict[100] = VectorElement(10.0, "hundred")
         int_dict[200] = VectorElement(20.0, "two_hundred")
 

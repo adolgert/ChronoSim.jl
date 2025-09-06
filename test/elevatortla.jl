@@ -56,7 +56,9 @@ end
 """
 Convert Julia calls to TLA+ ActiveElevatorCalls format
 """
-function convert_active_calls(calls::ObservedDict{Tuple{Int64,ElevatorDirection},ElevatorCall})
+function convert_active_calls(
+    calls::ObservedDict{Tuple{Int64,ElevatorDirection},ElevatorCall,Member}
+)
     [
         Dict("floor" => floor, "direction" => string(direction)) for
         ((floor, direction), call) in calls if call.requested

@@ -12,7 +12,7 @@ ChronoSim.ObservedState.is_observed_container(::Type{<: ObserveContained}) = tru
 @testset "ObservedArray construct int undef" begin
     using ChronoSim.ObservedState
     cnt = 5
-    arr = ObservedArray{Int}(undef, cnt)
+    arr = ObservedArray{Int,Member}(undef, cnt)
     for idx in 1:cnt
         arr[idx] = -idx
     end
@@ -24,7 +24,7 @@ end
 @testset "ObservedArray construct int iterator" begin
     using ChronoSim.ObservedState
     cnt = 5
-    arr = ObservedArray{Int,1}(2*x for x in 1:cnt)
+    arr = ObservedArray{Int,1,Member}(2*x for x in 1:cnt)
     for ridx in 1:cnt
         @test arr[ridx] == 2*ridx
     end
@@ -33,7 +33,7 @@ end
 @testset "ObservedArray construct int vector" begin
     using ChronoSim.ObservedState
     cnt = 5
-    arr = ObservedArray{Int,1}([2*x for x in 1:cnt])
+    arr = ObservedArray{Int,1,Member}([2*x for x in 1:cnt])
     for ridx in 1:cnt
         @test arr[ridx] == 2*ridx
     end
@@ -43,7 +43,7 @@ end
 @testset "ObservedVector construct int undef" begin
     using ChronoSim.ObservedState
     cnt = 5
-    arr = ObservedVector{Int}(undef, cnt)
+    arr = ObservedVector{Int,Member}(undef, cnt)
     for idx in 1:cnt
         arr[idx] = -idx
     end
@@ -55,7 +55,7 @@ end
 @testset "ObservedVector construct int iterator" begin
     using ChronoSim.ObservedState
     cnt = 5
-    arr = ObservedVector{Int}(2*x for x in 1:cnt)
+    arr = ObservedVector{Int,Member}(2*x for x in 1:cnt)
     for ridx in 1:cnt
         @test arr[ridx] == 2*ridx
     end
@@ -64,7 +64,7 @@ end
 @testset "ObservedVector construct int vector" begin
     using ChronoSim.ObservedState
     cnt = 5
-    arr = ObservedVector{Int}([2*x for x in 1:cnt])
+    arr = ObservedVector{Int,Member}([2*x for x in 1:cnt])
     for ridx in 1:cnt
         @test arr[ridx] == 2*ridx
     end
@@ -73,7 +73,7 @@ end
 @testset "ObservedMatrix construct int undef" begin
     using ChronoSim.ObservedState
     cnt = 5
-    arr = ObservedMatrix{Int}(undef, cnt, cnt)
+    arr = ObservedMatrix{Int,Member}(undef, cnt, cnt)
     for idx in 1:cnt, jdx in 1:cnt
         arr[idx, jdx] = -idx
     end
@@ -84,7 +84,7 @@ end
 
 @testset "ObservedMatrix construct int iterator" begin
     using ChronoSim.ObservedState
-    arr = ObservedMatrix{Int}(2*x for x in 1:3, j in 1:2)
+    arr = ObservedMatrix{Int,Member}(2*x for x in 1:3, j in 1:2)
     @test length(arr) == 6
     @test arr[2, 1] == 4
 end
@@ -92,7 +92,7 @@ end
 @testset "ObservedMatrix construct int vector" begin
     using ChronoSim.ObservedState
     cnt = 5
-    arr = ObservedMatrix{Int}([2*x for x in 1:3, j in 1:2])
+    arr = ObservedMatrix{Int,Member}([2*x for x in 1:3, j in 1:2])
     @test length(arr) == 6
     @test arr[2, 1] == 4
 end
@@ -101,7 +101,7 @@ end
     using ChronoSim.ObservedState
     Contained1D = ObserveContained{Int}
     cnt = 32
-    arr = ObservedArray{Contained1D}(undef, cnt)
+    arr = ObservedArray{Contained1D,Member}(undef, cnt)
     for init in eachindex(arr)
         arr[init] = Contained1D(-init)
     end
@@ -119,7 +119,7 @@ end
     using ChronoSim.ObservedState
     Contained2D = ObserveContained{NTuple{2,Int64}}
     dims = (4, 2)
-    arr = ObservedArray{Contained2D}(undef, dims...)
+    arr = ObservedArray{Contained2D,Member}(undef, dims...)
     # for init in eachindex(arr)
     init = 1
     for idx in CartesianIndices(arr)
@@ -148,7 +148,7 @@ end
     using ChronoSim.ObservedState
     Contained1D = ObserveContained{Int}
     cnt = 32
-    arr = ObservedArray{Contained1D}(undef, cnt)
+    arr = ObservedArray{Contained1D,Member}(undef, cnt)
     for init in eachindex(arr)
         arr[init] = Contained1D(-init)
     end
@@ -163,7 +163,7 @@ end
     using ChronoSim.ObservedState
     Contained1D = ObserveContained{Int}
     cnt = 32
-    arr = ObservedArray{Contained1D}(undef, cnt)
+    arr = ObservedArray{Contained1D,Member}(undef, cnt)
     for init in eachindex(arr)
         arr[init] = Contained1D(-init)
     end
@@ -181,7 +181,7 @@ end
         name::String
     end
 
-    arr1d = ObservedArray{MyElement1D}(undef, 5)
+    arr1d = ObservedArray{MyElement1D,Member}(undef, 5)
     for i in 1:5
         arr1d[i] = MyElement1D(i * 10, "item$i")
     end
@@ -199,7 +199,7 @@ end
         active::Bool
     end
 
-    arr2d = ObservedArray{MyElement2D}(undef, 2, 3)
+    arr2d = ObservedArray{MyElement2D,Member}(undef, 2, 3)
     for j in 1:3, i in 1:2
         arr2d[i, j] = MyElement2D(i + j * 0.1, iseven(i + j))
     end
@@ -227,7 +227,7 @@ end
     end
 
     # Create and populate the dictionary
-    dict = ObservedDict{String,DictElement}()
+    dict = ObservedDict{String,DictElement,Member}()
     dict["first"] = DictElement(100, "First Item")
     dict["second"] = DictElement(200, "Second Item")
     dict["third"] = DictElement(300, "Third Item")
@@ -269,7 +269,7 @@ end
         data::Float64
     end
 
-    symdict = ObservedDict{Symbol,SymbolData}()
+    symdict = ObservedDict{Symbol,SymbolData,Member}()
     symdict[:alpha] = SymbolData(1.5)
     symdict[:beta] = SymbolData(2.5)
 
