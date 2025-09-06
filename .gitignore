@@ -5,3 +5,5 @@
 /test/Manifest.toml
 /notes
 *.local.md
+.claude/
+/t

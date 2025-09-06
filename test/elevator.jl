@@ -44,26 +44,26 @@ end
 
 
 @observedphysical ElevatorSystem begin
-    person::ObservedVector{Person}
+    person::ObservedVector{Person,Member}
     # Floor and direction, true is up, false is down.
-    calls::ObservedDict{Tuple{Int64,ElevatorDirection},ElevatorCall}
-    elevator::ObservedVector{Elevator}
+    calls::ObservedDict{Tuple{Int64,ElevatorDirection},ElevatorCall,Member}
+    elevator::ObservedVector{Elevator,Member}
     floor_cnt::Int64
 end
 
 
 function ElevatorSystem(person_cnt::Int64, elevator_cnt::Int64, floor_cnt::Int64)
-    persons = ObservedArray{Person}(undef, person_cnt)
+    persons = ObservedArray{Person,Member}(undef, person_cnt)
     for pidx in eachindex(persons)
         persons[pidx] = Person(1, 1, 0, false)
     end
-    calls = ObservedDict{Tuple{Int64,ElevatorDirection},ElevatorCall}()
+    calls = ObservedDict{Tuple{Int64,ElevatorDirection},ElevatorCall,Member}()
     for flooridx in 1:floor_cnt
         for direction in [Up, Down]
             calls[(flooridx, direction)] = ElevatorCall(false)
         end
     end
-    elevators = ObservedArray{Elevator}(undef, elevator_cnt)
+    elevators = ObservedArray{Elevator,Member}(undef, elevator_cnt)
     for elevidx in eachindex(elevators)
         elevators[elevidx] = Elevator(1, Stationary, false, Set{Int64}())
     end

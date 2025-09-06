@@ -110,8 +110,9 @@ macro observedphysical(struct_name, struct_block)
                     end
                     field_val = getfield(instance, fname)
                     if ChronoSim.ObservedState.is_observed_container(field_val)
-                        field_val.field_name = fname
-                        field_val.owner = instance
+                        ChronoSim.ObservedState.update_index(
+                            field_val._address, instance, Member(fname)
+                        )
                     end
                 end
 
@@ -123,6 +124,49 @@ macro observedphysical(struct_name, struct_block)
     return esc(struct_def)
 end
 
+function Base.getproperty(op::ObservedPhysical, field::Symbol)
+    _getproperty(structure_trait(fieldtype(typeof(op), field)), op, field)
+end
+
+function _getproperty(::PrimitiveTrait, op::ObservedPhysical, field::Symbol)
+    if field ∉ (:obs_read, :obs_modified)
+        observed_notify(op, (Member(field),), :read)
+    end
+    return getfield(op, field)
+end
+
+_getproperty(::CompoundTrait, op::ObservedPhysical, field::Symbol) = getfield(op, field)
+
+# This is the Param{T} wrapper, so unwrap it.
+_getproperty(::UnObservableTrait, op::ObservedPhysical, field::Symbol) = getfield(op, field).value
+
+function Base.setproperty!(op::ObservedPhysical, field::Symbol, value)
+    _setproperty!(structure_trait(fieldtype(typeof(op), field)), op, field, value)
+end
+
+
+function _setproperty!(::PrimitiveTrait, op::ObservedPhysical, field::Symbol, value)
+    retval = setfield!(op, field, value)
+    if field != :_address
+        observed_notify(op, (Member(field),), :write)
+    end
+    return retval
+end
+
+function _setproperty!(::CompoundTrait, op::ObservedPhysical, field::Symbol, value)
+    retval = setfield!(op, field, value)
+    if field != :_address
+        update_index(op._address, op, Member(field))
+        notify_all(value)
+    end
+    return retval
+end
+
+
+function _setproperty!(::UnObservableTrait, op::ObservedPhysical, field::Symbol, value)
+    return setfield!(op, field, value)
+end
+
 """
     capture_state_changes(f::Function, physical_state)
 
@@ -131,10 +175,10 @@ records which parts of the state were modified. The callback should have
 no arguments and may return a result.
 """
 function capture_state_changes(f::Function, physical::ObservedPhysical)
-    empty!(physical.obs_modified)
+    empty!(getfield(physical, :obs_modified))
     result = f()
     # Use ordered set here so that list is deterministic.
-    changes = OrderedSet(physical.obs_modified)
+    changes = OrderedSet(getfield(physical, :obs_modified))
     return (; result, changes)
 end
 
@@ -146,16 +190,16 @@ records which parts of the state were read. The callback should have
 no arguments and may return a result.
 """
 function capture_state_reads(f::Function, physical::ObservedPhysical)
-    empty!(physical.obs_read)
+    empty!(getfield(physical, :obs_read))
     result = f()
-    reads = OrderedSet(physical.obs_read)
+    reads = OrderedSet(getfield(physical, :obs_read))
     return (; result, reads)
 end
 
 function observed_notify(physical::ObservedPhysical, changed, readwrite)
     if readwrite == :read
-        push!(physical.obs_read, changed)
+        push!(getfield(physical, :obs_read), changed)
     else
-        push!(physical.obs_modified, changed)
+        push!(getfield(physical, :obs_modified), changed)
     end
 end
