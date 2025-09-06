@@ -46,8 +46,8 @@ end
     )
     output = []
     what_read = capture_state_reads(physical) do
-        push!(output, @observe physical.cnt)
-        fv = @observe physical.vals[3].fval
+        push!(output, @obsread physical.cnt)
+        fv = @obsread physical.vals[3].fval
         push!(output, fv)
     end
     @test output[1] == physical.cnt
@@ -58,8 +58,8 @@ end
 
     wrote = capture_state_changes(physical) do
         incr = 0.125
-        @observe physical.cnt = 12
-        @observe physical.vals[7].fval = incr
+        @obswrite physical.cnt = 12
+        @obswrite physical.vals[7].fval = incr
     end
     @test length(wrote.changes) == 2
     @test (Member(:cnt),) in wrote.changes

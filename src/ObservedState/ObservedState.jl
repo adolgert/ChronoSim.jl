@@ -2,7 +2,7 @@ module ObservedState
 
 using Base: Base
 export ObservedArray, ObservedDict, ObservedSet, ObservedPhysical
-export @keyedby, @observedphysical, @observe
+export @keyedby, @observedphysical, @obsread, @obswrite
 export capture_state_reads, capture_state_changes
 public is_observed_container
 
