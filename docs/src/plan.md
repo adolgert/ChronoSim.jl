@@ -26,19 +26,17 @@
  1. SIR with strain mutation and individual movement models.
  1. Movement through a 2D domain for particle filtering.
 
-### Known bugs
-
- 1. Observe macro needs hygiene to evaluate methods in defining context.
-
-
 ## Future Capabilities
 
 ### Features
 
 1. Importance sampling
+1. fire! functions are probabilistic programming functions.
 1. Pregeneration of all rule-based events.
 1. Transactional firing (for estimation of derivatives)
 1. MCMC sampling from trajectories
+1. Simulate backwards
+
 
 
 ### Example Simulations

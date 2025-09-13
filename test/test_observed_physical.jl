@@ -1,8 +1,78 @@
 using ReTest
 using ChronoSim
 using ChronoSim.ObservedState
+using Distributions
 
 @testset "ObservedPhysical" begin
+
+    """
+    A tree is an array of pairs where the first() is a symbol
+    and the last() is a vector of trees.
+    A lead is a vector of symbols that represents a path in a tree.
+    A state is a first() to add to the path.
+    """
+    function add_tree(tree, lead, state)
+        index = copy(lead)
+        treetop = tree
+        while !isempty(index)
+            head = popfirst!(index)
+            head_idx = findfirst(x -> x == head, treetop)
+            treetop = last(treetop[head_idx])
+        end
+        push!(treetop, state => Any[])
+    end
+
+
+    function generate_hierarchy(rng)
+        follows = [
+            :base => [:primitive, :array, :dict, :set, :addressed, :param],
+            :primitive => Symbol[],
+            :array => [:primitive, :array, :dict, :set, :addressed],
+            :dict => [:primitive, :array, :dict, :set, :addressed],
+            :set => [:primitive],
+            :addressed => [:primitive, :array, :dict, :set, :addressed],
+            :param => Symbol[],
+        ]
+        pcontinue = 0.2
+        hazard_arity = Dict(
+            :base => 5,
+            :primitive => 0,
+            :array => 1,
+            :dict => 1,
+            :set => 0,
+            :addressed => 5,
+            :param => 0,
+        )
+        # Oh no, what about an Array{Union} or Array{Any}?
+        arity1 = [:array, :dict, :set]
+        tree = [:base => Any[]]
+        leads = [[:base]]
+        while !isempty(leads)
+            lead = rand(rng, leads)
+            state = lead[end]
+            if !isempty(follows[state])
+                more = rand(rng, Bernoulli(pcontinue)) == 1
+                if more
+                    arity = hazard_arity(state)
+                    if arity > 1
+                        child_cnt = rand(rng, Poisson(hazard_arity))
+                    else
+                        child_cnt = 1
+                    end
+                    for child_idx in 1:child_cnt
+                        add_val = rand(rng, follows[state])
+                        push!(leads, vcat(lead, [add_val]))
+                        add_tree(tree, lead, :add_val)
+                    end
+                else
+                    add_tree(tree, lead, :primitive)
+                end
+            end
+        end
+        return tree
+    end
+
+
     # Define test types using the macros
     @keyedby PieceMacro Int begin
         speed::Float64
