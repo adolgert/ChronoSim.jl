@@ -35,10 +35,13 @@
 
 ### Features
 
+1. Clarify in docs that this is a model + propagator, not a framework.
 1. Importance sampling
+1. `fire!()` uses probabilistic programming to get complete likelihood.
 1. Pregeneration of all rule-based events.
 1. Transactional firing (for estimation of derivatives)
 1. MCMC sampling from trajectories
+1. Simulate backwards in time.
 
 
 ### Example Simulations
