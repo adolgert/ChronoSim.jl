@@ -73,6 +73,23 @@
  1. The depnet is absolutely wrong for the current main loop. It might be closer to right for another mainloop. Should try various implementations.
  1. Measure performance with profiling. Look for the memory leaks.
 
+## Reframing as propagator
+
+Three concepts around which to structure:
+
+  1. Event Propagation: Given current state and enabled events, calculate the probability distribution over next events
+  2. Likelihood Calculation: Compute the exact probability of observed event sequences (for model fitting)
+  3. Compositional Integration: Use as a component within larger statistical or numerical analyses
+
+## Main Pain Points
+
+The central idea is that a Model is a set of events mediated by their interaction with state. We insist on this central idea by forbidding a user from creating events in a firing function. It must always be the case that, given a simulation state, it is possible to apply events to it and figure out which are or aren't enabled. This is what makes the system a weak Markov system. It's a limitation that we should be able to turn into a strength. I'm not sure how though.
+
+ 1. There is a tenuous connection from an updated state to the generators that see that state and connect it to events.
+
+ 2. There are at least five separate definitions to create an Event. That's a lot to do. Is it easy to understand or can we reduce complexity?
+
+ 3. I know from experience that debugging these simulations is very difficult. Is there some idea I'm missing that would elucidate why some event failed to fire or why an event fires when you don't think it should?
 
 ## Improvements to the Framework User Interface
 
@@ -80,6 +97,22 @@ This section is from conversations with AI about the spectrum of
 ways to improve the user interface. There were some good ideas in there
 so they are recorded here.
 
+### The Five parts
+
+| Component          | Role                                                                                                  |
+|--------------------|-------------------------------------------------------------------------------------------------------|
+| Events             | The SimEvent interface (precondition, enable, reenable, fire!, isimmediate)                           |
+| Generators         | The reactive system that creates events from state changes or other events (@reactto, @conditionsfor) |
+| Observable State   | Containers that track reads/writes (ObservedArray, ObservedDict, etc.)                                |
+| Dependency Network | Bidirectional graph: which events depend on which state "places"                                      |
+| SimulationFSM      | The orchestrator that coordinates all of the above with CompetingClocks                               |
+
+  1. Where does complexity live today? The plan.md lists many UX improvements (macros, traits, templates). Is the current interface genuinely
+  difficult, or is it just verbose? There's a difference between "hard to understand" and "tedious to write."
+  2. The Observer pattern: You have observers on state and observers on events (the observer callback in SimulationFSM). How do users think about
+  these? Are they fundamentally different, or could they unify?
+  3. Likelihood calculation: The trace_likelihood and steploglikelihood integration suggests you're targeting inference/estimation workloads. Is that
+  a primary use case or secondary?
 
 ### generator functions use do-function syntax so make it easier.
 
@@ -492,3 +525,94 @@ reacts `ToEvent` where the search string is `[:InfectTransition]` and the functi
 closure has the arguments `(generate::Function, physical, sick, healthy)`.
 The values for sick and healthy are taken from the matched event.
 
+
+###   Idea 3: The Command-Handler Pattern (The "Made Up" Idea)
+
+What if we get rid of enable and rate functions as top-level concepts for the user and borrow from
+patterns like CQRS/Event Sourcing?
+
+* The Concept: The simulation loop is driven by Commands.
+    1. State is your physical state.
+    2. A Command is a data struct representing an intent to cause an event (e.g., TryToBreak(actor_idx)). Users can
+        dispatch commands at any time.
+    3. A Handler is a function handle(command, state). It looks at the command and the current state and returns
+        zero or more potential (Event, Distribution) tuples. For TryToBreak(1), the handler checks if actor 1 is
+        working and, if so, returns (BreakOccurred(1), fail_dist). This single function effectively combines the
+        "generator", "precondition", and "rate" logic.
+    4. An Event is a data struct representing something that happened (e.g., BreakOccurred(actor_idx)).
+    5. The `fire!` function is replaced by a pure "reducer" function: apply(event, state) -> new_state.
+
+    The main loop would look like:
+    1. Collect all possible Commands that could be issued in the current state.
+    2. Run them through their Handlers to get a list of possible (Event, Distribution) pairs.
+    3. Pass this list to CompetingClocks.jl to sample the next Event.
+    4. apply the chosen event to the state.
+    5. Repeat.
+
+* How it Simplifies:
+    * Conceptual Clarity: The flow is very clear: you issue a Command, a Handler translates it into a potential
+        Event, the sampler picks one, and an apply function enacts it. The roles are extremely well-defined.
+    * It *almost* gets rid of event keys: The sampler would work with Event structs directly. The clock_key could be
+        generated implicitly from the event's type and data. You wouldn't need a separate "key" struct.
+    * It combines Generator, Enable, and Rate: The Handler function serves all three purposes in one go.
+
+* This takes the five parts of each event and spreads them across the simulation. It looks
+  more like a traditional simulation. In that case, how is this simulation style, splitting the
+  event enabling from the state, so different from simulation where, during the handling of a
+  command, new events are created? What is the intrinsic different, and if there is an advantage
+  to splitting events and state, how do we realize that advantage while retaining the narrative
+  structure of traditional simulation styles? Or how do we realize the advantages of avoiding
+  that narrative structure? Where is the payoff?
+
+This is a more functional approach that radically simplifies the user's conceptual model, even if it adds a few new
+concepts (Command, Handler).
+
+The payoff is that this purity and separation are precisely what unlocks the advanced capabilities you want and makes
+your "propagator" vision a reality.
+
+1. The Event Log Becomes a First-Class Citizen: Because the apply function is pure (state, event) -> new_state, the
+    entire simulation history can be represented as new_state = apply(event_n, ... apply(event_1, apply(event_0,
+    initial_state))). The sequence of events [event_0, event_1, ..., event_n] is a complete, tangible, and replayable
+    log of what happened. This isn't just a printout; it's a data structure you can analyze.
+
+2. Likelihood Calculation Becomes Trivial: With the event log as data, calculating the likelihood of that specific
+    trajectory is straightforward. At each step k, you know exactly which possibilities the handle function presented
+    to the sampler and which event_k was chosen. The total likelihood is the product of those individual
+    probabilities.
+
+3. Time-Travel, Counterfactuals, and Debugging: This is the killer feature.
+    * Want to simulate backwards? You have the whole event history.
+    * Want to know "what if"? Go back to state_k, inspect the possibilities generated by the handlers, and manually
+        run the propagator with a different event choice. You can fork reality at any point.
+    * Debugging is transformed. A bug is no longer a mysterious state corruption. It's an apply function that
+        returned the wrong new_state for a given (event, old_state). You can test your apply reducers like any other
+        pure function, completely isolated from the complexity of the simulation loop.
+
+4. Enforced Separation of Concerns: Your commitment to separating the model from the sampler is now enforced by the
+    function signatures. The model code (handlers and reducers) literally cannot access the sampler. This makes the
+    system architecture incredibly clean and robust.
+
+### It looks like the AI caught on to my plan:
+
+ A Possible Reframing
+
+  What if the mental model were:
+
+  User defines: ModelSpec
+    ├── State type (plain Julia struct, no ObservedArray needed)
+    ├── Event types
+    └── Event interface methods (fire!, enable, precondition)
+
+  ChronoSim provides: Execution strategies
+    ├── ForwardSimulation (adds generators, ObservedState, DependencyNetwork)
+    ├── LikelihoodReplay (uses core model only)
+    └── GenDistribution / TuringModel wrappers
+
+### Hooks!
+
+ChronoSim.jl runs simulations forward but doesn't have hooks for:
+  - Pausing at decision points
+  - Branching into multiple rollouts
+  - Comparing outcomes and selecting actions
+
+And we really need to make clear this isn't just about forward simulation.
