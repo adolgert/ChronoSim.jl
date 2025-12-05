@@ -1,5 +1,48 @@
 # Plan
 
+This simulation framework asks a question: How can we simulate with time-varying
+hazards and get full expressiveness and statistical capability?
+
+### Problems We Want to Solve
+
+ - GSPN requires building a large graph before simulating, and creating versions of a simulation requires creating versions of those graphs. It is painstaking.
+ - GSMP historically use Exponential distributions or have limited ideas of what a hazard rate can be and a limited definition of state. But this IS a GSMP by its statistical definition.
+ - Chemical simulation with time-varying hazards does happen. It's just restricted to particular forms for the hazard rates and a limited definition of state (counts of chemicals). It's not wrong, but it doesn't do arbitrary, real-valued state.
+
+### This framework has an opinion
+
+ 1. **Which events are enabled and disabled will be mediated by changes to a state.**
+    This is in contrast to a simulation where a firing function, within that function, will
+    enable and disable events.
+
+ 2. **Events will be created dynamically based on the state.** There is a way to avoid construction
+    of the bipartite graph of the Petri net.
+
+Both of these points exist to make it easier to **compose simulations.**
+They also enable us to use a simulation as a statistical evaluator of likelihoods of trajectories.
+We will, for instance, be able to modify a simulation by specifying a list of events to
+include in the simulation, substituting one event for another.
+
+### This framework asks questions
+
+ 1. Is there a simulation component that will update state and clocks correctly
+    in a way that helps write simulations but doesn't limit the kinds of uses? I mean
+    is there some set of features we want in the state update that supports different applications
+    like chemical simulation, disease simulation, reliability, etc?
+
+ 1. How can we define simulation state in a way that is a) observable by the framework
+    and b) can be transactional so we can roll back changes to the state?
+
+ 1. What are design patterns for dynamic generation of events from the state?
+
+ 1. How can we make a framework that can be the base for a problem-specific DSL made with macros?
+
+## Why use this?
+
+ 1. Curiosity to see how well/badly it works.
+ 1. Get ideas to do something different.
+ 1. You have a sincerely difficult simulation problem, and this is the best expression of it.
+
 ## Current Capabilities
 
 ```@raw html
@@ -38,6 +81,7 @@
 1. Clarify in docs that this is a model + propagator, not a framework.
 1. Importance sampling
 1. `fire!()` uses probabilistic programming to get complete likelihood.
+1. The user can supply a list of all events in order to build a complete depnet before simulating.
 1. Pregeneration of all rule-based events.
 1. Transactional firing (for estimation of derivatives)
 1. MCMC sampling from trajectories
@@ -86,10 +130,13 @@ Three concepts around which to structure:
 The central idea is that a Model is a set of events mediated by their interaction with state. We insist on this central idea by forbidding a user from creating events in a firing function. It must always be the case that, given a simulation state, it is possible to apply events to it and figure out which are or aren't enabled. This is what makes the system a weak Markov system. It's a limitation that we should be able to turn into a strength. I'm not sure how though.
 
  1. There is a tenuous connection from an updated state to the generators that see that state and connect it to events.
+    - One debugging move: Always execute every enabling invariant at every step. If one is a yes but its generator didn't fire, then that's a problem.
 
  2. There are at least five separate definitions to create an Event. That's a lot to do. Is it easy to understand or can we reduce complexity?
 
  3. I know from experience that debugging these simulations is very difficult. Is there some idea I'm missing that would elucidate why some event failed to fire or why an event fires when you don't think it should?
+    - `A` fired, so why wasn't `B` enabled? This is hard to track because `A` affects state, and maybe `B` doesn't see that state.
+    - We could have the address of everything written and read. Relate it to what's in the network, like a local graph.
 
 ## Improvements to the Framework User Interface
 
