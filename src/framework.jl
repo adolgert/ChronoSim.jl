@@ -293,8 +293,8 @@ function initialize!(init_evt, callback::Function, sim::SimulationFSM)
     changes_result = capture_state_changes(sim.physical) do
         callback(sim.physical, sim.when, sim.rng)
     end
-    what = []
-    deal_with_changes(sim, init_evt, what, changes_result.changes)
+    # The `what` event is type Nothing to signal it isn't an event.
+    deal_with_changes(sim, init_evt, nothing, changes_result.changes)
     checksim(sim)
     sim.observer(sim.physical, sim.when, init_evt, changes_result.changes)
 end

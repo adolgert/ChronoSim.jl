@@ -111,7 +111,7 @@ place_patterns(gs::GeneratorSearch) = collect(keys(gs.byarray))
 function over_generated_events(
     f::Function, generators::GeneratorSearch, physical, event_key, changed_places
 )
-    if !isempty(event_key)
+    if !isnothing(event_key) && !isempty(event_key)
         event_args = event_key[2:end]
         for from_event in get(generators.event_to_event, event_key[1], Function[])
             # `from_event` is written by the user and calls `f` with possibly-enabled events.
