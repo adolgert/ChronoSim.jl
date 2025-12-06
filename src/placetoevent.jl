@@ -3,7 +3,9 @@ struct EventDependency{CK}
     depnet::DependencyNetwork{CK}
     eventgen::GeneratorSearch
     seen::Set{SimEvent}
-    EventDependency{CK}(eventgen) = new(DependencyNetwork{CK}(), eventgen, Set{SimEvent}())
+    function EventDependency{CK}(eventgen) where {CK}
+        new(DependencyNetwork{CK}(), eventgen, Set{SimEvent}())
+    end
 end
 
 
@@ -59,7 +61,7 @@ function add_event!(net::EventDependency{E}, evtkey, enplaces, raplaces) where {
     add_event!(net.depnet, evtkey, enplaces, raplaces)
 end
 
-remove_event!(net::EventDependency{E}, evtkeys) where {E} = remove_event(net.depnet, evtkeys)
+remove_event!(net::EventDependency{E}, evtkeys) where {E} = remove_event!(net.depnet, evtkeys)
 
 getevent_enable(net::EventDependency{E}, event) where {E} = getevent_enable(net.depnet, event)
 
