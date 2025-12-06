@@ -101,6 +101,15 @@ function getplace_rate(net::DependencyNetwork{E}, place) where {E}
     get(net.place, place, (en=Set{E}(), ra=Set{E}())).ra
 end
 
+
+function getevent_enable(net::DependencyNetwork{E}, event) where {E}
+    get(net.event, event, (en=Set{E}(), ra=Set{E}())).en
+end
+
+function getevent_rate(net::DependencyNetwork{E}, event) where {E}
+    get(net.event, event, (en=Set{E}(), ra=Set{E}())).ra
+end
+
 export DepNetNaive
 
 """

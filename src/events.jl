@@ -10,9 +10,66 @@ This abstract type is the parent of all transitions in the system.
 """
 abstract type SimEvent end
 
+"""
+    precondition(event, physical_state)
+
+This determines whether an event should be in the enabled state given the current
+physical state. When this method is called, the framework tracks the specific
+addresses of the physical state that were read in order to determine whether
+this event should be enabled.
+"""
 function precondition(it::SimEvent, physical) end
+
+
+"""
+    enable(event, physical, when)
+
+Given that `precondition(event, physical)` is `true`, this determines the
+probability distribution for when the event might fire, starting from time `when`.
+We consider the returned tuple (probability distribution, offset time) a rate for the event.
+When `enable` is called, the framework tracks the specific physical addresses
+that were read in order to compute the rate.
+"""
 function enable(tn::SimEvent, physical, when) end
+
+"""
+    reenable(event, physical, first_enabled, when)
+
+Called for events that were enabled before a state change and remain enabled after.
+The framework has already verified the precondition still passes. This function
+determines whether the event's distribution needs to be updated in the sampler.
+
+Three conditions determine whether to call `reenable`:
+
+ * Invariant - A place read by `precondition` was modified by `fire!`.
+ * Addresses - The `precondition` now reads different places than before (relative event).
+ * Rate - A place read by `enable` was modified by `fire!`.
+
+| Invariant | Addresses | Rate | reenable? | Reason |
+|-----------|-----------|------|-----------|--------|
+| ✅ | ❌ | ❌ | ❌ | Same places, precondition still holds, rate unaffected |
+| ✅ | ❌ | ✅ | ✅ | Same places, precondition still holds, rate unaffected |
+| ✅ | ✅ | — | ✅ | Relative event: dependencies shifted to new places |
+| ❌ | ❌ | ✅ | ✅ | Rate dependencies changed |
+| ❌ | ❌ | ❌ | ❌ | Nothing relevant changed |
+
+Key: ✅ = changed, ❌ = unchanged, — = doesn't matter
+
+The default implementation returns `nothing` (no update needed). To update
+the distribution, forward to `enable`:
+
+```julia
+reenable(e::MyEvent, phys, _, t) = enable(e, phys, t)
+```
+"""
 function reenable(tn::SimEvent, physical, firstenabled, curtime) end
+
+"""
+    fire!(event, physical, when, rng::AbstractRNG)
+
+When an event fires, it modifies state with this function. If you sample using
+the random number generator, that affects the likelihood of the outcome.
+"""
 function fire!(it::SimEvent, physical, when, rng) end
 
 """
