@@ -36,7 +36,7 @@ using ChronoSim.ObservedState
         for i in 1:3, j in 1:3
             board_data[i, j] = Square(0.5, 1.0)
         end
-        @test is_observed_container(Piece)
+        @test ChronoSim.ObservedState.is_observed_container(Piece)
 
         actor_data = ObservedDict{Int,Piece,Member}()
         actor_data[1] = Piece(2.5, "walker")

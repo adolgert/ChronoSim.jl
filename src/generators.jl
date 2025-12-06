@@ -3,7 +3,7 @@ using Logging: Logging
 ##### Helpers for events
 
 export EventGenerator, generators, GeneratorSearch, GenMatches, ToEvent, ToPlace
-export over_generated_events, @reactto, @conditionsfor
+export @reactto, @conditionsfor
 
 @enum GenMatches ToEvent ToPlace
 
