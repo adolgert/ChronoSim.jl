@@ -3,6 +3,41 @@ using Distributions
 using ChronoSim
 using CompetingClocks: FirstReaction, enable!
 
+
+struct TestFrameworkEvent <: SimEvent end
+
+@testset "framework invoke user code happy" begin
+    val = ChronoSim.invoke_user_code("frameworktest", TestFrameworkEvent()) do
+        3
+    end
+    @test val == 3
+end
+
+@testset "framework invoke user code sad" begin
+    testf() =
+        ChronoSim.invoke_user_code("frameworktest", TestFrameworkEvent()) do
+            div(3, 0)
+        end
+    @test_throws ChronoSim.ModelDefinitionError testf()
+end
+
+@testset "framework invoke user code examine" begin
+    testf() =
+        ChronoSim.invoke_user_code("frameworktest", TestFrameworkEvent()) do
+            div(3, 0)
+        end
+    try
+        testf()
+    catch e
+        if e isa ChronoSim.ModelDefinitionError
+            @test e.context == "frameworktest"
+            @test e.event_type == TestFrameworkEvent
+        else
+            rethrow()
+        end
+    end
+end
+
 const TestDealClockKey = Tuple{Int,Int}
 const TestDealAddressType = Symbol
 

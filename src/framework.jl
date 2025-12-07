@@ -5,7 +5,7 @@ using CompetingClocks:
 
 using Distributions
 
-export SimulationFSM
+export SimulationFSM, ModelDefinitionError
 
 ########## The Simulation Finite State Machine (FSM)
 
