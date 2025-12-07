@@ -74,6 +74,8 @@ end
 
 remove_event!(net::EventDependency{E}, evtkeys) where {E} = remove_event!(net.depnet, evtkeys)
 
-getevent_enable(net::EventDependency{E}, event) where {E} = getevent_enable(net.depnet, event)
+function getevent_enable(net::EventDependency{E}, event_key) where {E}
+    getevent_enable(net.depnet, event_key)
+end
 
-getevent_rate(net::EventDependency{E}, event) where {E} = getevent_rate(net.depnet, event)
+getevent_rate(net::EventDependency{E}, event_key) where {E} = getevent_rate(net.depnet, event_key)
