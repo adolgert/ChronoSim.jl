@@ -98,12 +98,23 @@ event_types(gs::GeneratorSearch) = collect(keys(gs.event_to_event))
 
 place_patterns(gs::GeneratorSearch) = collect(keys(gs.byarray))
 
+"""
+    over_generated_events(callback, generators, physical, event_keys, changed_places)
+
+ * `callback` is a function in the main event loop of the framework that accepts
+   an event as an argument.
+ * `generators` is the struct containing all event generators.
+ * `physical` is physical state.
+ * `event_keys` is a vector or set of keys.
+ * `changed_places` is a vector or set of physical addresses.
+"""
 function over_generated_events(
     f::Function, generators::GeneratorSearch, physical, event_key, changed_places
 )
-    if !isempty(event_key)
+    if !isnothing(event_key) && !isempty(event_key)
         event_args = event_key[2:end]
         for from_event in get(generators.event_to_event, event_key[1], Function[])
+            # `from_event` is written by the user and calls `f` with possibly-enabled events.
             from_event(f, physical, event_args...)
         end
     end
@@ -111,6 +122,7 @@ function over_generated_events(
     for place in changed_places
         placekey = placekey_mask_index(place)
         inds = [val for val in place if !isa(val, Member)]
+        # `genfunc` is written by the user and calls `f` with possibly-enabled events.
         for genfunc in get(generators.byarray, placekey, Function[])
             genfunc(f, physical, inds...)
         end
@@ -391,4 +403,35 @@ macro conditionsfor(event_type, block)
     return esc(quote
         generators(::Type{$event_type}) = EventGenerator[$(generators_list...)]
     end)
+end
+
+
+function generators_from_events(events)
+    no_generator_event = Any[]
+    generator_searches = Dict{String,GeneratorSearch}()
+    for (idx, filter_condition) in Dict("timed" => !isimmediate, "immediate" => isimmediate)
+        event_set = filter(filter_condition, events)
+        generator_set = EventGenerator[]
+        for event in event_set
+            gen_for_event = generators(event)
+            if !isempty(gen_for_event)
+                append!(generator_set, gen_for_event)
+            else
+                push!(no_generator_event, gen_for_event)
+            end
+        end
+        generator_searches[idx] = GeneratorSearch(generator_set)
+    end
+    if isempty(generator_searches["timed"])
+        imm_str = string(generator_searches["immediate"])
+        error("There are no timed events and immediate events are $imm_str")
+    end
+    if length(no_generator_event) > 1
+        error("""More than one event has no generators. Check function signatures
+            because only one should be the initializer event. $(no_generator_event)
+            """)
+    elseif !isempty(no_generator_event)
+        @debug "Possible initialization event $(no_generator_event[1])"
+    end
+    return generator_searches
 end

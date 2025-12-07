@@ -92,8 +92,9 @@ macro observedphysical(struct_name, struct_block)
     end
 
     # Create the struct definition
+    ObservedPhysicalType = ObservedPhysical
     struct_def = quote
-        mutable struct $struct_name <: ObservedPhysical
+        mutable struct $struct_name <: $ObservedPhysicalType
             $(user_fields...)
             obs_modified::Vector{Tuple}
             obs_read::Vector{Tuple}
