@@ -215,30 +215,31 @@ function deal_with_changes(
     clock_toremove = CK[]
     over_event_invariants(sim.event_dependency, sim, fired_event_keys, changed_places) do event
         check_clock_key = clock_key(event)
-        cond_result, cond_places = sim_event_precondition(event, sim.physical)
+        event_should_be_enabled, depends_places = sim_event_precondition(event, sim.physical)
         # While the current dependency network knows if it was enabled, we check it here
         # in case we use a dependency graph that doesn't depend on the current state.
         event_was_enabled = check_clock_key ∈ keys(sim.enabled_events)
 
-        if event_was_enabled && !cond_result
+        if event_was_enabled && !event_should_be_enabled
             push!(clock_toremove, check_clock_key)
-        elseif !event_was_enabled && cond_result
+        elseif !event_was_enabled && event_should_be_enabled
             sim.enabled_events[check_clock_key] = event
             sim.enabling_times[check_clock_key] = sim.when
             rate_deps, = sim_event_enable(event, check_clock_key, sim, sim.when)
-            @debug "Evtkey $(check_clock_key) with enable deps $(cond_places) rate deps $(rate_deps)"
-            add_event!(sim.event_dependency, check_clock_key, cond_places, rate_deps)
-        elseif event_was_enabled && cond_result
+            @debug "Evtkey $(check_clock_key) with enable deps $(depends_places) rate deps $(rate_deps)"
+            add_event!(sim.event_dependency, check_clock_key, depends_places, rate_deps)
+        elseif event_was_enabled && event_should_be_enabled
             # Every time we check an invariant after a state change, we must
             # re-calculate how it depends on the state. For instance,
             # A can move right. Then A moves down. Then A can still move
             # right, but its moving right now depends on a different space
             # to the right. This is because a "move right" event is defined
             # relative to a state, not on a specific, absolute set of places.
-            if cond_places != getevent_enable(sim.event_dependency, check_clock_key)
-                # Then you get new places.
+            depended_on_places = getevent_enable(sim.event_dependency, check_clock_key)
+            @assert eltype(depends_places) == eltype(depended_on_places)
+            if depends_places != depended_on_places
                 rate_deps = sim_event_reenable(event, check_clock_key, sim)
-                add_event!(sim.event_dependency, check_clock_key, cond_places, rate_deps)
+                add_event!(sim.event_dependency, check_clock_key, depends_places, rate_deps)
             else
                 rate_deps = getevent_rate(sim.event_dependency, check_clock_key)
                 @assert eltype(rate_deps) == eltype(changed_places)
@@ -246,7 +247,7 @@ function deal_with_changes(
                     new_rate_deps = sim_event_reenable(event, check_clock_key, sim)
                     if rate_deps != new_rate_deps
                         add_event!(
-                            sim.event_dependency, check_clock_key, cond_places, new_rate_deps
+                            sim.event_dependency, check_clock_key, depends_places, new_rate_deps
                         )
                     end
                 end
