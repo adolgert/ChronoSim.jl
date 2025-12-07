@@ -85,7 +85,7 @@ function ChronoSim.add_event!(
     event_dependency.added[evt_key] = (enplaces, raplaces)
 end
 
-@testset "framework deal_with_changes smoke" begin
+@testset "framework deal_with_changes first time enable" begin
     event = TestDealEvent(
         (3, 7),
         false,
@@ -106,6 +106,39 @@ end
     event_list = [TestDealEvent]
     sampler = FirstReaction{TestDealClockKey,Float64}()
     sim = SimulationFSM(physical, event_list; sampler=sampler)
+    changed_places = Set([:car])
+    ChronoSim.deal_with_changes(sim, event_dependency, [], changed_places)
+    @test event.called_event_enable == 1
+    @test event_dependency.added[(3, 7)][1] == Set([:car, :truck])
+    @test event_dependency.added[(3, 7)][2] == Set([:car, :moped])
+end
+
+@testset "framework deal_with_changes disable" begin
+    event = TestDealEvent(
+        (3, 7),
+        true,
+        false,
+        Set(Symbol[]),
+        Set([:car, :truck]),
+        Set(Symbol[]),
+        Set([:car, :moped]),
+        Set([:nope]),
+        0,
+        0,
+        0,
+    )
+    event_dependency = TestDealEventDependency(
+        TestDealEvent[event], TestDealEvent[], Dict{TestDealClockKey,TestDealAddType}()
+    )
+    physical = TestDealSystem(0, 0, 0, 0, 0)
+    event_list = [TestDealEvent]
+    sampler = FirstReaction{TestDealClockKey,Float64}()
+    sim = SimulationFSM(physical, event_list; sampler=sampler)
+    if event.prev_enabled
+        enable!(sampler, clock_key(event), Exponential(), 0.0, 0.0, sim.rng)
+        sim.enabled_events[clock_key(event)] = event
+        sim.enabling_times[clock_key(event)] = sim.when
+    end
     changed_places = Set([:car])
     ChronoSim.deal_with_changes(sim, event_dependency, [], changed_places)
     @test event.called_event_enable == 1
