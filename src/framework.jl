@@ -294,7 +294,7 @@ function fire!(sim::SimulationFSM, when, what)
     # Break the invariant that state and events are consistent.
     changed_places = modify_state!(sim, event)
     disable_clocks!(sim, [what])
-    remove_event!(event_dependency, [what])
+    remove_event!(sim.event_dependency, [what])
     deal_with_changes(sim, sim.event_dependency, what, changed_places)
     checksim(sim)
     # Invariant for states and events is restored, so show the result.
