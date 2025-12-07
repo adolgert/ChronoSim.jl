@@ -5,6 +5,40 @@ using CompetingClocks: FirstReaction, enable!
 
 
 struct TestFrameworkEvent <: SimEvent end
+struct TestFrameworkAnotherEvent <: SimEvent end
+struct TestFrameworkIntEvent <: SimEvent
+    val::Int
+end
+struct TestFrameworkIntBEvent <: SimEvent
+    some::Int
+end
+struct TestFrameworkSymbolEvent <: SimEvent
+    sym::Symbol
+end
+struct TestFrameworkIntFloatEvent <: SimEvent
+    val::Int
+    other::Float64
+end
+
+@testset "framework common_base_key_tuple smoke" begin
+    v = ChronoSim.common_base_key_tuple([TestFrameworkEvent, TestFrameworkAnotherEvent])
+    @test v == Tuple{Symbol}
+    v = ChronoSim.common_base_key_tuple([TestFrameworkIntEvent, TestFrameworkIntBEvent])
+    @test v == Tuple{Symbol,Int}
+    v = ChronoSim.common_base_key_tuple([TestFrameworkIntEvent, TestFrameworkIntFloatEvent])
+    @test v == Tuple{Symbol,Int64,Vararg{Float64}}
+    v = ChronoSim.common_base_key_tuple([
+        TestFrameworkIntEvent, TestFrameworkIntFloatEvent, TestFrameworkEvent
+    ])
+    @test v == Tuple{Symbol,Vararg{Real}}
+    v = ChronoSim.common_base_key_tuple([
+        TestFrameworkIntEvent,
+        TestFrameworkIntFloatEvent,
+        TestFrameworkEvent,
+        TestFrameworkSymbolEvent,
+    ])
+    @test v == Tuple{Symbol,Vararg{Any}}
+end
 
 @testset "framework invoke user code happy" begin
     val = ChronoSim.invoke_user_code("frameworktest", TestFrameworkEvent()) do
