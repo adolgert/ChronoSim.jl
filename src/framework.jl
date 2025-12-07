@@ -70,34 +70,7 @@ function SimulationFSM(
     else
         ClockKey = keytype(sampler)
     end
-    no_generator_event = Any[]
-    generator_searches = Dict{String,GeneratorSearch}()
-    for (idx, filter_condition) in Dict("timed" => !isimmediate, "immediate" => isimmediate)
-        event_set = filter(filter_condition, events)
-        generator_set = EventGenerator[]
-        for event in event_set
-            gen_for_event = generators(event)
-            if !isempty(gen_for_event)
-                append!(generator_set, gen_for_event)
-            else
-                push!(no_generator_event, gen_for_event)
-            end
-        end
-        generator_searches[idx] = GeneratorSearch(generator_set)
-    end
-    if isempty(generator_searches["timed"])
-        imm_str = str(generator_searches["immediate"])
-        error("There are no timed events and immediate events are $imm_str")
-    end
-    if length(no_generator_event) > 1
-        error("""More than one event has no generators. Check function signatures
-            because only one should be the initializer event. $(no_generator_event)
-            """)
-    elseif !isempty(no_generator_event)
-        @debug "Possible initialization event $(no_generator_event[1])"
-    end
-    @debug generator_searches["timed"]
-
+    generator_searches = generators_from_events(events)
     if isnothing(observer)
         observer = (args...) -> nothing
     end
@@ -147,7 +120,9 @@ end
 
 """
 The three `sim_event_*` functions call user-defined code, so we separate this
-out in order to check the calls and return values.
+out in order to check the calls and return values. This also provides a way
+to mock interaction with both events and the sampler for testing the central
+function `deal_with_changes()`. Subclass `SimEvent` to create a fake interaction.
 """
 function sim_event_precondition(event::SimEvent, physical)
     reads_result = capture_state_reads(physical) do
@@ -177,7 +152,7 @@ function sim_event_enable(event::SimEvent, event_key, sim, when)
 end
 
 
-function sim_event_reenable(event::SimEvent, event_key, sim::SimulationFSM)
+function sim_event_reenable(event::SimEvent, event_key, sim)
     first_enable = sim.enabling_times[event_key]
     reads_result = capture_state_reads(sim.physical) do
         invoke_user_code("reenable", event) do
@@ -193,13 +168,18 @@ end
 
 
 """
-    deal_with_changes(sim::SimulationFSM)
+    deal_with_changes(sim::SimulationFSM, event_dependency, fired_event_keys, changed_places)
 
-An event changed the state. This function modifies events
-to respond to changes in state.
+An event changed the state. This function modifies events to respond to changes in state.
+
+ * `sim` - the simulation
+ * `event_dependency` - the bipartite graph of addresses and clocks, separated out from the sim
+   so that we can test more easily.
+ * `fired_event_keys` - a list of what fired. It's a list because of immediate events.
+ * `changed_places` - the addresses of physical state affected by firing.
 """
 function deal_with_changes(
-    sim::SimulationFSM{State,Sampler,CK}, fired_event, fired_event_keys, changed_places
+    sim::SimulationFSM{State,Sampler,CK}, event_dependency, fired_event_keys, changed_places
 ) where {State,Sampler,CK}
     # This function starts with enabled events. It ends with enabled events.
     # Let's look at just those events that depend on changed places.
@@ -209,11 +189,10 @@ function deal_with_changes(
     #       Disabled  create      nothing
     #
     # Sort for reproducibility run-to-run.
-    @debug "Fired $(fired_event) changed $(changed_places)"
     isempty(changed_places) && return nothing
 
     clock_toremove = CK[]
-    over_event_invariants(sim.event_dependency, sim, fired_event_keys, changed_places) do event
+    over_event_invariants(event_dependency, sim, fired_event_keys, changed_places) do event
         check_clock_key = clock_key(event)
         event_should_be_enabled, depends_places = sim_event_precondition(event, sim.physical)
         # While the current dependency network knows if it was enabled, we check it here
@@ -227,7 +206,7 @@ function deal_with_changes(
             sim.enabling_times[check_clock_key] = sim.when
             rate_deps, = sim_event_enable(event, check_clock_key, sim, sim.when)
             @debug "Evtkey $(check_clock_key) with enable deps $(depends_places) rate deps $(rate_deps)"
-            add_event!(sim.event_dependency, check_clock_key, depends_places, rate_deps)
+            add_event!(event_dependency, check_clock_key, depends_places, rate_deps)
         elseif event_was_enabled && event_should_be_enabled
             # Every time we check an invariant after a state change, we must
             # re-calculate how it depends on the state. For instance,
@@ -235,20 +214,18 @@ function deal_with_changes(
             # right, but its moving right now depends on a different space
             # to the right. This is because a "move right" event is defined
             # relative to a state, not on a specific, absolute set of places.
-            depended_on_places = getevent_enable(sim.event_dependency, check_clock_key)
+            depended_on_places = getevent_enable(event_dependency, check_clock_key)
             @assert eltype(depends_places) == eltype(depended_on_places)
             if depends_places != depended_on_places
                 rate_deps = sim_event_reenable(event, check_clock_key, sim)
-                add_event!(sim.event_dependency, check_clock_key, depends_places, rate_deps)
+                add_event!(event_dependency, check_clock_key, depends_places, rate_deps)
             else
-                rate_deps = getevent_rate(sim.event_dependency, check_clock_key)
+                rate_deps = getevent_rate(event_dependency, check_clock_key)
                 @assert eltype(rate_deps) == eltype(changed_places)
                 if !isdisjoint(rate_deps, changed_places)
                     new_rate_deps = sim_event_reenable(event, check_clock_key, sim)
                     if rate_deps != new_rate_deps
-                        add_event!(
-                            sim.event_dependency, check_clock_key, depends_places, new_rate_deps
-                        )
+                        add_event!(event_dependency, check_clock_key, depends_places, new_rate_deps)
                     end
                 end
             end
@@ -258,17 +235,17 @@ function deal_with_changes(
 
     disable_clocks!(sim, clock_toremove)
 
-    over_event_rates(sim.event_dependency, sim, fired_event_keys, changed_places) do event
+    over_event_rates(event_dependency, sim, fired_event_keys, changed_places) do event
         rate_clock_key = clock_key(event)
         rate_event = get(sim.enabled_events, rate_clock_key, nothing)
         if !isnothing(rate_event)
-            rate_deps = getevent_rate(sim.event_dependency, rate_clock_key)
+            rate_deps = getevent_rate(event_dependency, rate_clock_key)
             new_rate_deps = sim_event_reenable(rate_event, rate_clock_key, sim)
             if rate_deps != new_rate_deps
-                cond_deps = getevent_enable(sim.event_dependency, rate_clock_key)
-                add_event!(sim.event_dependency, rate_clock_key, cond_deps, new_rate_deps)
+                cond_deps = getevent_enable(event_dependency, rate_clock_key)
+                add_event!(event_dependency, rate_clock_key, cond_deps, new_rate_deps)
             end
-            # else it won't be in sim.event_dependency either so nothing to add/delete.
+            # else it won't be in event_dependency either so nothing to add/delete.
         end
     end
 end
@@ -282,7 +259,7 @@ function disable_clocks!(sim::SimulationFSM, clock_keys)
         delete!(sim.enabled_events, clock_done)
         delete!(sim.enabling_times, clock_done)
     end
-    remove_event!(sim.event_dependency, clock_keys)
+    remove_event!(event_dependency, clock_keys)
 end
 
 
@@ -317,7 +294,7 @@ function fire!(sim::SimulationFSM, when, what)
     # Break the invariant that state and events are consistent.
     changed_places = modify_state!(sim, event)
     disable_clocks!(sim, [what])
-    deal_with_changes(sim, event, what, changed_places)
+    deal_with_changes(sim, sim.event_dependency, what, changed_places)
     checksim(sim)
     # Invariant for states and events is restored, so show the result.
     sim.observer(sim.physical, when, event, changed_places)
@@ -340,7 +317,7 @@ function initialize!(init_evt, callback::Function, sim::SimulationFSM)
         callback(sim.physical, sim.when, sim.rng)
     end
     # The `what` event is type Nothing to signal it isn't an event.
-    deal_with_changes(sim, init_evt, nothing, changes_result.changes)
+    deal_with_changes(sim, sim.event_dependency, nothing, changes_result.changes)
     checksim(sim)
     sim.observer(sim.physical, sim.when, init_evt, changes_result.changes)
 end

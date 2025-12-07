@@ -404,3 +404,34 @@ macro conditionsfor(event_type, block)
         generators(::Type{$event_type}) = EventGenerator[$(generators_list...)]
     end)
 end
+
+
+function generators_from_events(events)
+    no_generator_event = Any[]
+    generator_searches = Dict{String,GeneratorSearch}()
+    for (idx, filter_condition) in Dict("timed" => !isimmediate, "immediate" => isimmediate)
+        event_set = filter(filter_condition, events)
+        generator_set = EventGenerator[]
+        for event in event_set
+            gen_for_event = generators(event)
+            if !isempty(gen_for_event)
+                append!(generator_set, gen_for_event)
+            else
+                push!(no_generator_event, gen_for_event)
+            end
+        end
+        generator_searches[idx] = GeneratorSearch(generator_set)
+    end
+    if isempty(generator_searches["timed"])
+        imm_str = string(generator_searches["immediate"])
+        error("There are no timed events and immediate events are $imm_str")
+    end
+    if length(no_generator_event) > 1
+        error("""More than one event has no generators. Check function signatures
+            because only one should be the initializer event. $(no_generator_event)
+            """)
+    elseif !isempty(no_generator_event)
+        @debug "Possible initialization event $(no_generator_event[1])"
+    end
+    return generator_searches
+end

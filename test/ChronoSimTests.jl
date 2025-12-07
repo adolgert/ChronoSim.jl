@@ -9,6 +9,7 @@ continuous_integration() = get(ENV, "CI", "false") == "true"
 include("test_depnet.jl")
 include("test_elevator.jl")
 include("test_events.jl")
+include("test_framework.jl")
 include("test_generator_search.jl")
 include("test_generators.jl")
 include("test_obs_traits.jl")
