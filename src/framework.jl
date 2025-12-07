@@ -119,15 +119,74 @@ function checksim(sim::SimulationFSM)
     @assert keys(sim.enabled_events) == keys(sim.event_dependency.depnet.event)
 end
 
+struct ModelDefinitionError <: Exception
+    context::String
+    event_type::Type
+    event::Any
+    cause::Exception
+    backtrace::Vector
+end
 
-function rate_reenable(sim::SimulationFSM, event, clock_key)
-    first_enable = sim.enabling_times[clock_key]
+function Base.showerror(io::IO, e::ModelDefinitionError)
+    println(io, "Error in user-defined $(e.context) for $(e.event_type)")
+    println(io, "  Event: $(e.event)")
+    println(io, "  Caused by:")
+    showerror(io, e.cause)
+    println(io, "\n\nIn model code:")
+    Base.show_backtrace(io, e.backtrace)
+end
+
+function invoke_user_code(f::Function, context::String, event::SimEvent)
+    try
+        return f()
+    catch e
+        bt = catch_backtrace()
+        throw(ModelDefinitionError(context, typeof(event), event, e, bt))
+    end
+end
+
+"""
+The three `sim_event_*` functions call user-defined code, so we separate this
+out in order to check the calls and return values.
+"""
+function sim_event_precondition(event::SimEvent, physical)
+    reads_result = capture_state_reads(physical) do
+        invoke_user_code("precondition", event) do
+            precondition(event, physical)
+        end
+    end
+    return reads_result
+end
+
+
+function sim_event_enable(event::SimEvent, event_key, sim, when)
     reads_result = capture_state_reads(sim.physical) do
-        return reenable(event, sim.physical, first_enable, sim.when)
+        enabling_spec = invoke_user_code("enable", event) do
+            enable(event, sim.physical, when)
+        end
+        if length(enabling_spec) != 2
+            error("""The enable() function for $event_key should return a
+                distribution and a time. This one returns $enabling_spec.
+                """)
+        end
+        return enabling_spec
+    end
+    (dist, enable_time) = reads_result.result
+    enable!(sim.sampler, event_key, dist, enable_time, sim.when, sim.rng)
+    return (; reads=reads_result.reads)
+end
+
+
+function sim_event_reenable(event::SimEvent, event_key, sim::SimulationFSM)
+    first_enable = sim.enabling_times[event_key]
+    reads_result = capture_state_reads(sim.physical) do
+        invoke_user_code("reenable", event) do
+            reenable(event, sim.physical, first_enable, sim.when)
+        end
     end
     if !isnothing(reads_result.result)
         (dist, enable_time) = reads_result.result
-        enable!(sim.sampler, clock_key, dist, enable_time, sim.when, sim.rng)
+        enable!(sim.sampler, event_key, dist, enable_time, sim.when, sim.rng)
     end
     return reads_result.reads
 end
@@ -156,11 +215,7 @@ function deal_with_changes(
     clock_toremove = CK[]
     over_event_invariants(sim.event_dependency, sim, fired_event_keys, changed_places) do event
         check_clock_key = clock_key(event)
-        reads_result = capture_state_reads(sim.physical) do
-            precondition(event, sim.physical)
-        end
-        cond_result = reads_result.result
-        cond_places = reads_result.reads
+        cond_result, cond_places = sim_event_precondition(event, sim.physical)
         # While the current dependency network knows if it was enabled, we check it here
         # in case we use a dependency graph that doesn't depend on the current state.
         event_was_enabled = check_clock_key ∈ keys(sim.enabled_events)
@@ -170,17 +225,7 @@ function deal_with_changes(
         elseif !event_was_enabled && cond_result
             sim.enabled_events[check_clock_key] = event
             sim.enabling_times[check_clock_key] = sim.when
-            reads_result = capture_state_reads(sim.physical) do
-                enabling_spec = enable(event, sim.physical, sim.when)
-                if length(enabling_spec) != 2
-                    error("""The enable() function for $check_clock_key should return a
-                        distribution and a time. This one returns $enabling_spec.
-                        """)
-                end
-                (dist, enable_time) = enabling_spec
-                enable!(sim.sampler, check_clock_key, dist, enable_time, sim.when, sim.rng)
-            end
-            rate_deps = reads_result.reads
+            rate_deps, = sim_event_enable(event, check_clock_key, sim, sim.when)
             @debug "Evtkey $(check_clock_key) with enable deps $(cond_places) rate deps $(rate_deps)"
             add_event!(sim.event_dependency, check_clock_key, cond_places, rate_deps)
         elseif event_was_enabled && cond_result
@@ -192,13 +237,13 @@ function deal_with_changes(
             # relative to a state, not on a specific, absolute set of places.
             if cond_places != getevent_enable(sim.event_dependency, check_clock_key)
                 # Then you get new places.
-                rate_deps = rate_reenable(sim, event, check_clock_key)
+                rate_deps = sim_event_reenable(event, check_clock_key, sim)
                 add_event!(sim.event_dependency, check_clock_key, cond_places, rate_deps)
             else
                 rate_deps = getevent_rate(sim.event_dependency, check_clock_key)
                 @assert eltype(rate_deps) == eltype(changed_places)
                 if !isdisjoint(rate_deps, changed_places)
-                    new_rate_deps = rate_reenable(sim, event, check_clock_key)
+                    new_rate_deps = sim_event_reenable(event, check_clock_key, sim)
                     if rate_deps != new_rate_deps
                         add_event!(
                             sim.event_dependency, check_clock_key, cond_places, new_rate_deps
@@ -217,7 +262,7 @@ function deal_with_changes(
         rate_event = get(sim.enabled_events, rate_clock_key, nothing)
         if !isnothing(rate_event)
             rate_deps = getevent_rate(sim.event_dependency, rate_clock_key)
-            new_rate_deps = rate_reenable(sim, rate_event, rate_clock_key)
+            new_rate_deps = sim_event_reenable(rate_event, rate_clock_key, sim)
             if rate_deps != new_rate_deps
                 cond_deps = getevent_enable(sim.event_dependency, rate_clock_key)
                 add_event!(sim.event_dependency, rate_clock_key, cond_deps, new_rate_deps)
