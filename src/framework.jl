@@ -234,6 +234,7 @@ function deal_with_changes(
     end
 
     disable_clocks!(sim, clock_toremove)
+    remove_event!(event_dependency, clock_toremove)
 
     over_event_rates(event_dependency, sim, fired_event_keys, changed_places) do event
         rate_clock_key = clock_key(event)
@@ -259,7 +260,6 @@ function disable_clocks!(sim::SimulationFSM, clock_keys)
         delete!(sim.enabled_events, clock_done)
         delete!(sim.enabling_times, clock_done)
     end
-    remove_event!(event_dependency, clock_keys)
 end
 
 
@@ -294,6 +294,7 @@ function fire!(sim::SimulationFSM, when, what)
     # Break the invariant that state and events are consistent.
     changed_places = modify_state!(sim, event)
     disable_clocks!(sim, [what])
+    remove_event!(event_dependency, [what])
     deal_with_changes(sim, sim.event_dependency, what, changed_places)
     checksim(sim)
     # Invariant for states and events is restored, so show the result.

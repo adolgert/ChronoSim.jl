@@ -1,6 +1,7 @@
 using ReTest
+using Distributions
 using ChronoSim
-using CompetingClocks: FirstReaction
+using CompetingClocks: FirstReaction, enable!
 
 const TestDealClockKey = Tuple{Int,Int}
 const TestDealAddressType = Symbol
@@ -61,6 +62,7 @@ struct TestDealEventDependency
     invariants::Vector{TestDealEvent}
     rates::Vector{TestDealEvent}
     added::Dict{TestDealClockKey,TestDealAddType}
+    removed::Set{TestDealClockKey}
 end
 
 function ChronoSim.over_event_invariants(
@@ -85,6 +87,12 @@ function ChronoSim.add_event!(
     event_dependency.added[evt_key] = (enplaces, raplaces)
 end
 
+ChronoSim.remove_event!(net::TestDealEventDependency, evtkeys) = union!(net.removed, evtkeys)
+
+ChronoSim.getevent_enable(net::TestDealEventDependency, event) = nothing
+
+ChronoSim.getevent_rate(net::TestDealEventDependency, event) = nothing
+
 @testset "framework deal_with_changes first time enable" begin
     event = TestDealEvent(
         (3, 7),
@@ -100,7 +108,10 @@ end
         0,
     )
     event_dependency = TestDealEventDependency(
-        TestDealEvent[event], TestDealEvent[], Dict{TestDealClockKey,TestDealAddType}()
+        TestDealEvent[event],
+        TestDealEvent[],
+        Dict{TestDealClockKey,TestDealAddType}(),
+        Set{TestDealClockKey}(),
     )
     physical = TestDealSystem(0, 0, 0, 0, 0)
     event_list = [TestDealEvent]
@@ -108,7 +119,9 @@ end
     sim = SimulationFSM(physical, event_list; sampler=sampler)
     changed_places = Set([:car])
     ChronoSim.deal_with_changes(sim, event_dependency, [], changed_places)
+    @test event.called_precondition == 1
     @test event.called_event_enable == 1
+    @test event.called_event_reenable == 0
     @test event_dependency.added[(3, 7)][1] == Set([:car, :truck])
     @test event_dependency.added[(3, 7)][2] == Set([:car, :moped])
 end
@@ -128,7 +141,10 @@ end
         0,
     )
     event_dependency = TestDealEventDependency(
-        TestDealEvent[event], TestDealEvent[], Dict{TestDealClockKey,TestDealAddType}()
+        TestDealEvent[event],
+        TestDealEvent[],
+        Dict{TestDealClockKey,TestDealAddType}(),
+        Set{TestDealClockKey}(),
     )
     physical = TestDealSystem(0, 0, 0, 0, 0)
     event_list = [TestDealEvent]
@@ -141,7 +157,9 @@ end
     end
     changed_places = Set([:car])
     ChronoSim.deal_with_changes(sim, event_dependency, [], changed_places)
-    @test event.called_event_enable == 1
-    @test event_dependency.added[(3, 7)][1] == Set([:car, :truck])
-    @test event_dependency.added[(3, 7)][2] == Set([:car, :moped])
+    @test event.called_precondition == 1
+    @test event.called_event_enable == 0
+    @test event.called_event_reenable == 0
+    @test (3, 7) ∉ keys(event_dependency.added)
+    @test (3, 7) ∈ event_dependency.removed
 end
