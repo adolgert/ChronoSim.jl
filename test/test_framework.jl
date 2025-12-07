@@ -73,7 +73,7 @@ struct TestDealEventDependency
             inst[clock_key(invar)] = invar
         end
         for rate in rates
-            inst[clock_key(rate)] = rates
+            inst[clock_key(rate)] = rate
         end
         new(
             inst,
@@ -324,4 +324,107 @@ end
     @test event_dependency.added[(3, 7)][1] == Set([:car, :truck])
     @test event_dependency.added[(3, 7)][2] == Set([:car, :moped, :bicycle])
     @test (3, 7) ∉ event_dependency.removed
+end
+
+
+@testset "framework deal_with_changes rate" begin
+    # This test is about the `over_event_rates` part of the function.
+    event = TestDealEvent(
+        (3, 7),
+        true, # was enabled
+        true, # is enabled
+        Set([:car, :truck]), # invariant before
+        Set([:car, :truck]), # invariant now
+        Set([:car, :moped]), # rate before
+        Set([:car, :moped]), # rate now
+        Set([:car, :moped]), # reenable dependencies
+        0,
+        0,
+        0,
+    )
+    rate_event = TestDealEvent(
+        (8, 2),
+        true, # was enabled
+        true, # is enabled
+        Set([:car, :truck]), # invariant before
+        Set([:car, :truck]), # invariant now
+        Set([:car, :moped]), # rate before
+        Set([:car, :moped]), # rate now
+        Set([:car, :moped]), # reenable dependencies
+        0,
+        0,
+        0,
+    )
+    event_dependency = TestDealEventDependency(TestDealEvent[event], TestDealEvent[rate_event])
+    physical = TestDealSystem(0, 0, 0, 0, 0)
+    event_list = [TestDealEvent]
+    sampler = FirstReaction{TestDealClockKey,Float64}()
+    sim = SimulationFSM(physical, event_list; sampler=sampler)
+    for add_en in [event, rate_event]
+        if add_en.prev_enabled
+            enable!(sampler, clock_key(add_en), Exponential(), 0.0, 0.0, sim.rng)
+            sim.enabled_events[clock_key(add_en)] = add_en
+            sim.enabling_times[clock_key(add_en)] = sim.when
+        end
+    end
+    # Here we say that the place that changed is NOT something the rate depends on.
+    changed_places = Set([:moped])
+    ChronoSim.deal_with_changes(sim, event_dependency, [], changed_places)
+    @test rate_event.called_precondition == 0
+    @test rate_event.called_event_enable == 0
+    @test rate_event.called_event_reenable == 1
+    @test (8, 2) ∉ keys(event_dependency.added)
+    @test (8, 2) ∉ event_dependency.removed
+end
+
+
+@testset "framework deal_with_changes rate new-deps" begin
+    # This test is about the `over_event_rates` part of the function.
+    # This one's rate depends on a new set of addresses, so they get saved.
+    event = TestDealEvent(
+        (3, 7),
+        true, # was enabled
+        true, # is enabled
+        Set([:car, :truck]), # invariant before
+        Set([:car, :truck]), # invariant now
+        Set([:car, :moped]), # rate before
+        Set([:car, :moped]), # rate now
+        Set([:car, :moped]), # reenable dependencies
+        0,
+        0,
+        0,
+    )
+    rate_event = TestDealEvent(
+        (8, 2),
+        true, # was enabled
+        true, # is enabled
+        Set([:car, :truck]), # invariant before
+        Set([:car, :truck]), # invariant now
+        Set([:car, :moped]), # rate before
+        Set([:car, :bicycle]), # rate now
+        Set([:car, :bicycle]), # reenable dependencies
+        0,
+        0,
+        0,
+    )
+    event_dependency = TestDealEventDependency(TestDealEvent[event], TestDealEvent[rate_event])
+    physical = TestDealSystem(0, 0, 0, 0, 0)
+    event_list = [TestDealEvent]
+    sampler = FirstReaction{TestDealClockKey,Float64}()
+    sim = SimulationFSM(physical, event_list; sampler=sampler)
+    for add_en in [event, rate_event]
+        if add_en.prev_enabled
+            enable!(sampler, clock_key(add_en), Exponential(), 0.0, 0.0, sim.rng)
+            sim.enabled_events[clock_key(add_en)] = add_en
+            sim.enabling_times[clock_key(add_en)] = sim.when
+        end
+    end
+    # Here we say that the place that changed is NOT something the rate depends on.
+    changed_places = Set([:moped])
+    ChronoSim.deal_with_changes(sim, event_dependency, [], changed_places)
+    @test rate_event.called_precondition == 0
+    @test rate_event.called_event_enable == 0
+    @test rate_event.called_event_reenable == 1
+    @test (8, 2) ∈ keys(event_dependency.added)
+    @test (8, 2) ∉ event_dependency.removed
 end

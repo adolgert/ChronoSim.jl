@@ -1,3 +1,5 @@
+# Run with: julia --project -e 'using Pkg;Pkg.test(;test_args=["framework"])'
+# Here, "framework" is a keyword in the name of the testset.
 using ArgParse
 
 include("ChronoSimTests.jl")
