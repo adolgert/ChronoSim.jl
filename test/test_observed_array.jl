@@ -229,6 +229,39 @@ using ChronoSim.ObservedState
         @test length(base.seen) > initial_notifications
     end
 
+    @testset "popfirst! notifies the vacated tail slot" begin
+        # Regression: the old tail slot's denotation changes to nothing, so it must
+        # be notified. Previously only the surviving indices 1:n-1 were notified,
+        # leaking the vacated slot n.
+        arr = ObservedVector{Int,Member}([10, 20, 30])
+        base = ObsArrayListen(Any[])
+        ChronoSim.ObservedState.update_index(arr._address, base, Member(:myarray))
+
+        popfirst!(arr)
+
+        written = sort(unique([s[1][2] for s in base.seen if s[2] == :write]))
+        @test written == [1, 2, 3]  # slot 3 (the vacated tail) must appear
+    end
+
+    @testset "popfirst! notifies the vacated tail slot for compound elements" begin
+        Contained1D = ObserveContained{Int}
+        arr = ObservedArray{Contained1D,Member}(undef, 3)
+        for i in eachindex(arr)
+            arr[i] = Contained1D(-i)
+        end
+        base = ObsArrayListen(Any[])
+        ChronoSim.ObservedState.update_index(arr._address, base, Member(:myarray))
+
+        popfirst!(arr)
+
+        # Compound notifications are field-granular: (Member(:myarray), index, Member(field)).
+        # The vacated tail slot (old length 3) must be among them.
+        tail_notified = any(
+            s -> s[2] == :write && length(s[1]) >= 2 && s[1][2] == 3, base.seen
+        )
+        @test tail_notified
+    end
+
     @testset "ObservedVector append!" begin
         arr = ObservedVector{Int,Member}([1, 2])
         base = ObsArrayListen(Any[])
