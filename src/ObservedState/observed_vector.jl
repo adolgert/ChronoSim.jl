@@ -204,8 +204,12 @@ function _popfirst!(::PrimitiveTrait, v::ObservedVector)
     if isempty(v.arr)
         throw(BoundsError(v, ()))
     end
+    # Every old slot 1:old_length changes denotation: 1:old_length-1 hold shifted
+    # contents and the tail slot old_length is vacated to ⊥. Notifying only the
+    # surviving indices would leak the vacated tail, leaving events keyed on it enabled.
+    old_length = length(v.arr)
     x = popfirst!(v.arr)
-    for i in eachindex(v.arr)
+    for i in 1:old_length
         observed_notify(v, (i,), :write)
     end
     return x
@@ -215,9 +219,14 @@ function _popfirst!(::CompoundTrait, v::ObservedVector)
     if isempty(v.arr)
         throw(BoundsError(v, ()))
     end
+    old_length = length(v.arr)
     x = popfirst!(v.arr)
+    # Notify the vacated tail slot through the removed element re-addressed to it,
+    # mirroring _pop!'s notify-then-empty. Without this the tail slot leaks.
+    _update_index(x, v, old_length)
+    notify_all(x)
     empty!(x._address)
-    # Update indices for remaining elements
+    # Update indices for remaining elements, which each shifted down one slot.
     for i in eachindex(v.arr)
         element = v.arr[i]
         _update_index(element, v, i)
