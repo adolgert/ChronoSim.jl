@@ -4,6 +4,13 @@ export ObservedArray, ObservedVector, ObservedMatrix
 mutable struct ObservedArray{T,N,Index} <: DenseArray{T,N}
     const arr::Array{T,N}
     _address::Address{Index}
+    # copy() does a raw buffer copy that leaves undefined references intact, so an
+    # array allocated with `undef` and filled by the caller afterward is accepted.
+    # collect() dereferences every slot and throws UndefRefError on such arrays
+    # (element-wise since Julia 1.13); the generic method below keeps collect() for
+    # non-Array iterables such as generators, whose elements are always defined.
+    ObservedArray{T,N,Index}(arr::Array{T,N}) where {T,N,Index} =
+        new{T,N,Index}(copy(arr), Address{Index}())
     ObservedArray{T,N,Index}(arr) where {T,N,Index} = new{T,N,Index}(collect(arr), Address{Index}())
 end
 

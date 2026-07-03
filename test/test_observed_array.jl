@@ -94,6 +94,31 @@ using ChronoSim.ObservedState
     end
 
 
+    @testset "undef construction of a reference element type is allowed" begin
+        # Regression: the constructor must not dereference the undefined slots of an
+        # `undef` array whose element type is a mutable (reference) struct. collect()
+        # does so and throws UndefRefError element-wise on Julia >= 1.13; copy() does
+        # not. This is the pattern ElevatorSystem uses (see test/elevator.jl).
+        using ChronoSim.ObservedState
+        Contained1D = ObserveContained{Int}
+        cnt = 4
+        arr = ObservedArray{Contained1D,Member}(undef, cnt)
+        for i in eachindex(arr)
+            arr[i] = Contained1D(-i)
+        end
+        @test length(arr) == cnt
+        @test [arr[i].val for i in 1:cnt] == [-1, -2, -3, -4]
+
+        # Same for a 2D array of reference elements (index is a 2-tuple).
+        Contained2D = ObserveContained{NTuple{2,Int64}}
+        mat = ObservedArray{Contained2D,Member}(undef, 2, 2)
+        for idx in CartesianIndices(mat)
+            mat[idx] = Contained2D(sum(Tuple(idx)))
+        end
+        @test size(mat) == (2, 2)
+        @test mat[2, 2].val == 4
+    end
+
     @testset "ObservedState 1D push!" begin
         using ChronoSim.ObservedState
         Contained1D = ObserveContained{Int}
