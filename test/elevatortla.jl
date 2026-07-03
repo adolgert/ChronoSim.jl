@@ -283,6 +283,14 @@ function validate_trace(
 )
     tla_tools_path = expanduser(tla_tools_path)
 
+    # TLA+ tools aren't installed everywhere (e.g. CI). Skip validation rather than
+    # emitting a spurious failure when the checker isn't present.
+    jar = joinpath(tla_tools_path, "tla2tools.jar")
+    if !isfile(jar)
+        @info "Skipping TLC trace validation: tla2tools.jar not found at $jar"
+        return missing
+    end
+
     export_tlc_trace(recorder, "Elevator_trace.txt")
 
     # Export the trace as a TLA+ spec
