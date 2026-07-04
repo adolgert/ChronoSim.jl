@@ -14,6 +14,8 @@ using ChronoSim
 using ChronoSim.ObservedState
 import ChronoSim: precondition, generators
 
+@enum Color red green blue
+
 @keyedby Cell Int64 begin
     value::Int64
     flag::Bool
@@ -21,9 +23,13 @@ end
 @keyedby Link2 Tuple{Int64,Int64} begin
     on::Bool
 end
+@keyedby GridCell NTuple{2,Int64} begin
+    weight::Int64
+end
 @observedphysical Board begin
     cell::ObservedVector{Cell,Member}
     link::ObservedDict{Tuple{Int64,Int64},Link2,Member}
+    grid::ObservedArray{GridCell,2,Member}
     n::Int64
 end
 function Board(ncell::Int)
@@ -35,7 +41,13 @@ function Board(ncell::Int)
     for i in 1:ncell, j in 1:ncell
         links[(i, j)] = Link2(false)
     end
-    Board(cells, links, ncell)
+    # Distinct axis extents (ncell × ncell+1) so a component→axis mapping bug is
+    # observable: axes(grid, 1) != axes(grid, 2).
+    grid = ObservedArray{GridCell,Member}(undef, ncell, ncell + 1)
+    for i in 1:ncell, j in 1:(ncell + 1)
+        grid[i, j] = GridCell(0)
+    end
+    Board(cells, links, grid, ncell)
 end
 
 # Clean single-field: two reads bind the same field, no domain needed.
@@ -90,6 +102,100 @@ end
 end
 @domain Cross.i = eachindex(physical.cell)
 @domain Cross.j = eachindex(physical.cell)
+
+# Vector-keyed inference (OpenElevatorDoors-shaped): a widened trigger enumerates
+# the field, and NO @domain is written — the clean read cell[evt.idx] supplies
+# eachindex(physical.cell).
+struct DoorScan <: SimEvent
+    idx::Int64
+end
+@precondition function precondition(evt::DoorScan, state)
+    seen = false
+    for i in 1:length(state.cell)
+        if state.cell[i].flag
+            seen = true
+        end
+    end
+    return seen && state.cell[evt.idx].value > 0
+end
+
+# Dict whole-key inference: `lk` is a whole Tuple key into `link`, enumerated as
+# keys(physical.link) when the cell trigger fires. `ci` is vector-keyed. No @domain.
+struct DictWhole <: SimEvent
+    lk::Tuple{Int64,Int64}
+    ci::Int64
+end
+@precondition function precondition(evt::DictWhole, state)
+    a = state.link[evt.lk].on
+    b = state.cell[evt.ci].value
+    return a && b > 0
+end
+
+# Dict tuple-component projection (deduplicated): `fl` is component 1 of `link`'s
+# tuple key, enumerated as unique(k[1] for k in keys(link)). No @domain.
+struct DictComp <: SimEvent
+    fl::Int64
+    ci::Int64
+end
+@precondition function precondition(evt::DictComp, state)
+    a = state.link[(evt.fl, evt.fl)].on
+    b = state.cell[evt.ci].value
+    return a && b > 0
+end
+
+# N-D array component → axes(c, m): `r` is axis 1 of `grid`, `c` is axis 2. No @domain.
+struct GridEv <: SimEvent
+    r::Int64
+    c::Int64
+    ci::Int64
+end
+@precondition function precondition(evt::GridEv, state)
+    a = state.grid[evt.r, evt.c].weight
+    b = state.cell[evt.ci].value
+    return a > 0 && b > 0
+end
+
+# Enum-typed free field: no read binds `color`, so it is enumerated over its
+# finite fieldtype instances(Color). No @domain.
+struct ColorEv <: SimEvent
+    color::Color
+    ci::Int64
+end
+@precondition precondition(evt::ColorEv, state) = state.cell[evt.ci].value > 0
+
+# Bool-typed free field: enumerated over (false, true). No @domain.
+struct BoolEv <: SimEvent
+    active::Bool
+    ci::Int64
+end
+@precondition precondition(evt::BoolEv, state) = state.cell[evt.ci].value > 0
+
+# Explicit @domain overrides container-key inference: `idx` is vector-keyed
+# (eachindex would be 1:3) but the explicit domain restricts it to [1] so the two
+# sources are distinguishable.
+struct OverrideEv <: SimEvent
+    idx::Int64
+    ci::Int64
+end
+@precondition function precondition(evt::OverrideEv, state)
+    a = state.cell[evt.idx].flag
+    b = state.cell[evt.ci].value
+    return a && b > 0
+end
+@domain OverrideEv.idx = [1]
+
+# Zero-field event with a widened trigger: the loop taints the index, and the
+# empty product of zero domains must still yield exactly one event.
+struct ZeroField <: SimEvent end
+@precondition function precondition(evt::ZeroField, state)
+    seen = false
+    for i in 1:length(state.cell)
+        if state.cell[i].flag
+            seen = true
+        end
+    end
+    return seen
+end
 
 end # module DeriveModel
 
@@ -354,4 +460,112 @@ end
     @test occursin("[cell, ℤ, flag]", txt)
     @test occursin("[cell, ℤ, value]", txt)
     @test occursin("AnyFlag.idx", txt)
+end
+
+############################ Domain inference (Phase 4B) ############################
+
+@testset "derive vector-keyed field needs no @domain: widened trigger enumerates eachindex" begin
+    board = _DM.Board(3)
+    gens = generators(_DM.DoorScan)  # no @domain method exists for DoorScan.idx
+    widened = _find_matchstr(gens, Any[Member(:cell), MI, Member(:flag)])
+    @test _derive_multiset_equal(
+        _derive_collect(widened, board, 2), Any[_DM.DoorScan(1), _DM.DoorScan(2), _DM.DoorScan(3)]
+    )
+end
+
+@testset "derive dict whole-key field is inferred as keys(container)" begin
+    board = _DM.Board(3)
+    gens = generators(_DM.DictWhole)
+    # cell.value trigger binds ci; lk is free, enumerated over keys(physical.link).
+    clean = _find_matchstr(gens, Any[Member(:cell), MI, Member(:value)])
+    expected = Any[_DM.DictWhole(k, 2) for k in keys(board.link)]
+    @test _derive_multiset_equal(_derive_collect(clean, board, 2), expected)
+end
+
+@testset "derive dict tuple-component field is inferred and deduplicated" begin
+    board = _DM.Board(3)
+    gens = generators(_DM.DictComp)
+    clean = _find_matchstr(gens, Any[Member(:cell), MI, Member(:value)])
+    got = _derive_collect(clean, board, 2)
+    # keys(link) has 9 entries but only 3 distinct first components: dedup to 3.
+    @test _derive_multiset_equal(
+        got, Any[_DM.DictComp(1, 2), _DM.DictComp(2, 2), _DM.DictComp(3, 2)]
+    )
+    @test length(got) == 3
+end
+
+@testset "derive N-D array component maps to axes(container, m)" begin
+    board = _DM.Board(3)  # grid is 3×4, so axes(grid,1)=1:3, axes(grid,2)=1:4
+    gens = generators(_DM.GridEv)
+    clean = _find_matchstr(gens, Any[Member(:cell), MI, Member(:value)])
+    got = _derive_collect(clean, board, 2)
+    expected = Any[_DM.GridEv(r, c, 2) for r in axes(board.grid, 1) for c in axes(board.grid, 2)]
+    @test _derive_multiset_equal(got, expected)
+    # Distinct extents confirm r came from axis 1 (1:3) and c from axis 2 (1:4).
+    @test length(got) == 12
+end
+
+@testset "derive Enum-typed free field enumerates instances of the type" begin
+    board = _DM.Board(3)
+    g = only(generators(_DM.ColorEv))
+    @test _derive_multiset_equal(
+        _derive_collect(g, board, 2),
+        Any[_DM.ColorEv(_DM.red, 2), _DM.ColorEv(_DM.green, 2), _DM.ColorEv(_DM.blue, 2)],
+    )
+end
+
+@testset "derive Bool-typed free field enumerates (false, true)" begin
+    board = _DM.Board(3)
+    g = only(generators(_DM.BoolEv))
+    @test _derive_multiset_equal(
+        _derive_collect(g, board, 2), Any[_DM.BoolEv(false, 2), _DM.BoolEv(true, 2)]
+    )
+end
+
+@testset "derive explicit @domain overrides container-key inference" begin
+    board = _DM.Board(3)
+    gens = generators(_DM.OverrideEv)
+    # cell.value trigger binds ci; idx is free. Container-key would give 1:3, but
+    # the explicit @domain OverrideEv.idx = [1] must win.
+    clean = _find_matchstr(gens, Any[Member(:cell), MI, Member(:value)])
+    @test _derive_collect(clean, board, 2) == Any[_DM.OverrideEv(1, 2)]
+end
+
+@testset "derive zero-field event with a widened trigger generates exactly one event" begin
+    board = _DM.Board(3)
+    g = only(generators(_DM.ZeroField))
+    @test _derive_collect(g, board, 2) == Any[_DM.ZeroField()]
+end
+
+@testset "derive missing-domain error reports all three attempted sources" begin
+    @eval module ThreeAttemptMod
+    using ChronoSim
+    import ChronoSim: precondition, generators
+    struct Unresolvable <: SimEvent
+        a::Int64
+        b::Float64
+    end
+    @precondition precondition(evt::Unresolvable, state) = state.arr[evt.a].v > 0
+    end
+    err = @test_throws ErrorException generators(ThreeAttemptMod.Unresolvable)
+    msg = sprint(showerror, err.value)
+    @test occursin("no @domain method", msg)
+    @test occursin("not container-keyed", msg)
+    @test occursin("not finite", msg)
+    @test occursin("@domain Unresolvable.b", msg)
+end
+
+@testset "derive derivation_report shows per-field domain provenance" begin
+    # container-key provenance shows the resolved container path.
+    dw = sprint(io -> D.derivation_report(io, _DM.DictWhole))
+    @test occursin("DictWhole.lk: container-key(physical.link)", dw)
+    @test occursin("DictWhole.ci: container-key(physical.cell)", dw)
+    # finite-type provenance names the type.
+    ce = sprint(io -> D.derivation_report(io, _DM.ColorEv))
+    @test occursin("finite-type(", ce)
+    be = sprint(io -> D.derivation_report(io, _DM.BoolEv))
+    @test occursin("BoolEv.active: finite-type(Bool)", be)
+    # explicit provenance is labeled explicit even when inference could apply.
+    oe = sprint(io -> D.derivation_report(io, _DM.OverrideEv))
+    @test occursin("OverrideEv.idx: explicit", oe)
 end

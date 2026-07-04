@@ -792,14 +792,19 @@ function _compile_bindset(indices)
     return (guards, bindings)
 end
 
-# Enumerate free fields' domains and generate one event per combination.
-function _emit(generate, physical, ::Type{T}, fnames, bound::Dict{Symbol,Any}) where {T}
+# Enumerate free fields' domains and generate one event per combination. The
+# `domains` dict maps each field that can be free to a resolver closure over
+# `physical`, resolved once at setup time (see `derived_generators`) rather than
+# dispatched here at loop time. A zero-field event yields exactly one event: the
+# `isempty(free)` branch builds `T()` directly (mirroring the empty product of
+# zero domains, which yields one empty combination).
+function _emit(generate, physical, ::Type{T}, fnames, bound::Dict{Symbol,Any}, domains) where {T}
     free = Symbol[f for f in fnames if !haskey(bound, f)]
     if isempty(free)
         generate(T((bound[f] for f in fnames)...))
     else
-        domains = Tuple(derived_domain(T, Val(f), physical) for f in free)
-        for combo in Iterators.product(domains...)
+        resolved = Tuple(domains[f](physical) for f in free)
+        for combo in Iterators.product(resolved...)
             args = map(fnames) do f
                 haskey(bound, f) ? bound[f] : combo[findfirst(==(f), free)]
             end
@@ -809,10 +814,10 @@ function _emit(generate, physical, ::Type{T}, fnames, bound::Dict{Symbol,Any}) w
     return nothing
 end
 
-function _make_generator(::Type{T}, fnames, plan::_TriggerPlan) where {T}
+function _make_generator(::Type{T}, fnames, plan::_TriggerPlan, domains) where {T}
     if plan.widened
         return function (generate, physical, inds...)
-            _emit(generate, physical, T, fnames, Dict{Symbol,Any}())
+            _emit(generate, physical, T, fnames, Dict{Symbol,Any}(), domains)
             return nothing
         end
     end
@@ -832,7 +837,7 @@ function _make_generator(::Type{T}, fnames, plan::_TriggerPlan) where {T}
             for (f, k, m) in bindings
                 bound[f] = m == 0 ? inds[k] : inds[k][m]
             end
-            _emit(generate, physical, T, fnames, bound)
+            _emit(generate, physical, T, fnames, bound, domains)
         end
         return nothing
     end
@@ -857,6 +862,110 @@ function _needed_domains(fnames, plans)
     return needed
 end
 
+########################### Domain inference (setup time) ###########################
+
+# The MEMBERINDEX position `k` in `indices` corresponds to a `Member` prefix in
+# `matchstr` (the path to the container). Container-key inference needs that prefix
+# to be a PURE Member path (no intervening MEMBERINDEX): an intervening index means
+# the container is itself an element of another container, which is not resolvable
+# by a plain getproperty chain against `physical`.
+
+# Does `ix` bind `field`? Return 0 for a whole-key FieldBinding, the 1-based tuple
+# component for a TupleIndex component, or `nothing` if `field` is not bound here.
+_fieldbinding_component(ix::FieldBinding, field) = ix.field === field ? 0 : nothing
+function _fieldbinding_component(ix::TupleIndex, field)
+    for (m, c) in enumerate(ix.components)
+        c isa FieldBinding && c.field === field && return m
+    end
+    return nothing
+end
+_fieldbinding_component(::Any, field) = nothing
+
+# First (spec order, then index-position order, then tuple-component order) clean
+# read whose container prefix is a pure Member path and that binds `field`. Returns
+# (path::Vector{Symbol}, component) where component == 0 is whole-key, else the
+# tuple component index. Deterministic choice rule: earliest in spec order wins.
+function _container_key_source(specs, field)
+    for s in specs
+        spec_clean(s) || continue
+        mi_positions = findall(x -> x === MEMBERINDEX, s.matchstr)
+        for (k, ix) in enumerate(s.indices)
+            m = _fieldbinding_component(ix, field)
+            m === nothing && continue
+            prefix = @view s.matchstr[1:(mi_positions[k] - 1)]
+            all(x -> x isa Member && x !== MEMBERINDEX, prefix) || continue
+            return (Symbol[x.name for x in prefix], m)
+        end
+    end
+    return nothing
+end
+
+function _resolve_container(physical, path)
+    c = physical
+    for p in path
+        c = getproperty(c, p)
+    end
+    return c
+end
+
+# Whole-key domain: dict keys, or array positions.
+_whole_key_domain(c::AbstractDict) = keys(c)
+_whole_key_domain(c::AbstractArray) = eachindex(c)
+# Tuple-component domain: distinct component `m` of a dict's tuple keys, or the
+# axis `m` of an N-D array's index. Dict projection is deduplicated (many keys
+# share a component value) to avoid enumerating the same field value repeatedly.
+_component_key_domain(c::AbstractDict, m) = unique(k[m] for k in keys(c))
+_component_key_domain(c::AbstractArray, m) = axes(c, m)
+
+function _container_key_domain(path, component::Int)
+    return function (physical)
+        c = _resolve_container(physical, path)
+        return component == 0 ? _whole_key_domain(c) : _component_key_domain(c, component)
+    end
+end
+
+_path_str(path) = isempty(path) ? "physical" : "physical." * join(path, ".")
+
+# Resolve one field's domain by precedence: explicit @domain > container-key
+# inference > finite fieldtype. Returns (resolver_or_nothing, provenance_string);
+# a `nothing` resolver means MISSING (report the three failed attempts).
+function _resolve_field_domain(::Type{T}, field, specs) where {T}
+    if derived_domain_exists(T, field)
+        return (physical -> derived_domain(T, Val(field), physical), "explicit")
+    end
+    src = _container_key_source(specs, field)
+    if src !== nothing
+        path, component = src
+        return (_container_key_domain(path, component), "container-key($(_path_str(path)))")
+    end
+    FT = fieldtype(T, field)
+    if FT <: Enum
+        return (physical -> instances(FT), "finite-type($FT)")
+    elseif FT === Bool
+        return (physical -> (false, true), "finite-type(Bool)")
+    end
+    return (nothing, "MISSING")
+end
+
+function _missing_domain_error(::Type{T}, missing_fields, specs) where {T}
+    io = IOBuffer()
+    println(
+        io,
+        "derived_generators($(nameof(T))): cannot resolve a domain for field(s) " *
+        "$(Tuple(missing_fields)). Each is enumerated when a widened trigger fires but " *
+        "none could be inferred:",
+    )
+    for f in missing_fields
+        FT = fieldtype(T, f)
+        println(io, "  field `$f`:")
+        println(io, "    - no @domain method: derived_domain($(nameof(T)), Val(:$f), ...)")
+        println(io, "    - not container-keyed: no clean FieldBinding(:$f) in any read")
+        println(io, "    - fieldtype $FT not finite (not <: Enum, not Bool)")
+        println(io, "    fix: @domain $(nameof(T)).$f = <expr over physical>")
+    end
+    return String(take!(io))
+end
+
 """
     derived_generators(EvtType, specs) -> Vector{EventGenerator}
 
@@ -867,23 +976,23 @@ exact `@domain` line to add when a free field lacks a domain.
 function derived_generators(::Type{T}, specs::Vector{ReadSpec}) where {T}
     plans = _plan_triggers(specs)
     fnames = fieldnames(T)
-    missing_domains = Symbol[
-        f for f in _needed_domains(fnames, plans) if !derived_domain_exists(T, f)
-    ]
-    if !isempty(missing_domains)
-        lines = join(
-            ["  @domain $(nameof(T)).$(f) = <expr over physical>" for f in missing_domains], "\n"
-        )
-        error("""
-            derived_generators($(nameof(T))): field(s) $(Tuple(missing_domains)) are not
-            bound by any clean field-keyed read (they are enumerated when a widened trigger
-            fires), so each needs a domain. Add:
-            $lines
-            """)
+    # Resolve every field that can be free ONCE here, so the runtime loop dispatches
+    # nothing: each resolver is a closure over `physical` (domains may depend on live
+    # state size) passed into the generator-building path.
+    domains = Dict{Symbol,Function}()
+    missing_fields = Symbol[]
+    for f in _needed_domains(fnames, plans)
+        resolver, _prov = _resolve_field_domain(T, f, specs)
+        if resolver === nothing
+            push!(missing_fields, f)
+        else
+            domains[f] = resolver
+        end
     end
+    isempty(missing_fields) || error(_missing_domain_error(T, missing_fields, specs))
     gens = EventGenerator[]
     for p in plans
-        push!(gens, EventGenerator(ToPlace, p.matchstr, _make_generator(T, fnames, p)))
+        push!(gens, EventGenerator(ToPlace, p.matchstr, _make_generator(T, fnames, p, domains)))
     end
     return gens
 end
@@ -919,11 +1028,9 @@ macro precondition(fdef)
     return Expr(
         :block,
         esc(fdef),
-        :(
-            function $(esc(:generators))(::Type{$(esc(EvtType))})
-                ChronoSim.derived_generators($(esc(EvtType)), $specs)
-            end
-        ),
+        :(function $(esc(:generators))(::Type{$(esc(EvtType))})
+            ChronoSim.derived_generators($(esc(EvtType)), $specs)
+        end),
         :(ChronoSim.derivation_spec(::Type{$(esc(EvtType))}) = $specs),
     )
 end
@@ -1019,8 +1126,8 @@ function derivation_report(io::IO, ::Type{T}) where {T}
         println(io, "  domains required: none (every field bound by a clean read)")
     else
         for f in needed
-            mark = derived_domain_exists(T, f) ? "ok" : "MISSING"
-            println(io, "  domain $(nameof(T)).$(f): $mark")
+            _resolver, prov = _resolve_field_domain(T, f, specs)
+            println(io, "  domain $(nameof(T)).$(f): $prov")
         end
     end
     return nothing
