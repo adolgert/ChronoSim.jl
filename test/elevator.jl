@@ -285,7 +285,13 @@ end
 
 function precondition(evt::CallElevator, system)
     person = system.person[evt.person]
-    return person.location != person.destination && !person.waiting
+    # The location != 0 guard makes the precondition self-contained rather than
+    # relying on the narrowness of the destination-only trigger to avoid the
+    # in-elevator state, where fire! would crash on calls[(0, dir)]. Found by
+    # deriving generators from this precondition. In reachable states under the
+    # trigger above the guard never changes the outcome, so trajectories are
+    # unaffected.
+    return person.location != 0 && person.location != person.destination && !person.waiting
 end
 
 enable(evt::CallElevator, system, when) = (Exponential(1.0), when)
