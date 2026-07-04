@@ -130,6 +130,9 @@ function sim_event_precondition(event::SimEvent, physical)
             precondition(event, physical)
         end
     end
+    # Soundness oracle (opt-in): the derived triggers must cover every read the
+    # precondition performed, else a change could flip it silently.
+    maybe_verify_coverage(event, reads_result.reads)
     return reads_result
 end
 
@@ -202,6 +205,7 @@ function deal_with_changes(
         if event_was_enabled && !event_should_be_enabled
             push!(clock_toremove, check_clock_key)
         elseif !event_was_enabled && event_should_be_enabled
+            record_admitted(event)
             sim.enabled_events[check_clock_key] = event
             sim.enabling_times[check_clock_key] = sim.when
             rate_deps, = sim_event_enable(event, check_clock_key, sim, sim.when)

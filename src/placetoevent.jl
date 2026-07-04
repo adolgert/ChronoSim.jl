@@ -46,6 +46,9 @@ function over_event_invariants(
     ) do newevent
         newevent_key = clock_key(newevent)
         if !in(newevent_key, dependency.seen)
+            # A generator yielded a candidate that survives dedup: this is a
+            # "proposed" event for the over-approximation metric.
+            record_proposed(newevent)
             push!(candidates, newevent)
             push!(dependency.seen, newevent_key)
         end
