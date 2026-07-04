@@ -197,6 +197,93 @@ struct ZeroField <: SimEvent end
     return seen
 end
 
+# @fragment helpers (Phase 7). A container param inlines to a whole-container read
+# (widened here by the loop); an element param bound to evt.idx yields a CLEAN
+# FieldBinding through substitution — the reads become visible without leaving the
+# fragment.
+@fragment function any_flagged(cells)
+    seen = false
+    for i in 1:length(cells)
+        if cells[i].flag
+            seen = true
+        end
+    end
+    return seen
+end
+@fragment value_positive(cells, k) = cells[k].value > 0
+struct FragScan <: SimEvent
+    idx::Int64
+end
+@precondition function precondition(evt::FragScan, state)
+    return any_flagged(state.cell) && value_positive(state.cell, evt.idx)
+end
+
+# Two call sites of the same helper stay independent (α-rename): each binds its own
+# evt field cleanly. Vector-keyed idx/jdx need no @domain (cell trigger supplies it).
+struct FragTwo <: SimEvent
+    idx::Int64
+    jdx::Int64
+end
+@precondition function precondition(evt::FragTwo, state)
+    tmp = 3  # caller local named like the helper's local must not collide
+    return value_positive(state.cell, evt.idx) && value_positive(state.cell, evt.jdx) && tmp > 0
+end
+@domain FragTwo.idx = eachindex(physical.cell)
+@domain FragTwo.jdx = eachindex(physical.cell)
+
+# Nested helpers (a calls b): value_positive is reached two frames deep.
+@fragment cell_ok(cells, k) = value_positive(cells, k)
+struct FragNested <: SimEvent
+    idx::Int64
+end
+@precondition precondition(evt::FragNested, state) = cell_ok(state.cell, evt.idx)
+
+# A helper's RESULT used as an index is tainted (sound): cell[j].flag widens, while
+# the cell.value read INSIDE the helper (keyed by evt.idx) stays clean.
+@fragment pick_value(cells, k) = cells[k].value
+struct FragIndex <: SimEvent
+    idx::Int64
+end
+@precondition function precondition(evt::FragIndex, state)
+    j = pick_value(state.cell, evt.idx)
+    return state.cell[j].flag > 0
+end
+
+# Precondition recursion: the caller passes its OWN evt.ci into the constructor, so the
+# inlined read cell[evt.ci].value keeps a CLEAN FieldBinding(:ci).
+struct FragInner <: SimEvent
+    ci::Int64
+end
+@precondition precondition(evt::FragInner, state) = state.cell[evt.ci].value > 0
+struct FragOuter <: SimEvent
+    ci::Int64
+end
+@precondition precondition(evt::FragOuter, state) = precondition(FragInner(evt.ci), state)
+
+# Precondition recursion where the caller passes a LOOP variable (not an evt field):
+# the inlined read is tainted/widened.
+struct FragOuterLoop <: SimEvent
+    ci::Int64
+end
+@precondition function precondition(evt::FragOuterLoop, state)
+    seen = false
+    for i in 1:length(state.cell)
+        if precondition(FragInner(i), state)
+            seen = true
+        end
+    end
+    return seen && state.cell[evt.ci].value > 0
+end
+
+# Reducer over a generator: the generator body cell[k].flag is visible syntax; the
+# loop var taints the flag read (widened) while cell[evt.idx].value binds idx cleanly.
+struct FragReduce <: SimEvent
+    idx::Int64
+end
+@precondition function precondition(evt::FragReduce, state)
+    return any(state.cell[k].flag for k in 1:length(state.cell)) && state.cell[evt.idx].value > 0
+end
+
 end # module DeriveModel
 
 ############################ Helpers ############################
@@ -568,4 +655,168 @@ end
     # explicit provenance is labeled explicit even when inference could apply.
     oe = sprint(io -> D.derivation_report(io, _DM.OverrideEv))
     @test occursin("OverrideEv.idx: explicit", oe)
+end
+
+############################ @fragment inlining (Phase 7) ############################
+
+@testset "derive @fragment container param widens; element param via evt.idx stays clean" begin
+    specs = D.derivation_spec(_DM.FragScan)
+    flag = specs[findfirst(s -> s.matchstr == Any[Member(:cell), MI, Member(:flag)], specs)]
+    @test !D.spec_clean(flag)  # any_flagged's loop over the whole container taints the index
+    value = specs[findfirst(s -> s.matchstr == Any[Member(:cell), MI, Member(:value)], specs)]
+    @test D.spec_clean(value)
+    @test value.indices == Any[D.FieldBinding(:idx)]  # substitution carried evt.idx into the helper
+end
+
+@testset "derive @fragment inlined helper generates events end-to-end" begin
+    board = _DM.Board(3)
+    gens = generators(_DM.FragScan)
+    widened = _find_matchstr(gens, Any[Member(:cell), MI, Member(:flag)])
+    @test _derive_multiset_equal(
+        _derive_collect(widened, board, 2), Any[_DM.FragScan(1), _DM.FragScan(2), _DM.FragScan(3)]
+    )
+    clean = _find_matchstr(gens, Any[Member(:cell), MI, Member(:value)])
+    @test _derive_collect(clean, board, 2) == Any[_DM.FragScan(2)]
+end
+
+@testset "derive @fragment two call sites are independent and bind their own fields" begin
+    specs = D.derivation_spec(_DM.FragTwo)
+    cleans = filter(s -> s.matchstr == Any[Member(:cell), MI, Member(:value)], specs)
+    @test any(s -> s.indices == Any[D.FieldBinding(:idx)], cleans)
+    @test any(s -> s.indices == Any[D.FieldBinding(:jdx)], cleans)
+end
+
+@testset "derive @fragment nested helper (a calls b) inlines to a clean read" begin
+    specs = D.derivation_spec(_DM.FragNested)
+    value = only(specs)
+    @test value.matchstr == Any[Member(:cell), MI, Member(:value)]
+    @test value.indices == Any[D.FieldBinding(:idx)]
+    @test D.spec_clean(value)
+end
+
+@testset "derive @fragment result used as an index is tainted; inner read stays clean" begin
+    specs = D.derivation_spec(_DM.FragIndex)
+    flag = specs[findfirst(s -> s.matchstr == Any[Member(:cell), MI, Member(:flag)], specs)]
+    @test !D.spec_clean(flag)  # cell[j].flag with j the helper's opaque return value
+    @test flag.indices == Any[D.TaintedIndex()]
+    value = specs[findfirst(s -> s.matchstr == Any[Member(:cell), MI, Member(:value)], specs)]
+    @test D.spec_clean(value)  # cell[evt.idx].value read inside pick_value
+    @test value.indices == Any[D.FieldBinding(:idx)]
+end
+
+@testset "derive precondition-recursion passing evt.field keeps a clean binding" begin
+    specs = D.derivation_spec(_DM.FragOuter)
+    value = only(specs)
+    @test value.matchstr == Any[Member(:cell), MI, Member(:value)]
+    @test D.spec_clean(value)
+    @test value.indices == Any[D.FieldBinding(:ci)]  # FragInner's evt.ci -> caller's evt.ci
+end
+
+@testset "derive precondition-recursion passing a loop var yields a widened read" begin
+    specs = D.derivation_spec(_DM.FragOuterLoop)
+    inlined = specs[findfirst(
+        s -> s.matchstr == Any[Member(:cell), MI, Member(:value)] && !D.spec_clean(s), specs
+    )]
+    @test inlined.indices == Any[D.TaintedIndex()]  # FragInner(i) with i the caller's loop var
+end
+
+@testset "derive reducer over a generator walks the generator body" begin
+    specs = D.derivation_spec(_DM.FragReduce)
+    flag = specs[findfirst(s -> s.matchstr == Any[Member(:cell), MI, Member(:flag)], specs)]
+    @test !D.spec_clean(flag)  # k is a loop-var index inside any(... for k in ...)
+    value = specs[findfirst(s -> s.matchstr == Any[Member(:cell), MI, Member(:value)], specs)]
+    @test D.spec_clean(value)
+    @test value.indices == Any[D.FieldBinding(:idx)]
+end
+
+############################ @fragment macro-time errors ############################
+
+@testset "derive @fragment rejects varargs parameters" begin
+    err = @test_throws LoadError @eval @fragment frag_varargs(xs...) = xs
+    @test occursin("varargs", sprint(showerror, err.value.error))
+end
+
+@testset "derive @fragment rejects keyword arguments" begin
+    err = @test_throws LoadError @eval @fragment frag_kwargs(x; k=1) = x + k
+    @test occursin("keyword", sprint(showerror, err.value.error))
+end
+
+@testset "derive an unregistered helper with a state argument still errors" begin
+    err = @test_throws LoadError @eval module UnregHelperMod
+    using ChronoSim
+    import ChronoSim: precondition, generators
+    struct UnregEv <: SimEvent
+        i::Int64
+    end
+    @precondition precondition(evt::UnregEv, state) = not_a_fragment(state.cell, evt.i)
+    end
+    @test occursin("opaque function", sprint(showerror, err.value.error))
+end
+
+@testset "derive precondition-recursion into an undefined event type errors" begin
+    err = @test_throws LoadError @eval module RecUndefMod
+    using ChronoSim
+    import ChronoSim: precondition, generators
+    struct RecCaller <: SimEvent
+        i::Int64
+    end
+    @precondition precondition(evt::RecCaller, state) = precondition(NeverDefinedEvt(evt.i), state)
+    end
+    @test occursin("not defined", sprint(showerror, err.value.error))
+end
+
+@testset "derive precondition-recursion with a constructor arity mismatch errors" begin
+    err = @test_throws LoadError @eval module RecArityMod
+    using ChronoSim
+    import ChronoSim: precondition, generators
+    struct ArInner <: SimEvent
+        i::Int64
+    end
+    @precondition precondition(evt::ArInner, state) = state.cell[evt.i].value > 0
+    struct ArOuter <: SimEvent
+        i::Int64
+    end
+    @precondition precondition(evt::ArOuter, state) = precondition(ArInner(evt.i, evt.i), state)
+    end
+    @test occursin("constructor argument", sprint(showerror, err.value.error))
+end
+
+@testset "derive precondition self-recursion errors with the cycle named" begin
+    err = @test_throws LoadError @eval module RecCycleMod
+    using ChronoSim
+    import ChronoSim: precondition, generators
+    struct SelfEv <: SimEvent
+        i::Int64
+    end
+    @precondition precondition(evt::SelfEv, state) = precondition(SelfEv(evt.i), state)
+    end
+    @test occursin("recursive @fragment inlining", sprint(showerror, err.value.error))
+end
+
+@testset "derive mutually recursive @fragment helpers error with the cycle named" begin
+    err = @test_throws LoadError @eval module FragCycleMod
+    using ChronoSim
+    import ChronoSim: precondition, generators
+    @fragment frag_a(cells, k) = frag_b(cells, k)
+    @fragment frag_b(cells, k) = frag_a(cells, k)
+    struct FragCycEv <: SimEvent
+        i::Int64
+    end
+    @precondition precondition(evt::FragCycEv, state) = frag_a(state.cell, evt.i)
+    end
+    msg = sprint(showerror, err.value.error)
+    @test occursin("recursive @fragment inlining", msg)
+    @test occursin("frag_a -> frag_b -> frag_a", msg)
+end
+
+@testset "derive a reducer applied to a bare state container still errors" begin
+    err = @test_throws LoadError @eval module ReducerBareMod
+    using ChronoSim
+    import ChronoSim: precondition, generators
+    struct BareRedEv <: SimEvent
+        i::Int64
+    end
+    @precondition precondition(evt::BareRedEv, state) = any(some_predicate, state.cell)
+    end
+    @test occursin("opaque function", sprint(showerror, err.value.error))
 end

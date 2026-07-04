@@ -8,7 +8,7 @@
 #
 # See scratchpad/phase3_design.md for the authoritative design.
 
-export @precondition, @domain, derivation_report
+export @precondition, @domain, @fragment, derivation_report
 
 ########################### Read-spec data model ###########################
 
@@ -142,6 +142,151 @@ function _strip_state_head(expr, statesym)
     return expr
 end
 
+########################### Fragment / precondition registries ###########################
+
+# Both registries are populated at MACRO-EXPANSION time (inside @fragment / @precondition
+# macro bodies), so a helper or callee precondition must be macro-expanded before any
+# precondition that inlines it — the same top-to-bottom order Julia already uses to expand
+# a module's top-level forms. Keys carry __module__ so identically named helpers in
+# different modules never collide; re-registering the same key overwrites (Revise-friendly).
+
+# (module, helper-name, arity) -> (param_names, body). Only single-method, positional,
+# annotation-free-after-strip helpers are stored (see @fragment for the guards).
+const _FRAGMENT_REGISTRY = Dict{Tuple{Module,Symbol,Int},Tuple{Vector{Symbol},Any}}()
+
+# (module, :precondition, EvtType-name) -> (evtsym, statesym, body). Lets a precondition
+# be inlined into another via `precondition(EvtType(args...), state)` recursion.
+const _PRECOND_REGISTRY = Dict{Tuple{Module,Symbol,Symbol},Tuple{Symbol,Symbol,Any}}()
+
+# Reducers whose generator/comprehension argument body is fully visible syntax we can walk.
+const _REDUCERS = Set{Symbol}([:any, :all, :count, :sum, :prod, :minimum, :maximum])
+
+const _INLINE_DEPTH_LIMIT = 8
+
+# Last Symbol of an event-type expression (bare `Evt`, `Mod.Evt`, or `Evt{T}`) — the key
+# under which its precondition is registered.
+_evt_name(x::Symbol) = x
+function _evt_name(x::Expr)
+    if x.head === :. && x.args[2] isa QuoteNode
+        return x.args[2].value
+    elseif x.head === :curly
+        return _evt_name(x.args[1])
+    end
+    error("@precondition: cannot determine event-type name from `$x`")
+end
+
+# Names assigned (and thus local) anywhere in a helper/precondition body: LHS of `=`, loop
+# variables, and generator/comprehension iteration variables. These get α-renamed per call
+# site so helper locals never collide with caller locals or with a second call site.
+function _collect_lhs_names!(set, lhs)
+    if lhs isa Symbol
+        push!(set, lhs)
+    elseif lhs isa Expr
+        if lhs.head === :tuple
+            for a in lhs.args
+                _collect_lhs_names!(set, a)
+            end
+        elseif lhs.head === :(::) || lhs.head === :...
+            _collect_lhs_names!(set, lhs.args[1])
+        end
+        # `.field`/`[index]` LHS is a mutation of an existing object, not a new local.
+    end
+    return nothing
+end
+
+function _collect_gen_spec_names!(set, spec)
+    spec isa Expr || return nothing
+    if spec.head === :filter
+        for s in spec.args[2:end]
+            _collect_gen_spec_names!(set, s)
+        end
+    elseif spec.head === :(=)
+        _collect_lhs_names!(set, spec.args[1])
+        _collect_assigned!(set, spec.args[2])
+    end
+    return nothing
+end
+
+function _collect_assigned!(set, expr)
+    expr isa Expr || return nothing
+    h = expr.head
+    if h === :(=)
+        _collect_lhs_names!(set, expr.args[1])
+        _collect_assigned!(set, expr.args[2])
+    elseif h === :for
+        header = expr.args[1]
+        if header isa Expr && header.head === :(=)
+            _collect_lhs_names!(set, header.args[1])
+            _collect_assigned!(set, header.args[2])
+        elseif header isa Expr && header.head === :block
+            for s in header.args
+                if s isa Expr && s.head === :(=)
+                    _collect_lhs_names!(set, s.args[1])
+                    _collect_assigned!(set, s.args[2])
+                end
+            end
+        end
+        for a in expr.args[2:end]
+            _collect_assigned!(set, a)
+        end
+    elseif h === :generator
+        _collect_assigned!(set, expr.args[1])
+        for spec in expr.args[2:end]
+            _collect_gen_spec_names!(set, spec)
+        end
+    elseif h === :quote
+        # Don't descend into quoted syntax.
+    else
+        for a in expr.args
+            _collect_assigned!(set, a)
+        end
+    end
+    return nothing
+end
+
+# Syntactic substitution of a Symbol->replacement map. Field names in `a.field` (the
+# QuoteNode) are never variables, so they are preserved; call callees ARE substituted so a
+# helper param used as a called function is handled.
+_subst(expr, map) =
+    if expr isa Symbol
+        return get(map, expr, expr)
+    elseif expr isa Expr
+        if expr.head === :quote
+            return expr
+        elseif expr.head === :.
+            return Expr(:., _subst(expr.args[1], map), expr.args[2])
+        else
+            return Expr(expr.head, Any[_subst(a, map) for a in expr.args]...)
+        end
+    else
+        return expr
+    end
+
+# Precondition-recursion substitution: `evtsym.field` becomes the caller-side constructor
+# argument for that field (so a caller passing its OWN `evt.f` yields a CLEAN FieldBinding,
+# and passing a loop var yields a tainted/widened read); everything else via `symmap`
+# (callee statesym -> caller state expr, callee locals -> gensyms).
+function _subst_precond(expr, evtsym, fieldmap, symmap)
+    if expr isa Symbol
+        return get(symmap, expr, expr)
+    elseif expr isa Expr
+        if expr.head === :quote
+            return expr
+        elseif expr.head === :. && expr.args[1] === evtsym
+            f = _fieldsym(expr.args[2])
+            return haskey(fieldmap, f) ? fieldmap[f] : expr
+        elseif expr.head === :.
+            return Expr(:., _subst_precond(expr.args[1], evtsym, fieldmap, symmap), expr.args[2])
+        else
+            return Expr(
+                expr.head, Any[_subst_precond(a, evtsym, fieldmap, symmap) for a in expr.args]...
+            )
+        end
+    else
+        return expr
+    end
+end
+
 ########################### Taint pass ###########################
 
 mutable struct _TaintCtx
@@ -153,9 +298,12 @@ mutable struct _TaintCtx
     notes::Vector{String}
     iterated::Vector{Vector{Any}}  # matchstrs of iterated containers (cover whole-container reads)
     whole_reads::Vector{Tuple{Any,String}}  # (container Member, source) needing a covering trigger
+    mod::Union{Module,Nothing}     # expanding module, for registry lookups (nothing -> no inlining)
+    depth::Int                     # current inlining depth (bounded by _INLINE_DEPTH_LIMIT)
+    stack::Vector{String}          # inlined-frame names, for cycle detection
 end
 
-function _TaintCtx(statesym, evtsym)
+function _TaintCtx(statesym, evtsym, mod=nothing)
     _TaintCtx(
         statesym,
         evtsym,
@@ -165,6 +313,9 @@ function _TaintCtx(statesym, evtsym)
         String[],
         Vector{Any}[],
         Tuple{Any,String}[],
+        mod,
+        0,
+        String[],
     )
 end
 
@@ -374,6 +525,32 @@ function _walk_call!(ctx::_TaintCtx, expr)
         _walk_whitelisted!(ctx, name, args, expr)
         return nothing
     end
+    # Reducer over a generator/comprehension: the generator body is fully visible syntax,
+    # so walk it. A bare state-container arg (e.g. `any(f, container)`) is NOT a generator,
+    # so it falls through to the opaque check below and still errors (f hides its reads).
+    if name !== nothing &&
+        name in _REDUCERS &&
+        all(a -> _is_gen_arg(a) || !_contains_state(a, ctx), args)
+        for a in args
+            if a isa Expr && a.head === :generator
+                _walk_generator!(ctx, a)
+            elseif a isa Expr && a.head === :comprehension
+                _walk_generator!(ctx, a.args[1])
+            else
+                _walk!(ctx, a)
+            end
+        end
+        return nothing
+    end
+    # Precondition-recursion inlining: `precondition(EvtType(cargs...), state)`.
+    if name === :precondition && ctx.mod !== nothing && _try_inline_precondition!(ctx, expr, args)
+        return nothing
+    end
+    # Registered @fragment helper: inline its body (substituting caller args) instead of
+    # treating it as opaque. This is the opt-in that makes a state-argument call derivable.
+    if name !== nothing && ctx.mod !== nothing && _try_inline_fragment!(ctx, name, args)
+        return nothing
+    end
     # Opaque user function: a state-derived argument hides reads -> out of fragment.
     for a in args
         if _contains_state(a, ctx)
@@ -383,6 +560,102 @@ function _walk_call!(ctx::_TaintCtx, expr)
     for a in args
         _walk!(ctx, a)
     end
+    return nothing
+end
+
+_is_gen_arg(a) = a isa Expr && (a.head === :generator || a.head === :comprehension)
+
+# Inline a registered @fragment helper call `name(args...)`. Returns false (no-op) when no
+# helper of that (module, name, arity) is registered, so the caller falls through.
+function _try_inline_fragment!(ctx::_TaintCtx, name::Symbol, args)
+    key = (ctx.mod, name, length(args))
+    haskey(_FRAGMENT_REGISTRY, key) || return false
+    params, body = _FRAGMENT_REGISTRY[key]
+    submap = Dict{Symbol,Any}()
+    # α-rename every helper local first; then bind params to the ACTUAL caller argument
+    # expressions (a param that is never reassigned is not in `locals`, so this wins).
+    locals = Set{Symbol}()
+    _collect_assigned!(locals, body)
+    for l in locals
+        submap[l] = gensym(l)
+    end
+    for (p, a) in zip(params, args)
+        p in locals || (submap[p] = a)
+    end
+    newbody = _subst(body, submap)
+    _inline_walk!(ctx, string(name), newbody)
+    return true
+end
+
+# Inline a precondition-recursion call. Returns false when the call does not match the
+# `precondition(EvtType(cargs...), caller_state)` shape (so the caller falls through);
+# errors when the shape matches but the callee is undefined / unregistered / wrong arity.
+function _try_inline_precondition!(ctx::_TaintCtx, expr, args)
+    length(args) == 2 || return false
+    ctor = args[1]
+    (ctor isa Expr && ctor.head === :call) || return false
+    evtname = _callee_name(ctor.args[1])
+    evtname === nothing && return false
+    # The second argument must be the caller's own state (the recursion threads it through).
+    _access_root(_resolve(args[2], ctx.aliases)) === ctx.statesym || return false
+    cargs = ctor.args[2:end]
+    if !isdefined(ctx.mod, evtname)
+        error(
+            "@precondition: cannot inline `precondition($evtname(...), ...)`: event type " *
+            "`$evtname` is not defined in $(ctx.mod). Define it before the calling precondition.",
+        )
+    end
+    key = (ctx.mod, :precondition, evtname)
+    haskey(_PRECOND_REGISTRY, key) || error(
+        "@precondition: cannot inline `precondition($evtname(...), ...)`: no @precondition is " *
+        "registered for `$evtname`. Define `@precondition precondition(evt::$evtname, state)` " *
+        "before the precondition that calls it.",
+    )
+    T = getfield(ctx.mod, evtname)
+    fnames = fieldnames(T)
+    if length(cargs) != length(fnames)
+        error(
+            "@precondition: recursion `precondition($evtname(...), ...)` passes $(length(cargs)) " *
+            "constructor argument(s) but `$evtname` has $(length(fnames)) field(s) $(fnames). " *
+            "Only the default positional constructor is supported.",
+        )
+    end
+    evtsym_c, statesym_c, body = _PRECOND_REGISTRY[key]
+    fieldmap = Dict{Symbol,Any}()
+    for (f, ca) in zip(fnames, cargs)
+        fieldmap[f] = ca
+    end
+    symmap = Dict{Symbol,Any}(statesym_c => args[2])
+    locals = Set{Symbol}()
+    _collect_assigned!(locals, body)
+    for l in locals
+        symmap[l] = gensym(l)
+    end
+    newbody = _subst_precond(body, evtsym_c, fieldmap, symmap)
+    _inline_walk!(ctx, "precondition($evtname)", newbody)
+    return true
+end
+
+# Walk an inlined (already substituted + α-renamed) body in a nested scope, enforcing the
+# depth bound and cycle detection. Helper locals do not leak; caller aliases stay visible
+# so substituted arguments referencing them still resolve as state reads.
+function _inline_walk!(ctx::_TaintCtx, framename::String, body)
+    if framename in ctx.stack
+        error(
+            "recursive @fragment inlining: " *
+            join(vcat(ctx.stack, framename), " -> ") *
+            ". A precondition cannot inline itself (directly or through a cycle).",
+        )
+    end
+    ctx.depth < _INLINE_DEPTH_LIMIT || error(
+        "@precondition: @fragment inlining exceeded depth $(_INLINE_DEPTH_LIMIT) " *
+        "(stack: $(join(vcat(ctx.stack, framename), " -> "))).",
+    )
+    push!(ctx.stack, framename)
+    ctx.depth += 1
+    _scoped_block!(ctx, body)
+    ctx.depth -= 1
+    pop!(ctx.stack)
     return nothing
 end
 
@@ -679,8 +952,8 @@ Run the taint pass over a precondition body and return the derived `ReadSpec`s.
 Throws (macro-time) on out-of-fragment constructs, uncovered whole-container
 reads, and zero-read preconditions.
 """
-function _derive_readspecs(body, statesym::Symbol, evtsym::Symbol)
-    ctx = _TaintCtx(statesym, evtsym)
+function _derive_readspecs(body, statesym::Symbol, evtsym::Symbol, mod=nothing)
+    ctx = _TaintCtx(statesym, evtsym, mod)
     _walk_block!(ctx, body)
     for (cmember, src) in ctx.whole_reads
         covered =
@@ -1023,7 +1296,11 @@ macro precondition(fdef)
     statesym = state_arg isa Expr && state_arg.head === :(::) ? state_arg.args[1] : state_arg
     statesym isa Symbol || error("@precondition: state argument must be a plain name")
 
-    specs, _notes = _derive_readspecs(body, statesym, evtsym)
+    # Register this precondition BEFORE deriving so a direct self-call is caught as a cycle
+    # (not "undefined"), and so later preconditions can inline it via precondition-recursion.
+    _PRECOND_REGISTRY[(__module__, :precondition, _evt_name(EvtType))] = (evtsym, statesym, body)
+
+    specs, _notes = _derive_readspecs(body, statesym, evtsym, __module__)
 
     return Expr(
         :block,
@@ -1046,6 +1323,48 @@ function _split_funcdef(fdef)
     else
         error("@precondition expects a function definition")
     end
+end
+
+"""
+    @fragment function helper(args...)
+        <body>
+    end
+
+Emit the helper VERBATIM (behavior identical to unmarked) and register its body so a
+`@precondition` may CALL it: at derivation time the call is inlined (arguments substituted,
+locals α-renamed) instead of treated as opaque, letting the helper's state reads be seen.
+Only single-method, positional helpers are supported — type annotations are stripped
+(`x::T` -> `x`); varargs, keyword arguments, and default values error here.
+"""
+macro fragment(fdef)
+    sig, _body = _split_funcdef(fdef)
+    (sig isa Expr && sig.head === :call) || error(
+        "@fragment expects `function name(args...) ... end` (a plain, single-method function)"
+    )
+    name = sig.args[1]
+    name isa Symbol || error("@fragment: helper name must be a plain symbol, got `$name`")
+    params = Symbol[_fragment_param(a) for a in sig.args[2:end]]
+    body = _body
+    _FRAGMENT_REGISTRY[(__module__, name, length(params))] = (params, body)
+    return esc(fdef)
+end
+
+# Extract the bare parameter name, rejecting forms whose inlining semantics are unsupported.
+function _fragment_param(a)
+    a isa Symbol && return a
+    if a isa Expr
+        if a.head === :(::)
+            length(a.args) == 2 && a.args[1] isa Symbol && return a.args[1]
+            error("@fragment: parameter `$a` must be a named argument (`x::T`), not anonymous")
+        elseif a.head === :...
+            error("@fragment: varargs parameters are not supported (`$a`)")
+        elseif a.head === :kw
+            error("@fragment: default parameter values are not supported (`$a`)")
+        elseif a.head === :parameters
+            error("@fragment: keyword arguments are not supported")
+        end
+    end
+    return error("@fragment: unsupported parameter `$a`")
 end
 
 """
