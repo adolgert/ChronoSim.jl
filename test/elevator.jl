@@ -598,6 +598,28 @@ end
     @reactto changed(elevator[elidx].doors_open) do system
         generate(StopElevator(elidx))
     end
+    # Without this trigger, dispatching an elevator that already sits at a
+    # boundary floor can never stop it: the precondition's next_floor check
+    # reads direction, DispatchElevator writes only direction, and the depnet
+    # holds no edges for a disabled event. Found because the derived
+    # generators (which trigger on every precondition read) fired
+    # StopElevator here and the trajectories diverged.
+    @reactto changed(elevator[elidx].direction) do system
+        generate(StopElevator(elidx))
+    end
+    # The doors_will_open term reads the calls dict and the button set, so a
+    # new call (CallElevator fires while this elevator idles at a boundary
+    # floor) or a button change can newly enable a stop. Same rebirth gap as
+    # doors_open on OpenElevatorDoors, found by trajectory divergence against
+    # the derived generators.
+    @reactto changed(elevator[elidx].buttons_pressed) do system
+        generate(StopElevator(elidx))
+    end
+    @reactto changed(calls[callkey].requested) do system
+        for elidx in 1:length(system.elevator)
+            generate(StopElevator(elidx))
+        end
+    end
 end
 
 function precondition(evt::StopElevator, system)
