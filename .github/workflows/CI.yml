@@ -3,6 +3,9 @@ on:
   push:
     branches:
       - main
+      # Long-running integration branch for the generator-derivation work;
+      # phase merges land here and need the same checks as main.
+      - dev/generator
     tags: ['*']
   pull_request:
   workflow_dispatch:
