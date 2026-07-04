@@ -102,6 +102,7 @@ makedocs(;
                 "customstate.md",
                 "State Contract" => "state_contract.md",
             ],
+            "Derived Generators" => "derived_generators.md",
             "Category of Simulation" => "categorize.md",
         ],
         "Reference" => "reference.md",
