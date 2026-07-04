@@ -8,6 +8,16 @@ public is_observed_container
 
 is_observed_container(::Any) = false
 
+"""
+    Param{T}
+
+A wrapper for state fields that are configuration rather than simulation
+state. Reads of a `Param` field are not tracked and create no dependencies,
+which is right for values that never change during a run, such as rate
+tables or precomputed geometry. Access is transparent: the field behaves as
+a `T`. The generated state constructor accepts an unwrapped `T` and wraps
+it.
+"""
 struct Param{T}
     value::T
 end

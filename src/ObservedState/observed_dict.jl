@@ -1,3 +1,14 @@
+"""
+    ObservedDict{K,V,Index}
+
+A dictionary whose accesses are reported to the observed state. The key is
+the identity of an element, so this is the container for populations whose
+members are created or destroyed during a run: insertion and deletion each
+affect exactly one address. Declare state fields as
+`ObservedDict{K,V,Member}`. Reads that test for an absent key (`haskey`,
+`get` with a default) are recorded too, so an event that checked for a
+missing key wakes up when the key is later inserted.
+"""
 mutable struct ObservedDict{K,V,Index} <: AbstractDict{K,V}
     const dict::Dict{K,V}
     _address::Address{Index}

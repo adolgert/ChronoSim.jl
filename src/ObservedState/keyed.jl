@@ -1,3 +1,11 @@
+"""
+    Addressed
+
+The abstract supertype of every element struct that the [`@keyedby`](@ref)
+macro creates. An `Addressed` value knows which container it currently sits
+in and under which index, which is how a field write such as
+`piece.speed = 2.0` can report its full address.
+"""
 abstract type Addressed end
 export Addressed
 
