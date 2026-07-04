@@ -320,6 +320,14 @@ end
     @reactto changed(elevator[elidx].buttons_pressed) do system
         generate(OpenElevatorDoors(elidx))
     end
+    # Without this trigger a doors_open true->false write (the only state
+    # CloseElevatorDoors touches) can never rebirth this event: the depnet
+    # drops a disabled event's read-dependencies, and generators are the only
+    # rebirth path. Found by deriving generators from the precondition, which
+    # reads doors_open.
+    @reactto changed(elevator[elidx].doors_open) do system
+        generate(OpenElevatorDoors(elidx))
+    end
     @reactto changed(calls[callkey].requested) do system
         # Check all elevators when a new call is made
         for elidx in 1:length(system.elevator)
