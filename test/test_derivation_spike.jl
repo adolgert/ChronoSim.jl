@@ -273,9 +273,12 @@ spike_multiset_equal(a, b) = length(a) == length(b) && spike_is_subset(a, b)
             physical -> eachindex(physical.elevator),
         )
     ]
+    # The spike originally derived one MORE trigger than the modeler wrote:
+    # doors_open, whose absence was a real rebirth gap. The hand-written model
+    # has since adopted that trigger, so derived and hand-written now agree
+    # exactly on this event.
     @test spike_is_subset(hw_open, der_open)
-    expected_open = vcat(hw_open, Any[Any[Member(:elevator), MI, Member(:doors_open)]])
-    @test spike_multiset_equal(der_open, expected_open)
+    @test spike_multiset_equal(der_open, hw_open)
 
     hw_call = [g.matchstr for g in generators(Ev.CallElevator)]
     der_call = [
