@@ -67,6 +67,9 @@ function _setindex!(::PrimitiveTrait, d::ObservedDict, value, key)
 end
 
 function _setindex!(::CompoundTrait, d::ObservedDict, value, key)
+    # Unroot a displaced element so a lingering reference to it cannot notify
+    # through a key it no longer occupies (C2).
+    haskey(d.dict, key) && empty!(d.dict[key]._address)
     d.dict[key] = value
     _update_index(value, d, key)
     notify_all(value)

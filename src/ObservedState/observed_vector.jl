@@ -143,9 +143,16 @@ function _setindex!(::PrimitiveTrait, v::ObservedArray{T,1}, x, i::Int) where {T
     return v.arr[i] = x
 end
 
+# Replacing a compound element changes the denotation of every field-leaf at
+# the slot, so the incoming element is flood-notified (mirroring ObservedDict's
+# compound setindex!). The displaced element is unrooted first so a lingering
+# reference to it cannot notify through a slot it no longer occupies (C2).
 function _setindex!(::CompoundTrait, v::ObservedArray{T,1}, x, i::Int) where {T}
+    isassigned(v.arr, i) && empty!(v.arr[i]._address)
     v.arr[i] = x
-    return _update_index(x, v, i)
+    _update_index(x, v, i)
+    notify_all(x)
+    return x
 end
 
 function _setindex!(::PrimitiveTrait, v::ObservedArray{T,N}, x, i::Int) where {T,N}
@@ -154,8 +161,11 @@ function _setindex!(::PrimitiveTrait, v::ObservedArray{T,N}, x, i::Int) where {T
 end
 
 function _setindex!(::CompoundTrait, v::ObservedArray{T,N}, x, i::Int) where {T,N}
+    isassigned(v.arr, i) && empty!(v.arr[i]._address)
     v.arr[i] = x
-    return _update_index(x, v, Tuple(CartesianIndices(v.arr)[i]))
+    _update_index(x, v, Tuple(CartesianIndices(v.arr)[i]))
+    notify_all(x)
+    return x
 end
 
 function _setindex!(::PrimitiveTrait, v::ObservedArray, x, i::Vararg{Int})
@@ -164,8 +174,11 @@ function _setindex!(::PrimitiveTrait, v::ObservedArray, x, i::Vararg{Int})
 end
 
 function _setindex!(::CompoundTrait, v::ObservedArray, x, i::Vararg{Int})
+    isassigned(v.arr, i...) && empty!(v.arr[i...]._address)
     v.arr[i...] = x
-    return _update_index(x, v, i)
+    _update_index(x, v, i)
+    notify_all(x)
+    return x
 end
 
 function _setindex!(::PrimitiveTrait, v::ObservedArray, x, i::CartesianIndex)
@@ -174,8 +187,11 @@ function _setindex!(::PrimitiveTrait, v::ObservedArray, x, i::CartesianIndex)
 end
 
 function _setindex!(::CompoundTrait, v::ObservedArray, x, i::CartesianIndex)
+    isassigned(v.arr, i) && empty!(v.arr[i]._address)
     v.arr[i] = x
-    return _update_index(x, v, Tuple(i))
+    _update_index(x, v, Tuple(i))
+    notify_all(x)
+    return x
 end
 
 # Fixed extent: every length-changing operation is rejected rather than
