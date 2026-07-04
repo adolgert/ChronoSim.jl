@@ -26,10 +26,18 @@ function over_event_invariants(
     empty!(dependency.seen)
     @assert !isempty(changed_places)
 
+    # Candidates are collected and sorted by clock key before the callback runs.
+    # The callback enables clocks, which draws from the shared RNG, so the
+    # trajectory would otherwise depend on the order generators happen to
+    # propose events. Sorting makes the trajectory a function of the proposed
+    # SET alone, so two generator sets that propose the same events (e.g.
+    # hand-written vs. derived) yield identical trajectories under one seed.
+    candidates = Vector{Any}()
+
     cond_affected = union((getplace_enable(dependency.depnet, cp) for cp in changed_places)...)
     for cond_key in cond_affected
         cond_evt = enabled_events[cond_key]
-        cb(cond_evt)
+        push!(candidates, cond_evt)
         push!(dependency.seen, cond_key)
     end
 
@@ -38,9 +46,14 @@ function over_event_invariants(
     ) do newevent
         newevent_key = clock_key(newevent)
         if !in(newevent_key, dependency.seen)
-            cb(newevent)
+            push!(candidates, newevent)
             push!(dependency.seen, newevent_key)
         end
+    end
+
+    sort!(candidates; by=clock_key)
+    for event in candidates
+        cb(event)
     end
 end
 
@@ -57,7 +70,9 @@ function over_event_rates(
     @assert !isempty(changed_places)
 
     rate_affected = union((getplace_rate(dependency.depnet, cp) for cp in changed_places)...)
-    for rate_key in rate_affected
+    # Sorted for the same reason as over_event_invariants: re-enabling draws
+    # from the shared RNG, so processing order must not depend on Set order.
+    for rate_key in sort!(collect(rate_affected))
         rate_evt = enabled_events[rate_key]
         # This is where this method depends on the `over_event_invariants` method.
         if !in(rate_key, dependency.seen)
