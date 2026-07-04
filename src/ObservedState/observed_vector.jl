@@ -1,5 +1,31 @@
 using Base: Base
-export ObservedArray, ObservedVector, ObservedMatrix
+export ObservedArray, ObservedVector, ObservedMatrix, FixedExtentError
+
+"""
+    FixedExtentError(op)
+
+Signals that the length-changing operation `op` was attempted on an
+`ObservedArray`/`ObservedVector`. These containers use the integer index as a
+place identity, so growing or shrinking the extent would silently migrate
+identity between addresses that the dependency network and generator templates
+have already recorded. See docs/src/state_contract.md ("Fixed extent: position
+is identity").
+"""
+struct FixedExtentError <: Exception
+    op::Symbol
+end
+
+function Base.showerror(io::IO, e::FixedExtentError)
+    print(
+        io,
+        "FixedExtentError: `",
+        e.op,
+        "` is not permitted on an ObservedArray. An integer index is a place ",
+        "identity, so a length change would migrate identity between addresses ",
+        "(see docs/src/state_contract.md). Allocate with the final size via ",
+        "`ObservedArray{T,Index}(undef, dims...)` and fill by setindex!.",
+    )
+end
 
 mutable struct ObservedArray{T,N,Index} <: DenseArray{T,N}
     const arr::Array{T,N}
@@ -9,8 +35,9 @@ mutable struct ObservedArray{T,N,Index} <: DenseArray{T,N}
     # collect() dereferences every slot and throws UndefRefError on such arrays
     # (element-wise since Julia 1.13); the generic method below keeps collect() for
     # non-Array iterables such as generators, whose elements are always defined.
-    ObservedArray{T,N,Index}(arr::Array{T,N}) where {T,N,Index} =
+    function ObservedArray{T,N,Index}(arr::Array{T,N}) where {T,N,Index}
         new{T,N,Index}(copy(arr), Address{Index}())
+    end
     ObservedArray{T,N,Index}(arr) where {T,N,Index} = new{T,N,Index}(collect(arr), Address{Index}())
 end
 
@@ -73,8 +100,10 @@ function _getindex(::PrimitiveTrait, v::ObservedArray{T,1}, r::AbstractRange) wh
 end
 
 function _getindex(::CompoundTrait, v::ObservedArray{T,1}, r::AbstractRange) where {T}
-    element = v.arr[i]
-    return _update_index(element, v, i)
+    # Re-address each returned element to the slot it came from, mirroring the
+    # scalar compound getindex: compound reads carry no per-element read
+    # notification, only address maintenance.
+    return [_update_index(v.arr[idx], v, idx) for idx in r]
 end
 
 function _getindex(::PrimitiveTrait, v::ObservedArray{T,N}, i::Int) where {T,N}
@@ -149,151 +178,20 @@ function _setindex!(::CompoundTrait, v::ObservedArray, x, i::CartesianIndex)
     return _update_index(x, v, Tuple(i))
 end
 
-Base.push!(v::ObservedVector, x) = _push!(structure_trait(eltype(v)), v, x)
-
-function _push!(::PrimitiveTrait, v::ObservedVector, x)
-    observed_notify(v, (length(v.arr) + 1,), :write)
-    return push!(v.arr, x)
-end
-
-function _push!(::CompoundTrait, v::ObservedVector, x)
-    push!(v.arr, x)
-    _update_index(x, v, length(v.arr))
-    notify_all(x)
-    return x
-end
-
-Base.pop!(v::ObservedVector) = _pop!(structure_trait(eltype(v)), v)
-
-function _pop!(::PrimitiveTrait, v::ObservedVector)
-    if isempty(v.arr)
-        throw(BoundsError(v, ()))
-    end
-    observed_notify(v, (length(v),), :write)
-    x = pop!(v.arr)
-    return x
-end
-
-function _pop!(::CompoundTrait, v::ObservedVector)
-    if isempty(v.arr)
-        throw(BoundsError(v, ()))
-    end
-    x = pop!(v.arr)
-    notify_all(x)
-    empty!(x._address)
-    return x
-end
-
-Base.pushfirst!(v::ObservedVector, x) = _pushfirst!(structure_trait(eltype(v)), v, x)
-
-function _pushfirst!(::PrimitiveTrait, v::ObservedVector, x)
-    pushfirst!(v.arr, x)
-    for i in eachindex(v.arr)
-        observed_notify(v, (i,), :write)
-    end
-    return v
-end
-
-function _pushfirst!(::CompoundTrait, v::ObservedVector, x)
-    pushfirst!(v.arr, x)
-    # Update indices for all elements
-    for i in eachindex(v.arr)
-        element = v.arr[i]
-        _update_index(element, v, i)
-        notify_all(element)
-    end
-    return v
-end
-
-Base.popfirst!(v::ObservedVector) = _popfirst!(structure_trait(eltype(v)), v)
-
-function _popfirst!(::PrimitiveTrait, v::ObservedVector)
-    if isempty(v.arr)
-        throw(BoundsError(v, ()))
-    end
-    # Every old slot 1:old_length changes denotation: 1:old_length-1 hold shifted
-    # contents and the tail slot old_length is vacated to ⊥. Notifying only the
-    # surviving indices would leak the vacated tail, leaving events keyed on it enabled.
-    old_length = length(v.arr)
-    x = popfirst!(v.arr)
-    for i in 1:old_length
-        observed_notify(v, (i,), :write)
-    end
-    return x
-end
-
-function _popfirst!(::CompoundTrait, v::ObservedVector)
-    if isempty(v.arr)
-        throw(BoundsError(v, ()))
-    end
-    old_length = length(v.arr)
-    x = popfirst!(v.arr)
-    # Notify the vacated tail slot through the removed element re-addressed to it,
-    # mirroring _pop!'s notify-then-empty. Without this the tail slot leaks.
-    _update_index(x, v, old_length)
-    notify_all(x)
-    empty!(x._address)
-    # Update indices for remaining elements, which each shifted down one slot.
-    for i in eachindex(v.arr)
-        element = v.arr[i]
-        _update_index(element, v, i)
-        notify_all(element)
-    end
-    return x
-end
-
-Base.append!(v::ObservedVector, items) = _append!(structure_trait(eltype(v)), v, items)
-
-function _append!(::PrimitiveTrait, v::ObservedVector, items)
-    start_idx = length(v.arr) + 1
-    append!(v.arr, items)
-    # Update container and index for newly added items
-    for idx in start_idx:length(v.arr)
-        observed_notify(v, (idx,), :write)
-    end
-    return v
-end
-
-function _append!(::CompoundTrait, v::ObservedVector, items)
-    start_idx = length(v.arr) + 1
-    append!(v.arr, items)
-    # Update container and index for newly added items
-    for (offset, item) in enumerate(items)
-        _update_index(item, v, start_idx + offset - 1)
-        notify_all(item)
-    end
-    return v
-end
-
-Base.resize!(v::ObservedVector, n::Integer) = _resize!(structure_trait(eltype(v)), v, n)
-
-function _resize!(::PrimitiveTrait, v::ObservedVector, n::Integer)
-    old_length = length(v.arr)
-    if n < old_length
-        for rem_idx in (n + 1):old_length
-            observed_notify(v, (rem_idx,), :write)
-        end
-    else
-        for add_idx in (old_length + 1):n
-            observed_notify(v, (add_idx,), :write)
-        end
-    end
-    resize!(v.arr, n)
-    return v
-end
-
-function _resize!(::CompoundTrait, v::ObservedVector, n::Integer)
-    old_length = length(v.arr)
-    if n < old_length
-        for rem_idx in (n + 1):old_length
-            notify_all(v.arr[rem_idx])
-            empty!(v.arr[rem_idx]._address)
-        end
-        # else New entries will be undef after resize. Don't initialize.
-    end
-    resize!(v.arr, n)
-    return v
-end
+# Fixed extent: every length-changing operation is rejected rather than
+# implemented. An integer index is a place identity, and any extent change would
+# silently migrate that identity between addresses already recorded in the
+# dependency network and generator templates (see docs/src/state_contract.md,
+# "Fixed extent: position is identity"). Allocate the final size with
+# `ObservedArray{T,Index}(undef, dims...)` and fill by setindex!.
+Base.push!(v::ObservedArray, x...) = throw(FixedExtentError(:push!))
+Base.pop!(v::ObservedArray) = throw(FixedExtentError(:pop!))
+Base.pushfirst!(v::ObservedArray, x...) = throw(FixedExtentError(:pushfirst!))
+Base.popfirst!(v::ObservedArray) = throw(FixedExtentError(:popfirst!))
+Base.append!(v::ObservedArray, items...) = throw(FixedExtentError(:append!))
+Base.resize!(v::ObservedArray, n::Integer) = throw(FixedExtentError(:resize!))
+Base.empty!(v::ObservedArray) = throw(FixedExtentError(:empty!))
+Base.sizehint!(v::ObservedArray, n::Integer) = throw(FixedExtentError(:sizehint!))
 
 function observed_notify(v::ObservedArray, changed, readwrite)
     address_notify(v._address, changed, readwrite)

@@ -95,12 +95,34 @@ end
 
 Base.pop!(v::ObservedDict, key) = _pop!(structure_trait(valtype(v)), v, key)
 
+# Base semantics: pop!(dict, key) throws KeyError when the key is absent, so
+# there is no absence-dependent result to register as a read.
 function _pop!(::PrimitiveTrait, d::ObservedDict, key)
+    haskey(d.dict, key) || throw(KeyError(key))
+    observed_notify(d, (key,), :write)
+    return pop!(d.dict, key)
+end
+
+function _pop!(::CompoundTrait, d::ObservedDict, key)
+    haskey(d.dict, key) || throw(KeyError(key))
+    element = d.dict[key]
+    notify_all(element)
+    empty!(element._address)
+    return pop!(d.dict, key)
+end
+
+Base.pop!(v::ObservedDict, key, default) = _pop!(structure_trait(valtype(v)), v, key, default)
+
+# Base semantics: pop!(dict, key, default) returns default on a miss. The
+# returned value depends on the key's absence, so the miss path notifies a
+# per-key read to register interest in the key's future insertion.
+function _pop!(::PrimitiveTrait, d::ObservedDict, key, default)
     if haskey(d.dict, key)
         observed_notify(d, (key,), :write)
         return pop!(d.dict, key)
     end
-    return nothing
+    observed_notify(d, (key,), :read)
+    return default
 end
 
 function _pop!(::CompoundTrait, d::ObservedDict, key, default)
@@ -108,9 +130,10 @@ function _pop!(::CompoundTrait, d::ObservedDict, key, default)
         element = d.dict[key]
         notify_all(element)
         empty!(element._address)
-        return pop!(d.dict, key, default)
+        return pop!(d.dict, key)
     end
-    return nothing
+    observed_notify(d, (key,), :read)
+    return default
 end
 
 # Maybe these can rely on AbstractDict implementations.
@@ -119,10 +142,13 @@ end
 # filter!(f, d)
 # in(pair, d) for pair membership
 
+# The miss path notifies a per-key read: the returned default depends on the
+# key's absence, so a dependent event must wake when the key is later inserted.
 Base.get(d::ObservedDict, key, default) =
     if haskey(d.dict, key)
         return d[key]  # This will update _container and _index
     else
+        observed_notify(d, (key,), :read)
         return default
     end
 
@@ -130,18 +156,38 @@ Base.get!(d::ObservedDict, key, default) =
     if haskey(d.dict, key)
         return d[key]
     else
+        observed_notify(d, (key,), :read)
         d[key] = default
         return default
     end
 
-Base.haskey(d::ObservedDict, key, default) =
+# The callable-default forms have no AbstractDict fallback that would route
+# through the methods above, so they are provided here with the same miss-path
+# per-key read discipline.
+Base.get(default::Base.Callable, d::ObservedDict, key) =
     if haskey(d.dict, key)
-        observed_notify(d, (key,), :read)
-        return true
+        return d[key]
     else
-        observed_notify(d, (), :read)
-        return false
+        observed_notify(d, (key,), :read)
+        return default()
     end
+
+Base.get!(default::Base.Callable, d::ObservedDict, key) =
+    if haskey(d.dict, key)
+        return d[key]
+    else
+        observed_notify(d, (key,), :read)
+        value = default()
+        d[key] = value
+        return value
+    end
+
+# The result depends only on this key's presence, so a per-key read is the
+# precise notification whether or not the key is currently present.
+function Base.haskey(d::ObservedDict, key)
+    observed_notify(d, (key,), :read)
+    return haskey(d.dict, key)
+end
 
 # Iteration interface
 Base.iterate(d::ObservedDict) = _iterate(structure_trait(valtype(d)), d)

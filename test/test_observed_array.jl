@@ -119,34 +119,6 @@ using ChronoSim.ObservedState
         @test mat[2, 2].val == 4
     end
 
-    @testset "ObservedState 1D push!" begin
-        using ChronoSim.ObservedState
-        Contained1D = ObserveContained{Int}
-        cnt = 32
-        arr = ObservedArray{Contained1D,Member}(undef, cnt)
-        for init in eachindex(arr)
-            arr[init] = Contained1D(-init)
-        end
-        push!(arr, Contained1D(42))
-        @assert length(arr) == cnt + 1
-        @assert arr[cnt + 1]._address.index == cnt + 1
-        @assert arr[cnt + 1].val == 42
-    end
-
-
-    @testset "ObservedState 1D pop!" begin
-        using ChronoSim.ObservedState
-        Contained1D = ObserveContained{Int}
-        cnt = 32
-        arr = ObservedArray{Contained1D,Member}(undef, cnt)
-        for init in eachindex(arr)
-            arr[init] = Contained1D(-init)
-        end
-        pop!(arr)
-        @assert length(arr) == cnt - 1
-    end
-
-
     @testset "keyedby macro" begin
         using ChronoSim.ObservedState
 
@@ -192,83 +164,26 @@ using ChronoSim.ObservedState
         @test elem2d_linear.value ≈ 2.2
     end
 
-    @testset "ObservedVector push!" begin
-        arr = ObservedVector{Int,Member}(undef, 0)
-        base = ObsArrayListen(Any[])
-        ChronoSim.ObservedState.update_index(arr._address, base, Member(:myarray))
-
-        push!(arr, 20)
-        @test base.seen[1][1] == (Member(:myarray), 1)
-        @test base.seen[1][2] == :write
-    end
-
-    @testset "ObservedVector pop!" begin
+    @testset "fixed extent rejects length-changing mutation on primitive vectors" begin
         arr = ObservedVector{Int,Member}([100, 200, 300, 400])
         base = ObsArrayListen(Any[])
         ChronoSim.ObservedState.update_index(arr._address, base, Member(:myarray))
 
-        initial_notifications = length(base.seen)
+        @test_throws FixedExtentError push!(arr, 20)
+        @test_throws FixedExtentError pop!(arr)
+        @test_throws FixedExtentError pushfirst!(arr, 24)
+        @test_throws FixedExtentError popfirst!(arr)
+        @test_throws FixedExtentError append!(arr, [3, 4])
+        @test_throws FixedExtentError resize!(arr, 3)
+        @test_throws FixedExtentError empty!(arr)
+        @test_throws FixedExtentError sizehint!(arr, 8)
 
-        for expected_value in [400, 300, 200]
-            current_length = length(arr)
-            result = pop!(arr)
-            @test result == expected_value
-            @test length(arr) == current_length - 1
-            # Check that pop! triggered a write notification
-            @test base.seen[end][1] == (Member(:myarray), current_length)
-            @test base.seen[end][2] == :write
-        end
-
-        @test length(arr) == 1
-        @test arr[1] == 100
+        # A rejected operation neither changes the extent nor emits notifications.
+        @test length(arr) == 4
+        @test isempty(base.seen)
     end
 
-    @testset "ObservedVector pushfirst!" begin
-        arr = ObservedVector{Int,Member}()
-        base = ObsArrayListen(Any[])
-        ChronoSim.ObservedState.update_index(arr._address, base, Member(:myarray))
-
-        pushfirst!(arr, 24)
-        @test base.seen[1][2] == :write
-        @test arr[1] == 24
-        @test base.seen[2][2] == :read
-    end
-
-    @testset "ObservedVector popfirst!" begin
-        arr = ObservedVector{Int,Member}([1000, 2000, 3000, 4000])
-        base = ObsArrayListen(Any[])
-        ChronoSim.ObservedState.update_index(arr._address, base, Member(:myarray))
-
-        initial_notifications = length(base.seen)
-
-        for expected_value in [1000, 2000]
-            result = popfirst!(arr)
-            @test result == expected_value
-            # popfirst! should trigger write notifications for remaining elements
-            # because they all shift positions
-        end
-
-        @test length(arr) == 2
-        @test arr == [3000, 4000]
-        # Verify we got write notifications after initial count
-        @test length(base.seen) > initial_notifications
-    end
-
-    @testset "popfirst! notifies the vacated tail slot" begin
-        # Regression: the old tail slot's denotation changes to nothing, so it must
-        # be notified. Previously only the surviving indices 1:n-1 were notified,
-        # leaking the vacated slot n.
-        arr = ObservedVector{Int,Member}([10, 20, 30])
-        base = ObsArrayListen(Any[])
-        ChronoSim.ObservedState.update_index(arr._address, base, Member(:myarray))
-
-        popfirst!(arr)
-
-        written = sort(unique([s[1][2] for s in base.seen if s[2] == :write]))
-        @test written == [1, 2, 3]  # slot 3 (the vacated tail) must appear
-    end
-
-    @testset "popfirst! notifies the vacated tail slot for compound elements" begin
+    @testset "fixed extent rejects length-changing mutation on compound vectors" begin
         Contained1D = ObserveContained{Int}
         arr = ObservedArray{Contained1D,Member}(undef, 3)
         for i in eachindex(arr)
@@ -277,54 +192,36 @@ using ChronoSim.ObservedState
         base = ObsArrayListen(Any[])
         ChronoSim.ObservedState.update_index(arr._address, base, Member(:myarray))
 
-        popfirst!(arr)
+        @test_throws FixedExtentError push!(arr, Contained1D(42))
+        @test_throws FixedExtentError pop!(arr)
+        @test_throws FixedExtentError pushfirst!(arr, Contained1D(42))
+        @test_throws FixedExtentError popfirst!(arr)
+        @test_throws FixedExtentError append!(arr, [Contained1D(42)])
+        @test_throws FixedExtentError resize!(arr, 2)
+        @test_throws FixedExtentError empty!(arr)
+        @test_throws FixedExtentError sizehint!(arr, 8)
 
-        # Compound notifications are field-granular: (Member(:myarray), index, Member(field)).
-        # The vacated tail slot (old length 3) must be among them.
-        tail_notified = any(
-            s -> s[2] == :write && length(s[1]) >= 2 && s[1][2] == 3, base.seen
-        )
-        @test tail_notified
-    end
-
-    @testset "ObservedVector append!" begin
-        arr = ObservedVector{Int,Member}([1, 2])
-        base = ObsArrayListen(Any[])
-        ChronoSim.ObservedState.update_index(arr._address, base, Member(:myarray))
-
-        initial_notifications = length(base.seen)
-
-        append!(arr, [3, 4])
-        @test length(arr) == 4
-        @test arr == [1, 2, 3, 4]
-        # Check that append! triggered write notifications for new elements
-        @test length(base.seen) > initial_notifications
-
-        append!(arr, [5])
-        @test length(arr) == 5
-        @test arr[5] == 5
-    end
-
-    @testset "ObservedVector resize!" begin
-        arr = ObservedVector{Int,Member}([10, 20, 30, 40, 50])
-        base = ObsArrayListen(Any[])
-        ChronoSim.ObservedState.update_index(arr._address, base, Member(:myarray))
-
-        initial_notifications = length(base.seen)
-
-        # Test shrinking
-        resize!(arr, 3)
         @test length(arr) == 3
-        @test arr == [10, 20, 30]
+        @test isempty(base.seen)
+    end
 
-        # Test growing
-        resize!(arr, 6)
-        @test length(arr) == 6
-        # First 3 elements should remain
-        @test arr[1:3] == [10, 20, 30]
+    @testset "compound range getindex re-addresses elements without read notification" begin
+        Contained1D = ObserveContained{Int}
+        arr = ObservedArray{Contained1D,Member}(undef, 4)
+        for i in eachindex(arr)
+            arr[i] = Contained1D(-i)
+        end
+        base = ObsArrayListen(Any[])
+        ChronoSim.ObservedState.update_index(arr._address, base, Member(:myarray))
 
-        # Verify write notifications were triggered
-        @test length(base.seen) > initial_notifications
+        slice = arr[2:3]
+        @test [e.val for e in slice] == [-2, -3]
+        # Each returned element carries the address of the slot it came from.
+        @test slice[1]._address.index == 2
+        @test slice[2]._address.index == 3
+        @test slice[1]._address.container === arr
+        # Compound getindex maintains addresses only; it emits no read notification.
+        @test isempty(base.seen)
     end
 
     @testset "ObservedArray isempty operations" begin
