@@ -8,6 +8,7 @@ continuous_integration() = get(ENV, "CI", "false") == "true"
 # Include test files directly at module level so @testset blocks are properly registered
 include("test_container_fuzz.jl")
 include("test_depnet.jl")
+include("test_derivation_spike.jl")
 include("test_elevator.jl")
 include("test_events.jl")
 include("test_framework.jl")
