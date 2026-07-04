@@ -27,6 +27,17 @@ function Base.showerror(io::IO, e::FixedExtentError)
     )
 end
 
+"""
+    ObservedArray{T,N,Index}
+
+A dense `N`-dimensional array whose element accesses are reported to the
+observed state, so that events depending on an element are re-examined when
+it changes. Declare state fields as `ObservedArray{T,N,Member}` and allocate
+with `ObservedArray{T,Member}(undef, dims...)`. The extent is fixed for the
+life of the simulation: position is the identity of an element, so
+length-changing operations throw [`FixedExtentError`](@ref). Use an
+[`ObservedDict`](@ref) for populations that grow or shrink.
+"""
 mutable struct ObservedArray{T,N,Index} <: DenseArray{T,N}
     const arr::Array{T,N}
     _address::Address{Index}
@@ -41,7 +52,18 @@ mutable struct ObservedArray{T,N,Index} <: DenseArray{T,N}
     ObservedArray{T,N,Index}(arr) where {T,N,Index} = new{T,N,Index}(collect(arr), Address{Index}())
 end
 
+"""
+    ObservedVector{T,Index}
+
+A one-dimensional [`ObservedArray`](@ref).
+"""
 const ObservedVector{T,Index} = ObservedArray{T,1,Index}
+
+"""
+    ObservedMatrix{T,Index}
+
+A two-dimensional [`ObservedArray`](@ref).
+"""
 const ObservedMatrix{T,Index} = ObservedArray{T,2,Index}
 
 function ObservedArray{T,Index}(::UndefInitializer, dims...) where {T,Index}

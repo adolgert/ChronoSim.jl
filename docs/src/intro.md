@@ -1,92 +1,147 @@
 # Introduction
 
-## Core scheduling paradigm
+This page explains the ideas you need before you write a model. Every
+simulation framework has a way to decide what happens next, and understanding
+ChronoSim's way — preconditions, competing clocks, and observed state — makes
+everything else in the documentation follow naturally.
 
-Every simulation framework has a way to decide what events happen next, a core scheduling paradigm. For ChronoSim, every event has one rule for when it is eligible to happen, a `precondition`. Here's an example for a movement event.
+## Events are enabled by preconditions
+
+In ChronoSim, an event is a small value, such as `Move(agent=7,
+direction=Up)`, together with a handful of functions that give it meaning.
+The most important of these is the `precondition`, which looks at the current
+state and answers one question: could this event happen right now? Here is a
+precondition for a movement event, which says an agent may move in some
+direction only when the square it would move into is empty.
 
 ```julia
 function precondition(event::Move, state)
-	loc = state.agents[event.agent].location
-	return state.location[loc + event.direction] == 0
+    loc = state.agents[event.agent].location
+    return state.location[loc + event.direction] == 0
 end
 ```
-As soon as that event returns `true`, the event becomes enabled, which means it will fire at a future time determined by a probability distribution. If that `precondition` later becomes `false`, the event becomes disabled. The precondition associated with an event determines whether it can fire, and the moment that's true, it calls `enable`.
+
+The moment a precondition becomes true, the event becomes *enabled*. An
+enabled event will fire at some future time, and that time is drawn from a
+probability distribution that you supply through the `enable` function.
 
 ```julia
 enable(event::Move, state, time) = (Weibull(2, 1.0), time)
 ```
-That tells the framework that the the time between enabling this event and firing it will follow a Weibull distribution.
 
+This says that the waiting time between enabling the event and firing it
+follows a Weibull distribution. Every enabled event holds its own running
+clock like this, and the framework always fires the event whose clock rings
+first. If, before the clock rings, some other event changes the state so that
+the precondition becomes false, the event is disabled and its clock is
+discarded. There is no possibility of a stale event firing out of a state
+where it no longer makes sense.
 
-## Event proposal generation
+## The framework does not scan every event
 
-It may sound like this framework checks the precondition for every event every time a previous event fires, but it is careful about when it checks preconditions. You have to provide an event with an event generator that proposes when a precondition could possibly be true.
+It may sound as though the framework must check every precondition every time
+anything fires, and in a naive implementation it would. ChronoSim avoids the
+scan by requiring each event type to have *generators*: rules that say which
+changes of state make it worth checking this event's precondition at all. You
+can write generators by hand with the `@conditionsfor` macro:
 
 ```julia
 @conditionsfor Move begin
-	@reactto changed(agent[who].location) do state
-		for direction in ALLDIRECTIONS
-			generate(Move(who, direction))
-		end
-	end
+    @reactto changed(agents[who].location) do state
+        for direction in ALLDIRECTIONS
+            generate(Move(who, direction))
+        end
+    end
 end
 ```
 
-This event generator watches the state, in a subject-observer pattern, to see when an agent's location changed. In this example, the generator creates new possible events for that specific agent. The generator can be over-eager when it suggests possible events because each possible event's precondition will make the right call.
+This generator says that whenever any agent's `location` field changes, the
+framework should propose `Move` events for that specific agent in every
+direction. Proposed events are only candidates. Each one still has its
+precondition checked, so a generator is allowed to propose too much; the cost
+of an extra proposal is one wasted precondition call. What a generator must
+never do is propose too little, because an event that is never proposed can
+never become enabled, and the failure is silent.
 
+Because the generator is really just the precondition's reads written
+backwards, ChronoSim can usually write it for you. If you declare the
+precondition with the `@precondition` macro instead of as a plain function,
+the framework analyzes the body and derives the generators itself:
 
-## Automatic dependency inference
+```julia
+@precondition function precondition(event::Move, state)
+    loc = state.agents[event.agent].location
+    return state.location[loc + event.direction] == 0
+end
+```
 
-The framework tracks how causality moves from event to event through the state. When an event fires, such as our Move event, it changes the state.
+For most events this removes the second artifact entirely, and it removes the
+class of bugs where the precondition and its generators drift apart. The
+[Generators](generators.md) page explains when the derivation applies, when
+you still write `@conditionsfor` by hand, and how to write preconditions so
+that the derivation does a precise job.
+
+## The state is observed
+
+Both of the mechanisms above depend on the framework knowing which parts of
+the state are touched. ChronoSim therefore asks you to build your simulation
+state from observed containers, declared with the `@observedphysical` and
+`@keyedby` macros. Every field of the state then has an *address*, which is a
+tuple naming the path to it, and every read or write of a field is recorded
+under that address. When a firing function runs,
 
 ```julia
 function fire!(event::Move, state, when, rng)
-	state.location[state.agent[event.who].location] = 0
-	state.agent[event.who].location += event.direction
-	state.location[state.agent[event.who].location] = event.who
+    state.location[state.agents[event.agent].location] = 0
+    state.agents[event.agent].location += event.direction
+    state.location[state.agents[event.agent].location] = event.agent
 end
 ```
 
-Each time this `fire!` function sets a value in the state, the address of that part of the state is recorded, here `(:location, <locindex>)` and `(:agent, <agentidx>, :location)`. Any other event whose generator is listening for modifications at these addresses will generate relevant events.
+the framework records that addresses like `(:location, 12)` and
+`(:agents, 7, :location)` were written. It compares those writes against the
+recorded reads of every enabled event's precondition, so it knows exactly
+which events to re-examine, and it hands the writes to the generators, so it
+knows exactly which new events to propose. Nothing else in the simulation is
+looked at. The [Simulation State](observedphysical.md) page shows how to
+declare state, and it summarizes the small contract the containers uphold so
+that this tracking is trustworthy.
 
-Similarly, the framework watches each call to read the state during a `precondition()` in order to know which state changes should trigger a re-check on whether that `precondition()` remains true. The framework watches each call to an `enable()` to determine which changes of the state at a later time might require re-evaluating the rate of the distribution for when the event fires.
+## What you write for each event
 
+To define one event type in a ChronoSim model, you provide the following
+pieces.
 
-## Put it together
+- An immutable struct that subtypes `ChronoSim.SimEvent`. Its fields identify
+  the actors and resources involved, so they are usually integers, symbols,
+  enums, or strings. The struct can also be empty when the event concerns the
+  system as a whole.
+- A `precondition` function returning `Bool`. Declaring it with
+  `@precondition` also produces the event's generators; declaring it plain
+  means you must also write a `@conditionsfor` block by hand.
+- An `enable` function that returns a distribution from Distributions.jl and
+  the time from which that distribution is measured. There is an optional
+  `reenable` for events whose rate should be recomputed when the state
+  changes underneath them.
+- A `fire!` function that changes the state when the event happens.
 
-In order to define a single event in a system, you have to provide:
+## Costs and payoffs
 
- * An immutable struct for that event that derives from `ChronoSim.SimEvent`. This struct can be empty but usually contains integers, symbols, enums, or strings that identify actors and resources.
+It is fair to say that this is more structure than a small hand-written
+simulation needs, and the learning curve arrives all at once rather than
+gradually. When a model misbehaves, there are several distinct pieces —
+precondition, generator, rate, firing — where the mistake could live. The
+compensation is that each piece is small, single-purpose, and checkable on
+its own, and the framework can verify the pieces against each other: the set
+of preconditions defines exactly which events should be enabled in any state,
+which makes a strong global correctness check, and derived generators
+eliminate the most silent failure mode outright.
 
- * A generator that watches for changes to state or previously-fired events that indicate that this event might possible be enabled.
-
- * A precondition for this event.
-
- * An enabling rate, which returns a continuous, univariate distribution from Distributions.jl. There can be an optional re-enabling function defined if that's significantly different.
-
- * A `fire!` function to change the state when this event happens.
-
-
-## Challenges
-
- * That's a lot to define if you're doing a simple simulation.
-
- * There isn't a slow-start learning curve for this.
-
- * If the simulation doesn't run as planned, there are lots of moving parts that could be wrong.
-
- * Maybe generating extra events is costly?
-
-This style of simulation has the same number of possible problems as other simulations, but they are more visible. You'll see it's easier to check correctness when the logic of discrete events is separated into the parts above.
-
-The generation of extra events isn't any worse than a normal for-loop when you create a new event. It's just broken into a generator and a separate checker, so it feels like it costs more.
-
-## Advantages
-
- - Model checking. The set of preconditions defines what events should be enabled at any time in the simulation. Checking all preconditions is a great correctness check. The model itself also has a strong correspondence to TLA+ models.
-
- - Canceling ghost events. There are cases where firing one event makes another event no longer relevant. Some simulations deal with these ghost events by ignoring them later, but they can create confusion when an event is enabled, then ghosted, then should be enabled again. This simulation is clear about canceling events whose preconditions are no longer met.
-
- - Composition of models through the state dependencies. If you make a model of how people move and then a model of how disease spreads, you don't need to modify those models in order to compose them. Because each model's events are enabled by state changes, they will implicitly share resources correctly, where in this example the resources are the location and health states of people.
-
- - This framework can calculate log-likelihood for model-fitting and uncertainty quantification, Bayesian inference, and rare event simulation. It defines a stochastic process.
+The structure also pays for itself in ways that are hard to retrofit into a
+hand-written loop. Events that stop making sense are cancelled exactly, not
+ignored later, so there are no ghost firings. Independent models compose by
+sharing state, with no glue code, because enabling flows through the state
+rather than through direct calls. And because a ChronoSim model defines a
+proper stochastic process, the framework can compute the log-likelihood of a
+trajectory, which opens the door to model fitting, Bayesian inference, and
+rare-event methods.

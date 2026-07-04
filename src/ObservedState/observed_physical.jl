@@ -6,6 +6,14 @@ import ..ChronoSim: capture_state_changes, capture_state_reads
 export @observedphysical, ObservedPhysical, capture_state_reads, capture_state_changes
 
 # Base type for observed physical states
+"""
+    ObservedPhysical
+
+The abstract supertype of every state struct that the
+[`@observedphysical`](@ref) macro creates. It carries the collections into
+which reads and writes are reported, and the framework's
+`capture_state_reads`/`capture_state_changes` methods drain them.
+"""
 abstract type ObservedPhysical <: PhysicalState end
 
 """

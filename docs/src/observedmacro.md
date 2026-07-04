@@ -1,11 +1,21 @@
+# The `@obsread` and `@obswrite` Macros
 
-# The @observe Macro
+## When you would want these
 
-If you want to construct a physical state that uses containers or data types that aren't dictionaries or contiguous vectors, you may want to try the `@observe` macro in `ChronoSim.ObservedState`.
+The observed containers described on the previous page do all of the
+recording for you, and they are the right choice for almost every model.
+Sometimes, though, a simulation needs a data structure that the observed
+containers do not offer — a specialized matrix type, a third-party spatial
+index, or a plain array that you want to use for performance reasons. In that
+situation you can hold the raw structure in the state and take over the
+recording duty yourself with two macros: `@obsread` marks a read, and
+`@obswrite` marks a write.
 
-## Guide
+## How to use them
 
-Again, create an `@observedphysical` state so that it has the ability to record changes and reads. But here, include any containers you would like.
+Declare the state with `@observedphysical` as usual, so that it has the
+machinery for collecting reports, but give it whatever field types you need.
+
 ```julia
 @observedphysical Fireflies begin
     watersource::Matrix{Float64}
@@ -13,13 +23,34 @@ Again, create an `@observedphysical` state so that it has the ability to record 
     cnt::Int64
 end
 ```
-This time, however, because there are no `ObservedArray` or `ObservedDict` to help record reads or writes to the state, use a macro to notify the state every time a firing function writes or an enabling function reads.
+
+There is no observed container wrapped around `watersource` here, so nothing
+records access to its elements automatically. Instead, every place your
+events read or write it, you say so explicitly.
+
 ```julia
-value = @observe fireflies.watersource[i, j]
-@observe fireflies.wind = 2.7
+value = @obsread fireflies.watersource[i, j]
+@obswrite fireflies.wind = 2.7
 ```
-The first use of `@observe` will record a read of `(:watersource, (i, j))`. The second use of `@observe` will record a write of `(:wind,)`.
 
-## Implementation
+The first line records a read of the address `(:watersource, (i, j))` and
+evaluates to the value. The second line performs the assignment and records a
+write of `(:wind,)`.
 
-The `@observe` macro is fairly simple. It detects whether it sees an assigment in order to determine whether it is reading or writing. Then it parses the variables for property access through dots, '.', or through brackets, '[]'. A drawback of this macro is that it doesn't understand `push!` functions, for instance. We might improve this by appealing to `Accessors.jl`.
+## The responsibility you are taking on
+
+When you use these macros, the correctness of the simulation rests on your
+discipline. Every read that a `precondition` or `enable` function performs on
+the raw structure must go through `@obsread`, and every write that a `fire!`
+function performs must go through `@obswrite`. A missed write means some
+event that depends on that value will not be re-examined when it changes, and
+a missed read means an event will not wake up when the value it tested
+changes later. Both failures are silent, which is exactly the class of bug
+the observed containers exist to prevent, so prefer the containers wherever
+they fit.
+
+Be aware of two further limitations. The macros only understand direct field
+access and indexing, so a mutating call such as `push!` on a raw vector is
+invisible to them. And the `@precondition` derivation machinery analyzes
+container access syntax, so preconditions that go through `@obsread` are
+better served by hand-written `@conditionsfor` generators.
