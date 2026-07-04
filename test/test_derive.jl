@@ -1,0 +1,357 @@
+using ReTest
+using ChronoSim
+using ChronoSim.ObservedState
+import ChronoSim: precondition, generators
+
+# Phase 3: production taint pass + @precondition/@domain macros. These tests use a
+# small in-file model (not ElevatorExample) so the derived generators() methods do
+# not clash with the hand-written @conditionsfor generators the elevator tests use.
+
+############################ In-file test model ############################
+
+module DeriveModel
+using ChronoSim
+using ChronoSim.ObservedState
+import ChronoSim: precondition, generators
+
+@keyedby Cell Int64 begin
+    value::Int64
+    flag::Bool
+end
+@keyedby Link2 Tuple{Int64,Int64} begin
+    on::Bool
+end
+@observedphysical Board begin
+    cell::ObservedVector{Cell,Member}
+    link::ObservedDict{Tuple{Int64,Int64},Link2,Member}
+    n::Int64
+end
+function Board(ncell::Int)
+    cells = ObservedArray{Cell,Member}(undef, ncell)
+    for i in eachindex(cells)
+        cells[i] = Cell(i, false)
+    end
+    links = ObservedDict{Tuple{Int64,Int64},Link2,Member}()
+    for i in 1:ncell, j in 1:ncell
+        links[(i, j)] = Link2(false)
+    end
+    Board(cells, links, ncell)
+end
+
+# Clean single-field: two reads bind the same field, no domain needed.
+struct Toggle <: SimEvent
+    idx::Int64
+end
+@precondition function precondition(evt::Toggle, state)
+    c = state.cell[evt.idx]
+    return c.flag && c.value > 0
+end
+
+# Literal index -> LiteralIndex guard; zero event fields.
+struct FirstFlag <: SimEvent end
+@precondition precondition(evt::FirstFlag, state) = state.cell[1].flag
+
+# Loop over fixed-extent vector taints the element index -> widened trigger; the
+# clean read binds idx and needs no domain, but the widened one does.
+struct AnyFlag <: SimEvent
+    idx::Int64
+end
+@precondition function precondition(evt::AnyFlag, state)
+    seen = false
+    for i in 1:length(state.cell)
+        if state.cell[i].flag
+            seen = true
+        end
+    end
+    return seen && state.cell[evt.idx].value > 0
+end
+@domain AnyFlag.idx = eachindex(physical.cell)
+
+# Dict read with a state-derived tuple key -> widened trigger on the dict.
+struct Route <: SimEvent
+    idx::Int64
+end
+@precondition function precondition(evt::Route, state)
+    c = state.cell[evt.idx]
+    return state.link[(c.value, c.value)].on
+end
+@domain Route.idx = eachindex(physical.cell)
+
+# Two clean reads binding different fields: each trigger binds one, enumerates the
+# other over its domain.
+struct Cross <: SimEvent
+    i::Int64
+    j::Int64
+end
+@precondition function precondition(evt::Cross, state)
+    a = state.cell[evt.i].value
+    b = state.cell[evt.j].flag
+    return a > 0 && b
+end
+@domain Cross.i = eachindex(physical.cell)
+@domain Cross.j = eachindex(physical.cell)
+
+end # module DeriveModel
+
+############################ Helpers ############################
+
+const D = ChronoSim
+_DM = DeriveModel
+MI = ChronoSim.MEMBERINDEX
+
+# Multiset equality: Member/MEMBERINDEX compare by value but define no value-hash,
+# so we cannot use Set. (Same rationale as the spike.)
+function _derive_subset(a, b)
+    remaining = collect(b)
+    for x in a
+        i = findfirst(y -> y == x, remaining)
+        i === nothing && return false
+        deleteat!(remaining, i)
+    end
+    return true
+end
+_derive_multiset_equal(a, b) = length(a) == length(b) && _derive_subset(a, b)
+
+_derive_collect(gen, physical, inds...) = begin
+    acc = Any[]
+    gen.generator(e -> push!(acc, e), physical, inds...)
+    acc
+end
+
+_find_matchstr(gens, ms) = gens[findfirst(g -> g.matchstr == ms, gens)]
+
+############################ Taint pass unit tests ############################
+
+@testset "derive taint pass binds evt.field index as a clean FieldBinding" begin
+    body = quote
+        person = system.person[evt.person]
+        return person.location != person.destination && !person.waiting
+    end
+    specs, _ = D._derive_readspecs(body, :system, :evt)
+    @test all(D.spec_clean, specs)
+    for s in specs
+        @test s.indices == Any[D.FieldBinding(:person)]
+    end
+    mss = [s.matchstr for s in specs]
+    @test any(m -> m == Any[Member(:person), MI, Member(:location)], mss)
+    @test any(m -> m == Any[Member(:person), MI, Member(:destination)], mss)
+    @test any(m -> m == Any[Member(:person), MI, Member(:waiting)], mss)
+end
+
+@testset "derive taint pass resolves an evt-pure local used as an index to a FieldBinding" begin
+    body = quote
+        who = evt.person
+        return system.person[who].waiting
+    end
+    specs, _ = D._derive_readspecs(body, :system, :evt)
+    @test length(specs) == 1
+    @test specs[1].indices == Any[D.FieldBinding(:person)]
+    @test D.spec_clean(specs[1])
+end
+
+@testset "derive taint pass taints a loop-variable index into a widened read" begin
+    body = quote
+        found = false
+        for pidx in 1:length(system.person)
+            if system.person[pidx].waiting
+                found = true
+            end
+        end
+        return found && system.person[evt.person].location != 0
+    end
+    specs, _ = D._derive_readspecs(body, :system, :evt)
+    waiting = specs[findfirst(s -> s.matchstr == Any[Member(:person), MI, Member(:waiting)], specs)]
+    @test !D.spec_clean(waiting)
+    @test waiting.indices == Any[D.TaintedIndex()]
+    location = specs[findfirst(
+        s -> s.matchstr == Any[Member(:person), MI, Member(:location)], specs
+    )]
+    @test D.spec_clean(location)
+end
+
+@testset "derive taint pass taints reads through a dict-iteration element alias" begin
+    body = quote
+        any_active = false
+        for ((floor, direction), call) in system.calls
+            if call.requested
+                any_active = true
+            end
+        end
+        return any_active && system.elevator[evt.elevator_idx].doors_open
+    end
+    specs, _ = D._derive_readspecs(body, :system, :evt)
+    requested = specs[findfirst(
+        s -> s.matchstr == Any[Member(:calls), MI, Member(:requested)], specs
+    )]
+    @test !D.spec_clean(requested)
+    @test requested.indices == Any[D.TaintedIndex()]
+end
+
+@testset "derive taint pass scopes a branch alias: read tracked inside, no leak after" begin
+    body = quote
+        total = 0
+        if evt.flag
+            p = system.person[evt.person]
+            if p.waiting
+                total = 1
+            end
+        end
+        return total + system.person[evt.person].location
+    end
+    specs, _ = D._derive_readspecs(body, :system, :evt)
+    # The in-branch read through `p` is tracked (clean, evt.person-keyed); the alias
+    # does not leak a spurious read past the branch.
+    @test length(specs) == 2
+    waiting = specs[findfirst(s -> s.matchstr == Any[Member(:person), MI, Member(:waiting)], specs)]
+    @test D.spec_clean(waiting)
+    @test waiting.indices == Any[D.FieldBinding(:person)]
+    @test any(s -> s.matchstr == Any[Member(:person), MI, Member(:location)], specs)
+end
+
+@testset "derive taint pass makes a literal index a LiteralIndex" begin
+    body = quote
+        return system.cell[1].flag
+    end
+    specs, _ = D._derive_readspecs(body, :system, :evt)
+    @test specs[1].indices == Any[D.LiteralIndex(1)]
+    @test D.spec_clean(specs[1])
+end
+
+@testset "derive taint pass widens an affine evt index and records a note" begin
+    body = quote
+        return system.cell[evt.idx + 1].flag
+    end
+    specs, notes = D._derive_readspecs(body, :system, :evt)
+    @test specs[1].indices == Any[D.TaintedIndex()]
+    @test !isempty(notes)
+end
+
+@testset "derive taint pass makes a state-derived tuple key a tainted TupleIndex" begin
+    body = quote
+        elevator = system.elevator[evt.elevator_idx]
+        return system.calls[(elevator.floor, elevator.direction)].requested
+    end
+    specs, _ = D._derive_readspecs(body, :system, :evt)
+    calls = specs[findfirst(s -> s.matchstr == Any[Member(:calls), MI, Member(:requested)], specs)]
+    @test calls.indices[1] isa D.TupleIndex
+    @test !D.spec_clean(calls)
+    # The nested key contributes clean reads of the elevator's floor and direction.
+    @test any(s -> s.matchstr == Any[Member(:elevator), MI, Member(:floor)], specs)
+    @test any(s -> s.matchstr == Any[Member(:elevator), MI, Member(:direction)], specs)
+end
+
+@testset "derive taint pass reads container[key] for a haskey per-key form" begin
+    body = quote
+        return haskey(system.calls, (evt.floor, evt.dir))
+    end
+    specs, _ = D._derive_readspecs(body, :system, :evt)
+    @test length(specs) == 1
+    @test specs[1].matchstr == Any[Member(:calls), MI]
+    @test specs[1].indices[1] isa D.TupleIndex
+end
+
+############################ Macro-time fragment errors ############################
+
+@testset "derive @precondition errors when a helper receives state" begin
+    err = @test_throws LoadError @eval @precondition function precondition(evt::HelperEv, state)
+        return isempty(people_waiting(state.person, 1))
+    end
+    @test occursin("opaque function", sprint(showerror, err.value.error))
+end
+
+@testset "derive @precondition errors on a zero-read precondition" begin
+    err = @test_throws LoadError @eval @precondition precondition(evt::EmptyEv, state) = evt.idx > 0
+    @test occursin("reads no physical state", sprint(showerror, err.value.error))
+end
+
+@testset "derive @precondition errors on an uncovered whole-container dict read" begin
+    err = @test_throws LoadError @eval @precondition function precondition(evt::LenEv, state)
+        return length(state.calls) > 0
+    end
+    @test occursin("no covering", sprint(showerror, err.value.error))
+end
+
+############################ Setup-time domain check ############################
+
+@testset "derive derived_generators demands a domain for an unbound field" begin
+    @eval module MissingDomainMod
+    using ChronoSim
+    import ChronoSim: precondition, generators
+    struct NeedsDomain <: SimEvent
+        a::Int64
+        b::Int64
+    end
+    @precondition precondition(evt::NeedsDomain, state) = state.arr[evt.a].v > 0
+    end
+    err = @test_throws ErrorException generators(MissingDomainMod.NeedsDomain)
+    @test occursin("@domain NeedsDomain.b", sprint(showerror, err.value))
+end
+
+############################ Macro end-to-end behavior ############################
+
+@testset "derive Toggle binds its single field from every clean trigger" begin
+    board = _DM.Board(3)
+    gens = generators(_DM.Toggle)
+    @test length(gens) == 2
+    mss = [g.matchstr for g in gens]
+    @test _derive_multiset_equal(
+        mss, Any[Any[Member(:cell), MI, Member(:value)], Any[Member(:cell), MI, Member(:flag)]]
+    )
+    for g in gens
+        @test _derive_collect(g, board, 2) == Any[_DM.Toggle(2)]
+    end
+end
+
+@testset "derive FirstFlag guards on its literal index" begin
+    board = _DM.Board(3)
+    g = only(generators(_DM.FirstFlag))
+    @test g.matchstr == Any[Member(:cell), MI, Member(:flag)]
+    @test _derive_collect(g, board, 1) == Any[_DM.FirstFlag()]
+    @test _derive_collect(g, board, 2) == Any[]
+end
+
+@testset "derive AnyFlag widens the loop-tainted trigger and binds the clean one" begin
+    board = _DM.Board(3)
+    gens = generators(_DM.AnyFlag)
+    widened = _find_matchstr(gens, Any[Member(:cell), MI, Member(:flag)])
+    @test _derive_multiset_equal(
+        _derive_collect(widened, board, 2), Any[_DM.AnyFlag(1), _DM.AnyFlag(2), _DM.AnyFlag(3)]
+    )
+    clean = _find_matchstr(gens, Any[Member(:cell), MI, Member(:value)])
+    @test _derive_collect(clean, board, 2) == Any[_DM.AnyFlag(2)]
+end
+
+@testset "derive Route widens a dict tuple-key read over its field domain" begin
+    board = _DM.Board(3)
+    gens = generators(_DM.Route)
+    widened = _find_matchstr(gens, Any[Member(:link), MI, Member(:on)])
+    @test _derive_multiset_equal(
+        _derive_collect(widened, board, (1, 1)), Any[_DM.Route(1), _DM.Route(2), _DM.Route(3)]
+    )
+    clean = _find_matchstr(gens, Any[Member(:cell), MI, Member(:value)])
+    @test _derive_collect(clean, board, 2) == Any[_DM.Route(2)]
+end
+
+@testset "derive Cross binds one field and enumerates the other per trigger" begin
+    board = _DM.Board(3)
+    gens = generators(_DM.Cross)
+    on_value = _find_matchstr(gens, Any[Member(:cell), MI, Member(:value)])
+    @test _derive_multiset_equal(
+        _derive_collect(on_value, board, 2), Any[_DM.Cross(2, 1), _DM.Cross(2, 2), _DM.Cross(2, 3)]
+    )
+    on_flag = _find_matchstr(gens, Any[Member(:cell), MI, Member(:flag)])
+    @test _derive_multiset_equal(
+        _derive_collect(on_flag, board, 2), Any[_DM.Cross(1, 2), _DM.Cross(2, 2), _DM.Cross(3, 2)]
+    )
+end
+
+############################ Diagnostics ############################
+
+@testset "derive derivation_report labels CLEAN and WIDENED triggers with matchstrs" begin
+    txt = sprint(io -> D.derivation_report(io, _DM.AnyFlag))
+    @test occursin("WIDENED", txt)
+    @test occursin("CLEAN", txt)
+    @test occursin("[cell, ℤ, flag]", txt)
+    @test occursin("[cell, ℤ, value]", txt)
+    @test occursin("AnyFlag.idx", txt)
+end
