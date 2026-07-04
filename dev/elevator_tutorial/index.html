@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Build an Elevator · ChronoSim.jl</title><meta name="title" content="Build an Elevator · ChronoSim.jl"/><meta property="og:title" content="Build an Elevator · ChronoSim.jl"/><meta property="twitter:title" content="Build an Elevator · ChronoSim.jl"/><meta name="description" content="Documentation for ChronoSim.jl."/><meta property="og:description" content="Documentation for ChronoSim.jl."/><meta property="twitter:description" content="Documentation for ChronoSim.jl."/><meta property="og:url" content="https://computingkitchen.com/ChronoSim.jl/elevator_tutorial/"/><meta property="twitter:url" content="https://computingkitchen.com/ChronoSim.jl/elevator_tutorial/"/><link rel="canonical" href="https://computingkitchen.com/ChronoSim.jl/elevator_tutorial/"/><script data-outdated-warner src="../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL=".."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../assets/documenter.js"></script><script src="../search_index.js"></script><script src="../siteinfo.js"></script><script src="../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../assets/themeswap.js"></script><link href="../assets/custom.css" rel="stylesheet" type="text/css"/></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../">ChronoSim.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><span class="tocitem">Home</span><ul><li><a class="tocitem" href="../">ChronoSim</a></li><li><a class="tocitem" href="../intro/">Introduction</a></li><li><a class="tocitem" href="../not_chrono/">Why Not Hand Made</a></li><li><a class="tocitem" href="../whatitis/">What It Does</a></li></ul></li><li><span class="tocitem">Examples</span><ul><li><a class="tocitem" href="../getting_started/">Getting Started</a></li><li class="is-active"><a class="tocitem" href>Build an Elevator</a><ul class="internal"><li><a class="tocitem" href="#The-state"><span>The state</span></a></li><li><a class="tocitem" href="#A-first-event,-with-its-generator-written-by-hand"><span>A first event, with its generator written by hand</span></a></li><li><a class="tocitem" href="#Calling-the-car"><span>Calling the car</span></a></li><li><a class="tocitem" href="#Moving-the-car,-with-a-helper-function"><span>Moving the car, with a helper function</span></a></li><li><a class="tocitem" href="#Opening-the-doors"><span>Opening the doors</span></a></li><li><a class="tocitem" href="#Boarding-and-exiting"><span>Boarding and exiting</span></a></li><li><a class="tocitem" href="#Closing-the-doors,-by-asking-other-preconditions"><span>Closing the doors, by asking other preconditions</span></a></li><li><a class="tocitem" href="#Running-the-model"><span>Running the model</span></a></li><li><a class="tocitem" href="#Inspecting-what-the-derivation-built"><span>Inspecting what the derivation built</span></a></li><li><a class="tocitem" href="#Where-to-go-from-here"><span>Where to go from here</span></a></li></ul></li></ul></li><li><span class="tocitem">Manual</span><ul><li><input class="collapse-toggle" id="menuitem-3-1" type="checkbox"/><label class="tocitem" for="menuitem-3-1"><span class="docs-label">Simulation State</span><i class="docs-chevron"></i></label><ul class="collapsed"><li><a class="tocitem" href="../observedphysical/">Declaring the Simulation State</a></li><li><a class="tocitem" href="../observedmacro/">The <code>@obsread</code> and <code>@obswrite</code> Macros</a></li><li><a class="tocitem" href="../customstate/">Custom State Types</a></li></ul></li><li><a class="tocitem" href="../events/">Events</a></li><li><a class="tocitem" href="../generators/">Generators</a></li></ul></li><li><a class="tocitem" href="../reference/">Reference</a></li><li><span class="tocitem">Development</span><ul><li><a class="tocitem" href="../state_contract/">State Contract</a></li><li><a class="tocitem" href="../derivation_internals/">Derivation Internals</a></li><li><a class="tocitem" href="../categorize/">Where ChronoSim Fits</a></li><li><a class="tocitem" href="../plan/">Plan</a></li><li><a class="tocitem" href="../event_update/">Event Updates</a></li><li><a class="tocitem" href="../architecture_diagram/">Architecture</a></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Examples</a></li><li class="is-active"><a href>Build an Elevator</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Build an Elevator</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/adolgert/ChronoSim.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/adolgert/ChronoSim.jl/blob/main/docs/literate_src/elevator_tutorial.jl" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Build-an-Elevator"><a class="docs-heading-anchor" href="#Build-an-Elevator">Build an Elevator</a><a id="Build-an-Elevator-1"></a><a class="docs-heading-anchor-permalink" href="#Build-an-Elevator" title="Permalink"></a></h1><p>This tutorial builds a model of one elevator serving a small building, event by event. It is longer than <a href="../getting_started/">Getting Started</a> because it deliberately runs into the situations a real model runs into: an event that concerns the whole system rather than one entity, a precondition that needs a helper function, one event&#39;s enabling rule defined in terms of another&#39;s, and a generator written by hand so you can see what the automatic ones replace. When you finish, you will have seen every technique needed to write a model of your own. The full two-car elevator that this model is reduced from lives in the <a href="https://github.com/adolgert/ChronoSimExamples.jl">ChronoSimExamples.jl</a> repository, alongside an epidemic model, if you want larger worked examples.</p><pre><code class="language-julia hljs">using ChronoSim
+using ChronoSim.ObservedState
+import ChronoSim: precondition, enable, fire!, generators
+using Distributions
+using Random</code></pre><h2 id="The-state"><a class="docs-heading-anchor" href="#The-state">The state</a><a id="The-state-1"></a><a class="docs-heading-anchor-permalink" href="#The-state" title="Permalink"></a></h2><p>The building has several people, one call button per floor, and a single elevator car. A person is on a floor (with zero meaning they are riding the car), has a destination, and may be waiting for the car. A call button is either requested or not.</p><pre><code class="language-julia hljs">@keyedby Person Int64 begin
+    floor::Int64
+    destination::Int64
+    waiting::Bool
+end
+
+@keyedby Call Int64 begin
+    requested::Bool
+end</code></pre><p>The people live in a fixed-length vector, since nobody enters or leaves the building during a run. The call buttons live in a dictionary keyed by floor number. The car itself is just two values, so rather than invent a struct for it we store its floor and door state as plain scalar fields, which the framework tracks at the granularity of the whole field.</p><pre><code class="language-julia hljs">@observedphysical Building begin
+    people::ObservedVector{Person,Member}
+    calls::ObservedDict{Int64,Call,Member}
+    car_floor::Int64
+    car_open::Bool
+    floor_cnt::Int64
+end
+
+function make_building(people_count, floor_count)
+    people = ObservedArray{Person,Member}(undef, people_count)
+    for i in eachindex(people)
+        people[i] = Person(1, 1, false)
+    end
+    calls = ObservedDict{Int64,Call,Member}()
+    for floor in 1:floor_count
+        calls[floor] = Call(false)
+    end
+    return Building(people, calls, 1, false, floor_count)
+end</code></pre><h2 id="A-first-event,-with-its-generator-written-by-hand"><a class="docs-heading-anchor" href="#A-first-event,-with-its-generator-written-by-hand">A first event, with its generator written by hand</a><a id="A-first-event,-with-its-generator-written-by-hand-1"></a><a class="docs-heading-anchor-permalink" href="#A-first-event,-with-its-generator-written-by-hand" title="Permalink"></a></h2><p>A person who is standing on their destination floor eventually decides to go somewhere else. To show what generators are, we write this first event the manual way: a plain <code>precondition</code> function plus a <code>@conditionsfor</code> block that tells the framework when the precondition is worth checking.</p><pre><code class="language-julia hljs">struct PickDestination &lt;: SimEvent
+    person::Int64
+end
+
+function precondition(evt::PickDestination, building)
+    person = building.people[evt.person]
+    return person.floor != 0 &amp;&amp; !person.waiting &amp;&amp; person.destination == person.floor
+end
+
+@conditionsfor PickDestination begin
+    @reactto changed(people[who].floor) do building
+        generate(PickDestination(who))
+    end
+    @reactto changed(people[who].destination) do building
+        generate(PickDestination(who))
+    end
+    @reactto changed(people[who].waiting) do building
+        generate(PickDestination(who))
+    end
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">generators (generic function with 2 methods)</code></pre><p>Each <code>@reactto changed(...)</code> rule names a pattern of state addresses. When any write matches the pattern, the rule runs with the wildcard (here <code>who</code>) bound to the index from the written address, and it proposes candidate events with <code>generate</code>. Proposals are cheap: each one is filtered through the precondition, so proposing too much wastes a boolean check, while proposing too little silently loses behavior.</p><p>Notice that the three rules correspond exactly to the three fields the precondition reads. That is not a coincidence, and it is the reason the manual block is usually unnecessary: the generator is the precondition&#39;s read set, restated. Writing it by hand means keeping the two in sync forever. For the remaining events we will let the <code>@precondition</code> macro derive the generators, and you can mix the two styles freely across the events of one model, as we have just done.</p><p>The rest of <code>PickDestination</code> is its rate and its effect. People decide to travel with a mean waiting time of ten minutes, and the new destination is a uniformly chosen different floor. Note that <code>fire!</code> draws from the <code>rng</code> argument, never from a global generator, so that runs are reproducible.</p><pre><code class="language-julia hljs">enable(evt::PickDestination, building, when) = (Exponential(10.0), when)
+
+function fire!(evt::PickDestination, building, when, rng)
+    person = building.people[evt.person]
+    choices = [f for f in 1:building.floor_cnt if f != person.floor]
+    person.destination = rand(rng, choices)
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">fire! (generic function with 3 methods)</code></pre><h2 id="Calling-the-car"><a class="docs-heading-anchor" href="#Calling-the-car">Calling the car</a><a id="Calling-the-car-1"></a><a class="docs-heading-anchor-permalink" href="#Calling-the-car" title="Permalink"></a></h2><p>A person on a floor, not yet waiting, whose destination is elsewhere, presses the call button. This precondition is declared with <code>@precondition</code>, so its generators are derived: any change to a person&#39;s <code>floor</code>, <code>destination</code>, or <code>waiting</code> field proposes <code>CallCar</code> for that person, which is precisely the hand-written block above, produced mechanically.</p><pre><code class="language-julia hljs">struct CallCar &lt;: SimEvent
+    person::Int64
+end
+
+@precondition function precondition(evt::CallCar, building)
+    person = building.people[evt.person]
+    return person.floor != 0 &amp;&amp; !person.waiting &amp;&amp; person.destination != person.floor
+end
+
+enable(evt::CallCar, building, when) = (Exponential(0.5), when)
+
+function fire!(evt::CallCar, building, when, rng)
+    person = building.people[evt.person]
+    person.waiting = true
+    building.calls[person.floor].requested = true
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">fire! (generic function with 4 methods)</code></pre><h2 id="Moving-the-car,-with-a-helper-function"><a class="docs-heading-anchor" href="#Moving-the-car,-with-a-helper-function">Moving the car, with a helper function</a><a id="Moving-the-car,-with-a-helper-function-1"></a><a class="docs-heading-anchor-permalink" href="#Moving-the-car,-with-a-helper-function" title="Permalink"></a></h2><p>The car should move when the doors are shut and somebody, somewhere, wants it to be somewhere else: a pressed call button on another floor, or a rider whose destination is another floor. That &quot;somebody, somewhere&quot; is a scan over the state, and it reads naturally as a helper function.</p><p>A helper that receives state must be marked with <code>@fragment</code>. The mark changes nothing about how the function runs; it registers the function&#39;s body so that the <code>@precondition</code> analysis can look inside it. An unmarked helper that receives state is a macro-time error, because the analysis refuses to guess what a function it cannot see might read.</p><pre><code class="language-julia hljs">@fragment function wants_car_elsewhere(calls, people, here)
+    for (floor, call) in calls
+        if call.requested &amp;&amp; floor != here
+            return true
+        end
+    end
+    for p in eachindex(people)
+        if people[p].floor == 0 &amp;&amp; people[p].destination != here
+            return true
+        end
+    end
+    return false
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">wants_car_elsewhere (generic function with 1 method)</code></pre><p>The event itself has no fields, because it concerns the single shared car rather than any person.</p><pre><code class="language-julia hljs">struct MoveCar &lt;: SimEvent end
+
+@precondition function precondition(evt::MoveCar, building)
+    return !building.car_open &amp;&amp;
+           wants_car_elsewhere(building.calls, building.people, building.car_floor)
+end
+
+enable(evt::MoveCar, building, when) = (Exponential(0.5), when)
+
+function fire!(evt::MoveCar, building, when, rng)
+    targets = Int[]
+    for (floor, call) in building.calls
+        call.requested &amp;&amp; push!(targets, floor)
+    end
+    for p in eachindex(building.people)
+        person = building.people[p]
+        person.floor == 0 &amp;&amp; push!(targets, person.destination)
+    end
+    isempty(targets) &amp;&amp; return nothing
+    nearest = targets[argmin(abs.(targets .- building.car_floor))]
+    building.car_floor += sign(nearest - building.car_floor)
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">fire! (generic function with 5 methods)</code></pre><p>Two things are worth noticing here. First, the scans inside the helper read people and calls at loop indices, so the derivation cannot tell from a changed address which <code>MoveCar</code> instance to propose — but <code>MoveCar</code> has no fields, so there is only one instance, and the derived trigger simply proposes it whenever any call or any person&#39;s floor or destination changes. Second, <code>fire!</code> also scans the state, and that needs no <code>@fragment</code> and no care at all, because only preconditions are analyzed; firing functions just run, and the framework records what they write.</p><h2 id="Opening-the-doors"><a class="docs-heading-anchor" href="#Opening-the-doors">Opening the doors</a><a id="Opening-the-doors-1"></a><a class="docs-heading-anchor-permalink" href="#Opening-the-doors" title="Permalink"></a></h2><p>The car opens its doors when it is at a floor where the button is pressed, or where a rider wants to get off. Reading <code>building.calls[building.car_floor]</code> indexes a container by <em>state</em> rather than by an event field, which is fine: the derivation widens that trigger, meaning a change to any call button proposes the (single) <code>OpenDoors</code> event and the precondition decides.</p><pre><code class="language-julia hljs">@fragment function rider_arriving(people, here)
+    for p in eachindex(people)
+        if people[p].floor == 0 &amp;&amp; people[p].destination == here
+            return true
+        end
+    end
+    return false
+end
+
+struct OpenDoors &lt;: SimEvent end
+
+@precondition function precondition(evt::OpenDoors, building)
+    return !building.car_open &amp;&amp; (
+        building.calls[building.car_floor].requested ||
+        rider_arriving(building.people, building.car_floor)
+    )
+end
+
+enable(evt::OpenDoors, building, when) = (Exponential(0.1), when)
+
+function fire!(evt::OpenDoors, building, when, rng)
+    building.car_open = true
+    building.calls[building.car_floor].requested = false
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">fire! (generic function with 6 methods)</code></pre><h2 id="Boarding-and-exiting"><a class="docs-heading-anchor" href="#Boarding-and-exiting">Boarding and exiting</a><a id="Boarding-and-exiting-1"></a><a class="docs-heading-anchor-permalink" href="#Boarding-and-exiting" title="Permalink"></a></h2><p>These two are straightforward person-keyed events in the same style as <code>CallCar</code>. A waiting person on the car&#39;s floor boards while the doors are open; a rider whose destination is the car&#39;s floor steps out.</p><pre><code class="language-julia hljs">struct Board &lt;: SimEvent
+    person::Int64
+end
+
+@precondition function precondition(evt::Board, building)
+    person = building.people[evt.person]
+    return building.car_open &amp;&amp; person.waiting &amp;&amp; person.floor == building.car_floor
+end
+
+enable(evt::Board, building, when) = (Exponential(0.05), when)
+
+function fire!(evt::Board, building, when, rng)
+    person = building.people[evt.person]
+    person.floor = 0
+    person.waiting = false
+end
+
+struct Exit &lt;: SimEvent
+    person::Int64
+end
+
+@precondition function precondition(evt::Exit, building)
+    person = building.people[evt.person]
+    return building.car_open &amp;&amp; person.floor == 0 &amp;&amp; person.destination == building.car_floor
+end
+
+enable(evt::Exit, building, when) = (Exponential(0.05), when)
+
+fire!(evt::Exit, building, when, rng) = building.people[evt.person].floor = building.car_floor</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">fire! (generic function with 8 methods)</code></pre><h2 id="Closing-the-doors,-by-asking-other-preconditions"><a class="docs-heading-anchor" href="#Closing-the-doors,-by-asking-other-preconditions">Closing the doors, by asking other preconditions</a><a id="Closing-the-doors,-by-asking-other-preconditions-1"></a><a class="docs-heading-anchor-permalink" href="#Closing-the-doors,-by-asking-other-preconditions" title="Permalink"></a></h2><p>The doors should close when nobody can board and nobody can exit. We could restate those two conditions inline, but they already exist: they are the preconditions of <code>Board</code> and <code>Exit</code>. A <code>@precondition</code> body may call another event&#39;s <code>precondition</code> directly, and the analysis follows the call, so the derived generators for <code>CloseDoors</code> know about every address that <code>Board</code> and <code>Exit</code> read. The <code>any(... for ...)</code> form is analyzed like a loop.</p><pre><code class="language-julia hljs">struct CloseDoors &lt;: SimEvent end
+
+@precondition function precondition(evt::CloseDoors, building)
+    return building.car_open &amp;&amp;
+           !any(precondition(Board(p), building) for p in eachindex(building.people)) &amp;&amp;
+           !any(precondition(Exit(p), building) for p in eachindex(building.people))
+end
+
+enable(evt::CloseDoors, building, when) = (Weibull(2.0, 0.5), when)
+
+fire!(evt::CloseDoors, building, when, rng) = building.car_open = false</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">fire! (generic function with 9 methods)</code></pre><p>One ordering rule applies here: because <code>CloseDoors</code> refers to the preconditions of <code>Board</code> and <code>Exit</code>, those two must be declared with <code>@precondition</code> earlier in the file, which they were.</p><h2 id="Running-the-model"><a class="docs-heading-anchor" href="#Running-the-model">Running the model</a><a id="Running-the-model-1"></a><a class="docs-heading-anchor-permalink" href="#Running-the-model" title="Permalink"></a></h2><pre><code class="language-julia hljs">trajectory = Tuple{Tuple,Float64}[]
+record(building, when, event, changed) = push!(trajectory, (clock_key(event), when))
+
+building = make_building(4, 5)
+sim = SimulationFSM(
+    building,
+    [PickDestination, CallCar, MoveCar, OpenDoors, Board, Exit, CloseDoors];
+    seed=90210,
+    observer=record,
+)</code></pre><p>The initializer writes every field that events depend on. Construction alone is not enough, because it is the recorded <em>writes</em> that propose the first candidate events: writing each person&#39;s fields proposes their <code>PickDestination</code>, and writing the car&#39;s fields proposes the car events.</p><pre><code class="language-julia hljs">function settle_in(building, when, rng)
+    for i in eachindex(building.people)
+        floor = rand(rng, 1:building.floor_cnt)
+        building.people[i].floor = floor
+        building.people[i].destination = floor
+        building.people[i].waiting = false
+    end
+    building.car_floor = 1
+    building.car_open = false
+end
+
+stopping(building, step, event, when) = when &gt; 120.0
+
+ChronoSim.run(sim, settle_in, stopping)
+length(trajectory)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">372</code></pre><p>A couple of hours of building life. Here are the first dozen firings.</p><pre><code class="language-julia hljs">first(trajectory, 12)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">12-element Vector{Tuple{Tuple, Float64}}:
+ ((:InitializeEvent,), 0.0)
+ ((:PickDestination, 3), 0.25201890399150917)
+ ((:CallCar, 3), 0.3257498746005458)
+ ((:MoveCar,), 2.5967440701680933)
+ ((:MoveCar,), 3.2768412914378535)
+ ((:MoveCar,), 3.479403366779271)
+ ((:OpenDoors,), 3.5929514709611476)
+ ((:Board, 3), 3.6365961567595724)
+ ((:CloseDoors,), 3.9148419937166006)
+ ((:PickDestination, 4), 5.0975873941758465)
+ ((:MoveCar,), 5.35126718457362)
+ ((:MoveCar,), 5.362266187628448)</code></pre><h2 id="Inspecting-what-the-derivation-built"><a class="docs-heading-anchor" href="#Inspecting-what-the-derivation-built">Inspecting what the derivation built</a><a id="Inspecting-what-the-derivation-built-1"></a><a class="docs-heading-anchor-permalink" href="#Inspecting-what-the-derivation-built" title="Permalink"></a></h2><p>Every derived event can print its triggers. <code>MoveCar</code> is the interesting one, because everything it depends on arrives through the helper.</p><pre><code class="language-julia hljs">using ChronoSim: derivation_report
+derivation_report(MoveCar)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Derivation report for MoveCar
+  event fields: ()
+  TRIGGER [car_open]  CLEAN
+    binds: ()
+    guards: none
+  TRIGGER [calls, ℤ, requested]  WIDENED
+    reason: tainted index in read `(var&quot;##call#280&quot;).requested`
+    enumerates domains for: ()
+  TRIGGER [car_floor]  CLEAN
+    binds: ()
+    guards: none
+  TRIGGER [people, ℤ, floor]  WIDENED
+    reason: tainted index in read `(building.people[var&quot;##p#281&quot;]).floor`
+    enumerates domains for: ()
+  TRIGGER [people, ℤ, destination]  WIDENED
+    reason: tainted index in read `(building.people[var&quot;##p#281&quot;]).destination`
+    enumerates domains for: ()
+  domains required: none (every field bound by a clean read)</code></pre><p>The report shows widened triggers on the call buttons and on people&#39;s fields, plus triggers on the two scalar car fields. Widened proposals are filtered by the precondition, and if you want to know what that filtering costs, the framework will count it for you:</p><pre><code class="language-julia hljs">using ChronoSim: collect_generation_stats, generation_stats, reset_generation_stats!
+
+reset_generation_stats!()
+collect_generation_stats(true)
+trajectory2 = Tuple{Tuple,Float64}[]
+sim2 = SimulationFSM(
+    make_building(4, 5),
+    [PickDestination, CallCar, MoveCar, OpenDoors, Board, Exit, CloseDoors];
+    seed=90210,
+    observer=(b, t, e, c) -&gt; push!(trajectory2, (clock_key(e), t)),
+)
+ChronoSim.run(sim2, settle_in, stopping)
+collect_generation_stats(false)
+generation_stats()</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Dict{Symbol, @NamedTuple{proposed::Int64, admitted::Int64}} with 7 entries:
+  :Board           =&gt; (proposed = 1016, admitted = 36)
+  :CallCar         =&gt; (proposed = 149, admitted = 37)
+  :MoveCar         =&gt; (proposed = 329, admitted = 132)
+  :Exit            =&gt; (proposed = 1017, admitted = 36)
+  :OpenDoors       =&gt; (proposed = 365, admitted = 63)
+  :CloseDoors      =&gt; (proposed = 364, admitted = 65)
+  :PickDestination =&gt; (proposed = 149, admitted = 40)</code></pre><p>Each event type lists how many candidates its generators proposed and how many passed their precondition. Where the ratio is large and the model is slow, a hand-written <code>@conditionsfor</code> with tighter proposals is the remedy, and the <a href="../generators/">Generators</a> page discusses that trade-off.</p><p>Note also that the second run produced the same trajectory as the first, because the two simulations used the same seed:</p><pre><code class="language-julia hljs">trajectory2 == trajectory</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">true</code></pre><h2 id="Where-to-go-from-here"><a class="docs-heading-anchor" href="#Where-to-go-from-here">Where to go from here</a><a id="Where-to-go-from-here-1"></a><a class="docs-heading-anchor-permalink" href="#Where-to-go-from-here" title="Permalink"></a></h2><p>You have now used every mechanism a typical model needs: observed state in vectors, dictionaries, and scalar fields; derived generators; a hand-written generator; <code>@fragment</code> helpers; precondition reuse; and the inspection tools. The <a href="../events/">Events</a> and <a href="../generators/">Generators</a> manual pages state precisely what each piece requires, and the models in ChronoSimExamples.jl show the same techniques at full scale, including an epidemic model whose population events (<code>SIRVillage</code>) make a good template for models of interacting individuals.</p><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p><script type="module">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({
+    startOnLoad: true,
+    theme: "neutral"
+});
+</script></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../getting_started/">« Getting Started</a><a class="docs-footer-nextpage" href="../observedphysical/">Declaring the Simulation State »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.17.0 on <span class="colophon-date" title="Saturday 4 July 2026 19:54">Saturday 4 July 2026</span>. Using Julia version 1.12.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
