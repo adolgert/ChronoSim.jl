@@ -260,6 +260,13 @@ struct FragOuter <: SimEvent
 end
 @precondition precondition(evt::FragOuter, state) = precondition(FragInner(evt.ci), state)
 
+# A top-level scalar field (state.n) is a place with no index components; reading it
+# must derive a [Member(:n)] trigger that binds nothing, not crash the macro.
+struct ScalarGate <: SimEvent
+    ci::Int64
+end
+@precondition precondition(evt::ScalarGate, state) = state.cell[evt.ci].flag && evt.ci <= state.n
+
 # Precondition recursion where the caller passes a LOOP variable (not an evt field):
 # the inlined read is tainted/widened.
 struct FragOuterLoop <: SimEvent
@@ -819,4 +826,25 @@ end
     @precondition precondition(evt::BareRedEv, state) = any(some_predicate, state.cell)
     end
     @test occursin("opaque function", sprint(showerror, err.value.error))
+end
+
+@testset "derive a top-level scalar-field read becomes a zero-binding trigger" begin
+    specs = ChronoSim.derivation_spec(_DM.ScalarGate)
+    scalar = [s for s in specs if s.matchstr == Any[Member(:n)]]
+    @test length(scalar) == 1
+    @test isempty(scalar[1].indices)
+
+    gens = generators(_DM.ScalarGate)
+    board = _DM.Board(3)
+    scalar_gen = only(g for g in gens if g.matchstr == Any[Member(:n)])
+    acc = Any[]
+    # The runtime passes no index components for a scalar place, and the
+    # trigger binds nothing, so it enumerates ci over its inferred domain.
+    scalar_gen.generator(e -> push!(acc, e), board)
+    @test sort([e.ci for e in acc]) == [1, 2, 3]
+
+    cell_gen = only(g for g in gens if g.matchstr == Any[Member(:cell), MI, Member(:flag)])
+    acc2 = Any[]
+    cell_gen.generator(e -> push!(acc2, e), board, 2)
+    @test acc2 == [_DM.ScalarGate(2)]
 end

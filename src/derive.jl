@@ -444,6 +444,15 @@ end
 
 function _record_read!(ctx::_TaintCtx, resolved_access, source)
     stripped = _strip_state_head(resolved_access, ctx.statesym)
+    if stripped isa Symbol
+        # A top-level scalar field of the physical state is a place with no
+        # index components: the runtime notifies (Member(field),) for it, so
+        # the trigger pattern is that single component. It binds no event
+        # fields, so it generates over the event's full field domains, like a
+        # widened trigger but with a clean (empty) binding set.
+        push!(ctx.reads, ReadSpec(Any[Member(stripped)], Any[], source))
+        return nothing
+    end
     matchstr = access_to_searchkey(stripped)
     argnames = access_to_argnames(stripped)
     indices = Any[_classify_index(ctx, idx) for idx in argnames]
