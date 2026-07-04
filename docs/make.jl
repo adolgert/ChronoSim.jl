@@ -73,7 +73,7 @@ doc_format = if use_pdf
     Documenter.LaTeX()
 else
     Documenter.HTML(;
-        canonical="https://adolgert.github.io/ChronoSim.jl",
+        canonical="https://computingkitchen.com/ChronoSim.jl",
         # Turn off pretty urls because they link to directories not files
         # and that doesn't work for browsers looking at local directories.
         prettyurls=get(ENV, "CI", nothing) == "true",
