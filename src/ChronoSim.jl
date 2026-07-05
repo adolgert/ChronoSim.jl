@@ -7,10 +7,12 @@ include("ObservedState/ObservedState.jl")
 include("events.jl")
 include("generators.jl")
 include("derive.jl")
+include("guard.jl")
 include("coverage.jl")
 include("policy.jl")
 include("placetoevent.jl")
 include("framework.jl")
 include("skeleton.jl")
+include("replay.jl")
 
 end

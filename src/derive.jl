@@ -43,6 +43,22 @@ spec_clean(s::ReadSpec) = all(index_clean, s.indices)
 # derivation_spec(::Type{EvtType}) is emitted per event for diagnostics/reports.
 function derivation_spec end
 
+# precondition_ast(::Type{EvtType}) -> (evtsym, statesym, body) is emitted per
+# `@precondition` event as a baked runtime method (parallel to derivation_spec).
+# The `_PRECOND_REGISTRY` that `@precondition` populates is a compile-time-only
+# structure (mutated during macro expansion, consumed during derivation of other
+# preconditions/fragments), so it is empty at runtime for precompiled packages.
+# `guard_clauses` (Phase 1c) is the first RUNTIME consumer of the body, so the
+# body is also emitted here as a method that survives precompilation.
+function precondition_ast end
+
+# `_is_registered_fragment(f)` reports whether `f` is an `@fragment` helper. Like
+# the precondition body, the compile-time `_FRAGMENT_REGISTRY` is empty at runtime
+# for precompiled packages; @fragment emits a per-helper method so guard_clauses
+# (Phase 1c) can call a registered helper as a real function and still refuse
+# arbitrary opaque calls.
+_is_registered_fragment(@nospecialize(f)) = false
+
 # Structural equality used for dedup/merge (default struct == is identity for the
 # Vector-carrying TupleIndex, so we compare explicitly).
 _idx_equal(a::FieldBinding, b::FieldBinding) = a.field == b.field
@@ -1318,6 +1334,8 @@ macro precondition(fdef)
             ChronoSim.derived_generators($(esc(EvtType)), $specs)
         end),
         :(ChronoSim.derivation_spec(::Type{$(esc(EvtType))}) = $specs),
+        :(ChronoSim.precondition_ast(::Type{$(esc(EvtType))}) =
+            ($(QuoteNode(evtsym)), $(QuoteNode(statesym)), $(QuoteNode(body)))),
     )
 end
 
@@ -1355,7 +1373,12 @@ macro fragment(fdef)
     params = Symbol[_fragment_param(a) for a in sig.args[2:end]]
     body = _body
     _FRAGMENT_REGISTRY[(__module__, name, length(params))] = (params, body)
-    return esc(fdef)
+    return Expr(:block,
+        # @__doc__ keeps a preceding docstring attached to the helper now that
+        # the expansion is a block rather than the bare function definition.
+        :(Base.@__doc__ $(esc(fdef))),
+        :(ChronoSim._is_registered_fragment(::typeof($(esc(name)))) = true),
+    )
 end
 
 # Extract the bare parameter name, rejecting forms whose inlining semantics are unsupported.
