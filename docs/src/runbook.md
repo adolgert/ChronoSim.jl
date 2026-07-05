@@ -501,3 +501,243 @@ nothing and costs nothing), or leave a [`PolicyStack`](@ref) empty. In the
 examples' entry points, `run_elevator()` / `run_sirvillage()` check only when
 passed `policy=CheckInvariants(...)`; the test suites pass it, production callers
 do not.
+
+---
+
+## Ask why an event did not fire
+
+[`whynot`](@ref) takes a recorded [`TrajectorySkeleton`](@ref), a `sim_factory`
+(the [`replay`](@ref) contract), and an event instance, and explains the event's
+absence at the *furthest lifecycle stage it reached*: `:never_proposed`,
+`:rejected`, `:enabled_never_fired`, or `:fired`. It returns a
+[`WhynotReport`](@ref) whose `show` is a bounded (≤ 30 line) readout.
+
+### How to invoke it
+
+```julia
+using ChronoSim
+
+# 1. Record the run whose missing event you want to explain.
+rec = RecordSkeleton()
+sim = SimulationFSM(physical, EVENTS;
+    sampler=CombinedNextReaction{Tuple,Float64}(), rng=Xoshiro(seed), policy=rec)
+ChronoSim.run(sim, init_physical, stop)
+skel = recorded_skeleton(rec)
+
+# 2. A factory that rebuilds the same sim (rng is overwritten by replay).
+factory = policy -> (SimulationFSM(physical_ctor_args..., EVENTS;
+    sampler=CombinedNextReaction{Tuple,Float64}(), rng=Xoshiro(seed), policy=policy),
+    init_physical)
+
+# 3. Ask.
+rep = whynot(skel, factory, StopElevator(2))
+```
+
+### What its output looks like
+
+The `:never_proposed` readout — the historical `StopElevator` missing-trigger
+bug (the hand-written trigger set omits `direction`, so dispatching an elevator
+already at a boundary floor never proposes the stop):
+
+```
+whynot (:StopElevator, 2): NEVER PROPOSED over 4 recorded steps
+  declared triggers (hand_written):
+    (elevator, _index, floor) | (elevator, _index, doors_open)
+  fired-event triggers : none
+  precondition at final replayed state : true
+    !! the precondition holds now, yet the event was never proposed:
+    !! a trigger for one of the MISSING addresses below is required
+  precondition reads (true trigger set) :
+    (elevator, 2, direction) | (elevator, 2, floor) | (elevator, 2, buttons_pressed)
+    (elevator, 2, doors_open)
+  MISSING triggers (reads no declared trigger covers) :
+    (elevator, 2, direction) | (elevator, 2, buttons_pressed)
+  near-miss writes (same container, different index/leaf) : 2 total
+    step 4 (:DispatchElevator, 3, Up) wrote (elevator, 1, direction)  [container_near_miss]
+    step 4 (:DispatchElevator, 3, Up) wrote (elevator, 1, floor)  [index_near_miss]
+  note: trigger-set analysis is one precondition evaluation at the final replayed state; short-circuited reads may be missing. fired() triggers (if any) can cover reads without a place trigger. Full per-claus…
+```
+
+Address lists print packed (`addr | addr | addr`), capped per section with an
+explicit `... and N more` overflow line, so the whole readout stays within 30
+lines even for wide trigger sets. A `!! N recorded write(s) exactly matched a
+declared trigger ...` line, if present, is an anomaly: a write matched a
+declared trigger yet nothing proposed the event — report it as a framework bug.
+
+The `:rejected` readout — `OpenElevatorDoors` proposed 57 times, always failing
+the same conjunct because the boarding person pressed no button and no call was
+requested:
+
+```
+whynot (:OpenElevatorDoors, 2): PROPOSED BUT REJECTED over 113 recorded steps
+  proposals : 57, all rejected (steps 2, 3, 4, 5, 6, 8 ...)
+  examined  : 6 replayed case(s); showing first and last
+  -- rejection at step 2, t=0.5439169374413173 --
+  failing clause : call_exists || button_pressed
+  clauses : !(elevator.doors_open) = true | call_exists || button_pressed = false
+  reads (whole precondition evaluation):
+    (elevator, 2, direction) = Stationary | writer: none
+    (elevator, 2, floor) = 1 | writer: none
+    (elevator, 2, buttons_pressed) = Set{Int64}() | writer: none
+    (elevator, 2, doors_open) = false | writer: none
+  -- rejection at step 112, t=59.211385790742284 --
+  ...
+```
+
+### What each failure form means
+
+  * `stage = :fired` — the premise was wrong; the event did fire. The readout
+    lists when.
+  * `ReplayDivergence` (raised by the internal `replay`) — the factory does not
+    rebuild the recorded run (different constructor args, package versions, or
+    randomness outside `sim.rng`). See the replay entry.
+  * `GuardEvalError` never escapes: for a hand-written (non-`@precondition`)
+    event, stage `:rejected` falls back to whole-precondition analysis
+    (`clause_analysis = :whole_precondition`) instead of per-clause values.
+  * A `near-miss` line with class `:index_near_miss` (same container/leaf,
+    different index) or `:container_near_miss` (same container, different leaf)
+    is the write that *should* have been a trigger — the missed-trigger diagnostic.
+
+### How to turn it off
+
+`whynot` is a diagnostic function; there is nothing to turn off — just do not
+call it. It runs entirely offline on a finished skeleton and never touches a
+live run.
+
+---
+
+## Ask why the run has not stopped
+
+[`whyrunning`](@ref) evaluates a stop predicate on the current state inside read
+capture and reports every address it read, that address's value and last writer,
+plus a recurrence summary of the last `nsteps` recorded steps — the dominant
+event types, the addresses they rewrite, and whether any of them is an address
+the predicate reads. It returns a [`WhyrunningReport`](@ref).
+
+### How to invoke it
+
+`sim` must be at the skeleton's final state — the recording sim after `run`, or
+`replay(factory, skel)`:
+
+```julia
+rep = whyrunning(sim, skel, physical -> physical.next_strain_id > 10)
+```
+
+The predicate is called as `stop_predicate(physical)` when that method exists,
+else as `stop_predicate(physical, step, clock, when)` (the `run` stop-condition
+form).
+
+### What its output looks like
+
+A sirvillage run whose stop predicate reads `next_strain_id` — a counter that
+`Mutate` would advance, but `Mutate` was excluded, so nothing in the step window
+touches it:
+
+```
+whyrunning over window 2160:2209; stop predicate is false
+  predicate reads:
+    (next_strain_id,) = 4 | writer: init
+  recurrence over steps 2160:2209:
+    Travel  50 | writes (locations, _index, individual_cnt), (actors, _index, haunt) | predicate: untouched
+  predicate reads written in this window : none
+  reachability analysis requires effect analysis (not yet run)
+```
+
+The last line is a Phase-2 stub: the static "no event can ever write what the
+predicate reads" verdict needs effect analysis, which is not yet built. Until
+then the report says only that nothing wrote those addresses *recently*.
+
+### What each failure form means
+
+  * `ArgumentError: sim.when = ... but the skeleton's last step is at ...` — the
+    sim is not at the skeleton's final state. Replay it fully first
+    (`replay(factory, skel)`) or pass the recording sim straight from `run`.
+  * `error: the stop predicate returned <T>, not Bool` — the predicate must
+    return `Bool`.
+  * `predicate reads written in this window : none` — nothing the predicate
+    looks at changed in the last `nsteps` steps: a strong hint the run is stuck
+    on state the stop condition cannot see.
+
+### How to turn it off
+
+Diagnostic only; do not call it. It performs one predicate evaluation (the same
+cost the stop condition already pays each step) and single passes over the
+window.
+
+---
+
+## Read out why the run stopped
+
+[`whystopped`](@ref) has two methods. Given an [`InvariantViolation`](@ref)
+caught from a [`CheckInvariants`](@ref) run, it prints the forensic readout: the
+invariant, the breaking event, each guilty address with its last and prior
+writers, and the exact `replay(...)` command. Given a plain
+[`TrajectorySkeleton`](@ref), it reads out a normal ending — the final step and
+whether clocks were still enabled (stopped by the stop condition) or none were
+(the sampler exhausted). Both return a [`WhystoppedReport`](@ref).
+
+### How to invoke it
+
+Compose the recorder **before** the checker so the violation carries a replayable
+prefix (order matters):
+
+```julia
+rec = RecordSkeleton()
+sim = SimulationFSM(physical, EVENTS;
+    policy=PolicyStack(rec, CheckInvariants(MyModel)),
+    sampler=CombinedNextReaction{Tuple,Float64}(), rng=Xoshiro(seed))
+err = try
+    ChronoSim.run(sim, init_physical, stop); nothing
+catch e; e end
+
+rep = whystopped(err)                        # violation forensics
+# or, for a run that ended without an exception:
+rep = whystopped(recorded_skeleton(rec))     # end-of-run readout
+```
+
+### What its output looks like
+
+A seeded corruption that sets `person[1].elevator` while `location` is nonzero,
+breaking the xor invariant — `whystopped` names the guilty writer event:
+
+```
+whystopped: invariant "person location xor elevator" is false
+  step   : 1 (fires since init)
+  event  : (:CorruptPerson,)
+  when   : 0.00461990380084346
+  guilty : 1 address(es)
+    (person, 1, elevator)
+      last writer  : step 1 (:CorruptPerson,) t=0.00461990380084346
+      prior writer : init
+  replay : replay(sim_factory, skeleton; upto=0)
+```
+
+The end-of-run readout for a run stopped by its stop condition with clocks still
+live:
+
+```
+whystopped: the run ended without an exception
+  steps  : 2209
+  last event : (:Travel, 14)
+  when   : 1.9999360141028282
+  60 clock(s) were still enabled; the run ended by its stop condition
+    (:Recover, 1)
+    ...
+  replay : replay(sim_factory, skeleton)
+```
+
+### What each failure form means
+
+  * `last writer : none` — no skeleton was recorded in the violation (no
+    `RecordSkeleton` in the stack). Compose the recorder to capture writers.
+  * `guilty : 0 address(es)` — inherited from the violation: no address this
+    fire wrote is read by the invariant (untracked reads, or corruption that
+    predates the step).
+  * `verdict :no_events_enabled` (end-of-run) — the sampler exhausted; nothing
+    was enabled when the run ended. `:stopped_while_events_enabled` — the stop
+    condition ended a run that still had live clocks.
+
+### How to turn it off
+
+Diagnostic only. The violation method reads the exception the checker already
+built; the skeleton method reads a finished skeleton. Neither touches a live run.
