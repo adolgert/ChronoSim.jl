@@ -291,7 +291,9 @@ function modify_state!(sim::SimulationFSM, fire_event)
             ans = capture_state_changes(sim.physical) do
                 fire!(newevent, sim.physical, sim.when, sim.rng)
             end
-            push!(changed_places, ans.changes)
+            # Merge the immediate event's changed addresses element-wise;
+            # push! would insert the whole set as one (mistyped) element.
+            union!(changed_places, ans.changes)
         end
     end
     return changed_places
