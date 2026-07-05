@@ -8,6 +8,7 @@ include("events.jl")
 include("generators.jl")
 include("derive.jl")
 include("coverage.jl")
+include("policy.jl")
 include("placetoevent.jl")
 include("framework.jl")
 

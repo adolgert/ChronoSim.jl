@@ -49,6 +49,7 @@ function over_event_invariants(
             # A generator yielded a candidate that survives dedup: this is a
             # "proposed" event for the over-approximation metric.
             record_proposed(newevent)
+            on_propose(sim.policy, sim, newevent)
             push!(candidates, newevent)
             push!(dependency.seen, newevent_key)
         end

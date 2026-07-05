@@ -24,7 +24,9 @@ include("test_observed_physical.jl")
 include("test_observed_set.jl")
 include("test_observed_state.jl")
 include("test_physical_interface.jl")
+include("test_policy.jl")
 include("test_static.jl")
+include("test_trace_eval.jl")
 
 
 retest(args...; kwargs...) = ReTest.retest(args...; kwargs...)

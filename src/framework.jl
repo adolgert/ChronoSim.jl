@@ -5,11 +5,11 @@ using CompetingClocks:
 
 using Distributions
 
-export SimulationFSM, ModelDefinitionError
+export SimulationFSM, ModelDefinitionError, TraceEvaluation, trace_likelihood
 
 ########## The Simulation Finite State Machine (FSM)
 
-mutable struct SimulationFSM{State,Sampler,CK}
+mutable struct SimulationFSM{State,Sampler,CK,P<:ExecutionPolicy}
     physical::State
     sampler::Sampler
     immediategen::GeneratorSearch
@@ -18,7 +18,8 @@ mutable struct SimulationFSM{State,Sampler,CK}
     event_dependency::EventDependency{CK}
     enabled_events::Dict{CK,SimEvent}
     enabling_times::Dict{CK,Float64}
-    observer
+    observer                    # untouched: untyped, backward compatible
+    policy::P                   # NEW, last field
 end
 
 
@@ -51,9 +52,14 @@ observer(physical, when::Float64, event::SimEvent, changed_places::AbstractSet{T
 
 The `changed_places` argument is a set-like object with tuples that are keys that
 represent which places were changed.
+
+The `policy` keyword is an [`ExecutionPolicy`](@ref) that observes the executor
+at its hook points; it defaults to [`NoPolicy`](@ref), which compiles away and
+costs a production run nothing.
 """
 function SimulationFSM(
-    physical, events; sampler=nothing, observer=nothing, rng=nothing, seed=nothing
+    physical, events; sampler=nothing, observer=nothing, rng=nothing, seed=nothing,
+    policy::ExecutionPolicy=NoPolicy(),
 )
     randgen = if !isnothing(rng)
         rng
@@ -74,7 +80,7 @@ function SimulationFSM(
     if isnothing(observer)
         observer = (args...) -> nothing
     end
-    return SimulationFSM{typeof(physical),typeof(sampler),ClockKey}(
+    return SimulationFSM{typeof(physical),typeof(sampler),ClockKey,typeof(policy)}(
         physical,
         sampler,
         generator_searches["immediate"],
@@ -84,6 +90,7 @@ function SimulationFSM(
         Dict{ClockKey,SimEvent}(),
         Dict{ClockKey,Float64}(),
         observer,
+        policy,
     )
 end
 
@@ -151,6 +158,7 @@ function sim_event_enable(event::SimEvent, event_key, sim, when)
     end
     (dist, enable_time) = reads_result.result
     enable!(sim.sampler, event_key, dist, enable_time, sim.when, sim.rng)
+    on_enable(sim.policy, sim, event_key, event, dist, enable_time)
     return (; reads=reads_result.reads)
 end
 
@@ -165,6 +173,7 @@ function sim_event_reenable(event::SimEvent, event_key, sim)
     if !isnothing(reads_result.result)
         (dist, enable_time) = reads_result.result
         enable!(sim.sampler, event_key, dist, enable_time, sim.when, sim.rng)
+        on_enable(sim.policy, sim, event_key, event, dist, enable_time)
     end
     return reads_result.reads
 end
@@ -260,6 +269,7 @@ function disable_clocks!(sim::SimulationFSM, clock_keys)
     isempty(clock_keys) && return nothing
     @debug "Disable clock $(clock_keys)"
     for clock_done in clock_keys
+        on_disable(sim.policy, sim, clock_done)
         disable!(sim.sampler, clock_done, sim.when)
         delete!(sim.enabled_events, clock_done)
         delete!(sim.enabling_times, clock_done)
@@ -293,8 +303,9 @@ end
 Let the event act on the state.
 """
 function fire!(sim::SimulationFSM, when, what)
+    event = sim.enabled_events[what]              # moved up (no side effects)
+    on_prefire(sim.policy, sim, what, event, when)  # sim.when is still the old time
     sim.when = when
-    event = sim.enabled_events[what]
     # Break the invariant that state and events are consistent.
     changed_places = modify_state!(sim, event)
     # The fired clock is realized (its draw is consumed), so commit it with
@@ -309,6 +320,7 @@ function fire!(sim::SimulationFSM, when, what)
     deal_with_changes(sim, sim.event_dependency, what, changed_places)
     checksim(sim)
     # Invariant for states and events is restored, so show the result.
+    on_postfire(sim.policy, sim, what, event, when, changed_places)
     sim.observer(sim.physical, when, event, changed_places)
 end
 
@@ -331,6 +343,7 @@ function initialize!(init_evt, callback::Function, sim::SimulationFSM)
     # The `what` event is type Nothing to signal it isn't an event.
     deal_with_changes(sim, sim.event_dependency, nothing, changes_result.changes)
     checksim(sim)
+    on_init(sim.policy, sim, init_evt, changes_result.changes)
     sim.observer(sim.physical, sim.when, init_evt, changes_result.changes)
 end
 
@@ -352,24 +365,73 @@ The event and when passed into the stop condition are the event and time that ar
 about to fire but have not yet fired. This lets you enforce a stopping time that
 is between events.
 """
-function run(sim::SimulationFSM, init_evt::SimEvent, init_func::Function, stop_condition::Function)
-    step_idx = 0
-    initialize!(init_evt, init_func, sim)
-    stop_condition(sim.physical, step_idx, init_evt, sim.when) && return nothing
-    step_idx += 1
+# Next-event source for the forward executor: draw from the sampler.
+struct _SamplerNext end
+function (::_SamplerNext)(sim::SimulationFSM, step_idx)
+    (when, what) = next(sim.sampler, sim.when, sim.rng)
+    if isfinite(when) && !isnothing(what)
+        return (when, what)
+    else
+        # The old forward loop logged @info exactly here, on sampler exhaustion.
+        @info "No more events to process after $step_idx iterations."
+        return nothing
+    end
+end
+
+# Next-event source for the trace evaluator: index the recorded trace.
+struct _TraceNext{T<:AbstractVector}
+    trace::T
+end
+function (tn::_TraceNext)(sim::SimulationFSM, step_idx)
+    step_idx > length(tn.trace) && return nothing
+    (when, what) = tn.trace[step_idx]
+    # A non-finite time or missing key ends evaluation, matching the old loop's
+    # break; the old trace loop logged @info only in exactly this case.
+    if isfinite(when) && !isnothing(what)
+        return (when, what)
+    else
+        @info "No more events to process after $step_idx iterations."
+        return nothing
+    end
+end
+
+# Per-step gate for `run`: adapts the user stop condition. A concrete struct
+# (not a closure) so the captured function's type is a parameter and the
+# per-step call is statically dispatched.
+struct _StopAdapter{F}
+    stop_condition::F
+end
+function (sa::_StopAdapter)(sim::SimulationFSM, step_idx, what, when)
+    return sa.stop_condition(sim.physical, step_idx, what, when)
+end
+
+# The executor seam. Both the forward executor (`run`) and the trace evaluator
+# (`trace_likelihood`) drive this loop; they differ only in the two injected
+# callables: `next_event(sim, step_idx) -> (when, what) | nothing` supplies the
+# next event, and `before_step!(sim, step_idx, what, when) -> Bool` runs the
+# per-step gate (stop condition or feasibility + accumulation) and returns
+# `true` to stop before firing.
+function _step_loop!(sim::SimulationFSM, next_event::N, before_step!::B) where {N,B}
+    step_idx = 1
     while true
-        (when, what) = next(sim.sampler, sim.when, sim.rng)
-        if isfinite(when) && !isnothing(what)
-            stop_condition(sim.physical, step_idx, what, when) && break
+        nxt = next_event(sim, step_idx)
+        if !isnothing(nxt)
+            (when, what) = nxt
+            before_step!(sim, step_idx, what, when) && break
             @debug "Firing $what at $when"
             fire!(sim, when, what)
         else
-            @info "No more events to process after $step_idx iterations."
             break
         end
         step_idx += 1
     end
-    step_idx
+    return step_idx
+end
+
+function run(sim::SimulationFSM, init_evt::SimEvent, init_func::Function, stop_condition::Function)
+    initialize!(init_evt, init_func, sim)
+    stop_condition(sim.physical, 0, init_evt, sim.when) && return nothing
+    return _step_loop!(sim, _SamplerNext(), _StopAdapter(stop_condition))
 end
 
 function run(sim::SimulationFSM, init_evt::SimEvent, stop_condition::Function)
@@ -382,31 +444,122 @@ function run(sim::SimulationFSM, initializer::Function, stop_condition::Function
 end
 
 """
-The `trace` is a `Vector{Tuple{Float64,SimEvent}}`. That is, it's a list of
-tuples containing `(when, what event)`.
-In order to calculate log-likelihood of a simulation, pass it a sampler that
-tracks log-likelihood. For instance,
+    TraceEvaluation
+
+The result of evaluating a recorded trace against a model with
+[`trace_likelihood`](@ref).
+
+# Fields
+
+  * `loglikelihood::Float64` — sum of the per-step log-likelihoods, or `-Inf`
+    when the trace is infeasible under the model.
+  * `feasible::Bool` — `true` when every step of the trace named an enabled
+    event at a time strictly after the previous event.
+  * `steps_evaluated::Int` — number of steps successfully evaluated; equals
+    `length(steploglik)`. When infeasible, evaluation stopped at step
+    `steps_evaluated + 1`.
+  * `first_infeasible::Union{Nothing,Tuple{Int,Any,Symbol}}` — `nothing` for a
+    feasible trace, else `(step, event, reason)` for the first failing step.
+    `reason` is `:not_enabled` (the event was not in `sim.enabled_events` when
+    its turn came) or `:time_order` (its time was not strictly greater than the
+    simulation clock).
+  * `steploglik::Vector{Float64}` — the per-step log-likelihood contributions,
+    one entry per evaluated step.
+"""
+struct TraceEvaluation
+    loglikelihood::Float64
+    feasible::Bool
+    steps_evaluated::Int
+    first_infeasible::Union{Nothing,Tuple{Int,Any,Symbol}}
+    steploglik::Vector{Float64}
+end
+
+function Base.show(io::IO, ev::TraceEvaluation)
+    print(io, "TraceEvaluation(feasible=", ev.feasible,
+        ", loglikelihood=", ev.loglikelihood,
+        ", steps_evaluated=", ev.steps_evaluated, ")")
+end
+
+function Base.show(io::IO, ::MIME"text/plain", ev::TraceEvaluation)
+    println(io, "TraceEvaluation")
+    println(io, "  feasible         : ", ev.feasible)
+    println(io, "  loglikelihood    : ", ev.loglikelihood)
+    println(io, "  steps evaluated  : ", ev.steps_evaluated)
+    if ev.first_infeasible === nothing
+        print(io,   "  first infeasible : none")
+    else
+        (step, event, reason) = ev.first_infeasible
+        print(io,   "  first infeasible : step ", step, ", event ", event,
+            ", reason ", reason)
+    end
+end
+
+# Per-step gate for the evaluator: feasibility check + accumulation.
+mutable struct _TraceAccumulator
+    steploglik::Vector{Float64}
+    feasible::Bool
+    first_infeasible::Union{Nothing,Tuple{Int,Any,Symbol}}
+end
+_TraceAccumulator() = _TraceAccumulator(Float64[], true, nothing)
+function (acc::_TraceAccumulator)(sim::SimulationFSM, step_idx, what, when)
+    reason = if !haskey(sim.enabled_events, what)
+        :not_enabled
+    elseif !(when > sim.when)
+        :time_order
+    else
+        nothing
+    end
+    if reason !== nothing
+        acc.feasible = false
+        acc.first_infeasible = (step_idx, what, reason)
+        return true                       # stop the loop; do NOT fire
+    end
+    push!(acc.steploglik, steploglikelihood(sim.sampler.track, sim.when, when, what))
+    return false
+end
+
+"""
+    trace_likelihood(sim::SimulationFSM, initializer, trace) -> TraceEvaluation
+
+Evaluate a recorded trace against a model: initialize `sim`, then walk the
+trace, accumulating each step's log-likelihood and firing the step's event, and
+return a [`TraceEvaluation`](@ref). The `trace` is an `AbstractVector` of
+`(when::Float64, clock_key::Tuple)` pairs, as recorded by an observer via
+`clock_key(event)`. The `initializer` is either an initialization function
+`(physical, when, rng) -> nothing` or a `SimEvent` whose `fire!` initializes
+the state; a third method accepts `(sim, init_evt::SimEvent, init_func::Function, trace)`.
+
+Infeasible traces do not throw. If a step names an event that is not enabled,
+or a time that is not strictly after the previous event's time, evaluation
+stops and the result has `feasible == false`, `loglikelihood == -Inf`, and
+`first_infeasible` identifying the step. A trace entry with a non-finite time
+ends evaluation early without marking the trace infeasible.
+
+`sim.sampler` must expose the enabled-clock record at `sim.sampler.track`; wrap
+any sampler in a `CompetingClocks.MemorySampler`:
+
 ```julia
 base_sampler = CombinedNextReaction{K,T}()
 memory_sampler = MemorySampler(base_sampler)
 ```
 """
-function trace_likelihood(sim::SimulationFSM, init_evt::SimEvent, init_func::Function, trace)
-    loglikelihood = zero(Float64)
-    initialize!(init_evt, init_func, sim)
-    for (step_idx, step_evt) in enumerate(trace)
-        (when, what) = step_evt
-        if isfinite(when) && !isnothing(what)
-            @debug "Firing $what at $when"
-            @assert when > sim.when
-            loglikelihood += steploglikelihood(sim.sampler.track, sim.when, when, what)
-            fire!(sim, when, what)
-        else
-            @info "No more events to process after $step_idx iterations."
-            break
-        end
+function trace_likelihood(
+    sim::SimulationFSM, init_evt::SimEvent, init_func::Function, trace::AbstractVector
+)
+    if !hasproperty(sim.sampler, :track)
+        throw(ArgumentError(
+            "trace_likelihood needs a sampler that records enabled clocks; " *
+            "wrap your sampler: MemorySampler($(nameof(typeof(sim.sampler)))(...))."))
     end
-    loglikelihood
+    Base.require_one_based_indexing(trace)
+    acc = _TraceAccumulator()
+    initialize!(init_evt, init_func, sim)
+    _step_loop!(sim, _TraceNext(trace), acc)
+    loglikelihood = acc.feasible ? sum(acc.steploglik; init=0.0) : -Inf
+    return TraceEvaluation(
+        loglikelihood, acc.feasible, length(acc.steploglik), acc.first_infeasible,
+        acc.steploglik,
+    )
 end
 
 function trace_likelihood(sim::SimulationFSM, initializer::SimEvent, trace)

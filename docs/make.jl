@@ -104,6 +104,9 @@ makedocs(;
             "Generators" => "generators.md",
         ],
         "Reference" => "reference.md",
+        "Debugging & Verification" => [
+            "Runbook" => "runbook.md",
+        ],
         "Development" => [
             "State Contract" => "state_contract.md",
             "Derivation Internals" => "derivation_internals.md",
