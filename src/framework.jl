@@ -297,7 +297,14 @@ function fire!(sim::SimulationFSM, when, what)
     event = sim.enabled_events[what]
     # Break the invariant that state and events are consistent.
     changed_places = modify_state!(sim, event)
-    disable_clocks!(sim, [what])
+    # The fired clock is realized (its draw is consumed), so commit it with
+    # `fire!` rather than `disable!`. Disabling would censor the draw and let a
+    # reusing sampler (e.g. CombinedNextReaction) resurrect residual randomness
+    # for a draw that was fully consumed -- a statistics bug for non-exponential
+    # distributions.
+    fire!(sim.sampler, what, when)
+    delete!(sim.enabled_events, what)
+    delete!(sim.enabling_times, what)
     remove_event!(sim.event_dependency, [what])
     deal_with_changes(sim, sim.event_dependency, what, changed_places)
     checksim(sim)

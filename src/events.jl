@@ -1,4 +1,5 @@
 using Logging
+import CompetingClocks: fire!
 
 export SimEvent, InitializeEvent, isimmediate, clock_key, key_clock
 export precondition, enable, reenable, fire!
