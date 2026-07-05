@@ -859,8 +859,8 @@ and disabled events.
 
 The v1 mask intersection ignores index constraints and treats `subtree` masks as
 covering all descendants — it over-approximates toward `:can_change`, never toward
-`:cannot_change`, so the unreachability claim stays sound. Phase 3's
-`masks_intersect` replaces this primitive with index-aware unification.
+`:cannot_change`, so the unreachability claim stays sound. `masks_intersect`
+(lint.jl) offers index-aware unification when more precision is needed.
 """
 function can_stop_change(stop_reads, events::AbstractVector; enabled_types=nothing)
     HT = NamedTuple{(:event, :write, :read),Tuple{Symbol,Tuple,Tuple}}
@@ -926,5 +926,6 @@ function Base.show(io::IO, ::MIME"text/plain", sw::StopWriteAnalysis)
     if !isempty(sw.unanalyzed)
         println(io, "  not analyzed (no @fire): ", join(sw.unanalyzed, ", "))
     end
-    print(io, "  (index constraints not analyzed; subtree writes cover descendants — Phase 3)")
+    print(io, "  (index constraints not analyzed here; subtree writes cover descendants — " *
+        "see masks_intersect / lint for index-aware unification)")
 end

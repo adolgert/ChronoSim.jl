@@ -19,5 +19,6 @@ include("policy_stack.jl")      # Phase 1d: PolicyStack + find_policy
 include("invariant.jl")         # Phase 1d: @invariant + CheckInvariants
 include("replay.jl")
 include("why.jl")               # Phase 1e: the why-verbs
+include("lint.jl")              # Phase 3: footprint lints (@guard + lint + LintHarvest)
 
 end

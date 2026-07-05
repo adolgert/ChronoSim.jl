@@ -823,3 +823,89 @@ This event performed a write its @fire analysis did not declare — either the w
 Diagnostic only. Construct the `SimulationFSM` without the policy (or leave it
 out of the `PolicyStack`); `@fire` itself only adds analysis metadata and never
 changes runtime behavior.
+
+---
+
+## Lint a model's footprints (interference, races, missed triggers)
+
+**What:** `lint(events; physical=...)` intersects every event's static write
+masks (`@fire`) with every event's static guard-read masks (`@precondition` or
+`@guard`) and reports: missed-trigger warnings (a write can flip a guard whose
+event has no trigger on that address), write→write races (info), dead addresses
+(info). Write→rate edges are NOT analyzed in v1 and the report says so. The
+analysis is static and over-approximate: it sees address masks, not expression
+semantics. See the "Linting a model's footprints" guide.
+
+### How to invoke it
+
+```julia
+using ChronoSim
+report = ChronoSim.lint([Travel, Infect, Recover, Reset, Mutate, InitEvent];
+                        physical=Village(30, 10, 1.0, Xoshiro(2938423)))
+report                                 # bounded summary (show)
+ChronoSim.print_lint(stdout, report)   # every edge, greppable
+
+# In tests:
+ChronoSim.assert_lint_clean(report; allow=[
+    ChronoSim.LintAllow(reader=:PickNewDestination, mask="[person, ℤ, waiting]",
+                        reason="reachability: waiting flips only with location"),
+])
+```
+
+Hand-written models must opt in: prefix each `precondition` with `@guard`
+(analysis-only; runtime behavior is byte-identical) and mark state-receiving
+helpers `@fragment`. Derived (`@precondition`) events need nothing.
+
+### What its output looks like
+
+Captured verbatim from the SIRVillage model
+(`lint([InitEvent, Travel, Infect, Recover, Reset, Mutate]; physical=Village(30,10,1.0,Xoshiro(2938423)))`).
+This report was reviewed by a human once and is archived here (plan definition of
+done 2):
+
+```
+LintReport: 6 events
+  write→guard: 18 edges over 2 addresses (0 warnings in 0 groups, 18 info)
+  write→write: 17 shared-address pairs (info)
+  write→rate edges: not analyzed (enable-time reads are runtime-only in v1; the depnet tracks them dynamically)
+  dead addresses: none
+  unanalyzed guards: InitEvent    unanalyzed effects: none
+  caps: none
+```
+
+Reading it: the two write→guard addresses are `[actors, ℤ, state]` (16 edges —
+Infect/Recover/Reset/InitEvent write the state field all four guards read) and
+`[actors, ℤ, haunt]` (2 edges — InitEvent/Travel write the haunt field Infect's
+guard reads); all 18 are info because every SIRVillage reader has a
+`changed(actors[who].state)` (or `.haunt`) trigger that covers them (no missed
+proposals). The 17 write→write pairs span `actors` (state/strain/haunt),
+`locations`, `strains`, and `next_strain_id` — `actors.strain` shows up only
+here, since no guard reads it. `InitEvent` appears under
+*unanalyzed guards* because it has no precondition (it is the bootstrap event),
+not because anything is wrong. The `Mutate → Infect` rate dependence (Mutate
+writes `strains[*].infectivity`, Infect's `enable` reads it) appears in NO edge —
+it is a write→rate edge, and the fixed rate line is the honest disclosure that v1
+does not analyze it.
+
+### What each failure form means
+
+  * **WARNING missed trigger** — reader `R` has no trigger on the printed mask,
+    so a writer can flip `R`'s precondition without `R` ever being proposed.
+    Either add the `@reactto changed(...)` trigger (the fix for a real bug — the
+    historical `doors_open`/`StopElevator` gaps) or add a `LintAllow` entry with
+    a written reason (an intended trigger narrowing).
+  * **`LintFailure` from `assert_lint_clean`** — an unallowed warning; the
+    message shows the exact `reader`/`mask`/`writer` to allow if intended. A
+    stale (unused) `LintAllow` prints a notice but does not fail.
+  * **`caps:` lines** — enumeration or dead-address reflection was skipped or hit
+    a cap; pass a live `physical=` instance or add `@domain` as named. Never
+    silent.
+  * **dead address** — a physical field written by no event and read by no guard
+    (rate reads are not analyzed, so a rate-only input like landspread's
+    `distance` appears here by design).
+
+### How to turn it off
+
+Diagnostic only — nothing runs unless you call `lint`. The `LintHarvest` policy
+is opt-in and used only by the static⊇dynamic CI test; leave it out of the
+`PolicyStack` for production replicates.

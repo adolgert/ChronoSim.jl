@@ -107,6 +107,7 @@ makedocs(;
         "Debugging & Verification" => [
             "Debugging a Simulation" => "debugging.md",
             "Static Effect Analysis" => "effect_analysis.md",
+            "Linting a Model" => "lint_footprints.md",
             "Runbook" => "runbook.md",
         ],
         "Development" => [
