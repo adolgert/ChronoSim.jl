@@ -6,7 +6,7 @@ using CompetingClocks: CombinedNextReaction
 using Distributions
 using Random
 import ChronoSim: precondition, generators, enable, fire!
-import ChronoSim: on_init, on_propose, on_enable, on_disable, on_prefire, on_postfire
+import ChronoSim: on_preinit, on_init, on_propose, on_enable, on_disable, on_prefire, on_postfire
 
 # A guard-flip pair: WakeFast and WakeSlow are both enabled while a cell's phase
 # is idle; firing either flips the phase to active, which preemptively disables
@@ -90,11 +90,12 @@ function _wake_sim(n; policy=ChronoSim.NoPolicy(), observer=nothing, seed=1234)
     )
 end
 
-# Calls all six hooks on the sim's policy per iteration; used to measure the
+# Calls all seven hooks on the sim's policy per iteration; used to measure the
 # no-op path's allocation.
 function _hook_loop(sim, n)
     total = 0
     for i in 1:n
+        on_preinit(sim.policy, sim)
         on_init(sim.policy, sim, nothing, nothing)
         on_propose(sim.policy, sim, nothing)
         on_enable(sim.policy, sim, nothing, nothing, nothing, 0.0)

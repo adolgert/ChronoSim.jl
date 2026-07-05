@@ -11,5 +11,6 @@ include("coverage.jl")
 include("policy.jl")
 include("placetoevent.jl")
 include("framework.jl")
+include("skeleton.jl")
 
 end

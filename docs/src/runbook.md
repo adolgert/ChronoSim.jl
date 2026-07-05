@@ -137,3 +137,80 @@ There is nothing to turn off. Trace evaluation is a separate entry point
 (`trace_likelihood`) that you call explicitly; it does not run during a normal
 `run` and adds no cost to a production simulation. The only requirement is the
 `MemorySampler` wrapper on the evaluation sim's sampler.
+
+---
+
+## Record a trajectory skeleton
+
+The `RecordSkeleton` policy captures a replayable record of a run — the
+pre-initialization RNG state and, per fired event, its clock key, firing time,
+changed addresses, and enable/disable/proposal history. It is opt-in: a
+simulation constructed without the policy records nothing and pays nothing.
+Retrieve the result with [`recorded_skeleton`](@ref) and, optionally, persist it
+with [`save_skeleton`](@ref) / [`load_skeleton`](@ref).
+
+### How to invoke it
+
+Pass `policy=RecordSkeleton()` to `SimulationFSM` and read the skeleton back
+after `run` returns (`run` is not exported; call it as `ChronoSim.run`):
+
+```julia
+using ChronoSim
+
+rec = RecordSkeleton(metadata=(model="sirvillage", N=30, seed=2938423))
+sim = SimulationFSM(physical, events; seed=2938423, policy=rec)
+ChronoSim.run(sim, InitEvent(), (p, i, e, w) -> w > 15.0)
+skel = recorded_skeleton(rec)
+save_skeleton("smoke.skel", skel)
+```
+
+`metadata` is stored opaquely in the skeleton and is never read by the
+framework; put model identification (module, constructor arguments, git SHA)
+there. The policy only observes — it never draws from the RNG and never mutates
+state — so a recorded run's trajectory is identical to the same-seed run
+unrecorded.
+
+### What its output looks like
+
+`show(stdout, MIME"text/plain"(), skel)` prints a five-line summary. Captured
+verbatim from the sirvillage smoke run above:
+
+```
+TrajectorySkeleton
+  clock key  : Tuple{Symbol, Vararg{Int64}}
+  steps      : 16003
+  time span  : 0.0 -> 14.998863194116215
+  top events : Travel 15917 | Recover 36 | Infect 33 | Reset 15 | Mutate 2
+```
+
+The one-line form (used when a skeleton is printed inside another structure) is:
+
+```
+TrajectorySkeleton(16003 steps, t=0.0..14.998863194116215)
+```
+
+The recorded fields are `skel.rng_state` (a copy of the RNG taken before the
+initializer ran), `skel.metadata` (the opaque value above), `skel.init` (the
+initialization record: `when`, `changed`, `enabled`, `disabled`, `proposed`),
+and `skel.steps` (one `SkeletonStep` per fired event, in firing order, each with
+`clock`, `when`, `changed`, `enabled`, `disabled`, `proposed`).
+
+### What each failure form means
+
+  * `ArgumentError: this RecordSkeleton has not observed a run` — you called
+    `recorded_skeleton` before `run`. Pass the policy to `SimulationFSM` and run
+    the simulation first.
+  * `load_skeleton` throws a deserialization or `TypeError` — the file was
+    written under a different Julia or package version (the `Serialization`
+    format is version-bound), or is not a skeleton file. Re-record; do not
+    archive `.skel` files across upgrades.
+  * Steps look truncated after a second `run` on the same sim —
+    re-initializing discards the previous recording. Save the skeleton before
+    re-running.
+
+### How to turn it off
+
+Construct `SimulationFSM` without the `policy` keyword. The default `NoPolicy`
+records nothing and adds zero time and zero allocation: every hook, including
+the once-per-run `on_preinit` that snapshots the RNG, compiles to `return
+nothing`.

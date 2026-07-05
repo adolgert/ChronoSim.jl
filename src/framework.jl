@@ -337,6 +337,7 @@ physical state.
 ```
 """
 function initialize!(init_evt, callback::Function, sim::SimulationFSM)
+    on_preinit(sim.policy, sim)
     changes_result = capture_state_changes(sim.physical) do
         callback(sim.physical, sim.when, sim.rng)
     end

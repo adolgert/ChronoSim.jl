@@ -12,9 +12,10 @@
     ExecutionPolicy
 
 Abstract supertype for executor policies. A policy observes the simulation
-executor at six hook points: [`on_init`](@ref), [`on_propose`](@ref),
-[`on_enable`](@ref), [`on_disable`](@ref), [`on_prefire`](@ref), and
-[`on_postfire`](@ref). Every hook has a no-op default returning `nothing`, so a
+executor at seven hook points: [`on_preinit`](@ref), [`on_init`](@ref),
+[`on_propose`](@ref), [`on_enable`](@ref), [`on_disable`](@ref),
+[`on_prefire`](@ref), and [`on_postfire`](@ref). Every hook has a no-op default
+returning `nothing`, so a
 concrete policy overrides only the hooks it needs. The policy is stored as a
 type parameter of [`SimulationFSM`](@ref); the default [`NoPolicy`](@ref)
 compiles to nothing at every hook site and costs a production run zero time and
@@ -34,6 +35,18 @@ removes. Constructing a [`SimulationFSM`](@ref) without a `policy` keyword uses
 this policy.
 """
 struct NoPolicy <: ExecutionPolicy end
+
+"""
+    on_preinit(policy, sim)
+
+Called as the first act of `initialize!`, before the initializer callback runs
+and before the framework consumes any random numbers. This is the hook at
+which a recording policy snapshots the RNG state that a later `replay` will
+restore; it also sees the fully constructed `SimulationFSM`, so a policy can
+size its storage from `sim` (e.g. the clock-key type). Called again if the
+simulation is re-initialized.
+"""
+on_preinit(::ExecutionPolicy, sim) = nothing
 
 """
     on_init(policy, sim, init_evt, changed_places)
@@ -91,5 +104,5 @@ immediate events it triggered.
 """
 on_postfire(::ExecutionPolicy, sim, clock_key, event, when, changed_places) = nothing
 
-public ExecutionPolicy, NoPolicy, on_init, on_propose, on_enable, on_disable,
-    on_prefire, on_postfire
+public ExecutionPolicy, NoPolicy, on_preinit, on_init, on_propose, on_enable,
+    on_disable, on_prefire, on_postfire
