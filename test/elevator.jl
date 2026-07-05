@@ -14,6 +14,7 @@
 #
 module ElevatorExample
 using CompetingClocks
+using CompetingClocks: CombinedNextReaction
 using Distributions
 using Logging
 using Random
