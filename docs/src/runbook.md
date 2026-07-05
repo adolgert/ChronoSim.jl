@@ -408,3 +408,96 @@ whose `kind` names the problem:
 
 There is nothing to turn off. `guard_clauses` is a diagnostic verb you call
 explicitly; it never runs during `run` and adds no cost to a simulation.
+
+---
+
+## Check model invariants every step
+
+[`@invariant`](@ref) declares named boolean safety properties of the physical
+state; the [`CheckInvariants`](@ref) policy evaluates all of a module's
+invariants after initialization and after every fired event, and throws a
+structured [`InvariantViolation`](@ref) on the first failure — naming the
+invariant, the firing event, and the addresses this fire wrote that the
+invariant reads (the *guilty* addresses). Checking is opt-in and debug/test-tier:
+zero cost when the policy is absent.
+
+### How to invoke it
+
+Declare invariants at the model module's top level, then pass
+`policy=CheckInvariants(MyModel)` to `SimulationFSM` (`run` is not exported; call
+it as `ChronoSim.run`). Compose with a [`RecordSkeleton`](@ref) — recorder first
+— so the violation carries a replayable prefix:
+
+```julia
+using ChronoSim
+
+# In the model module, at top level:
+@invariant "person location xor elevator" function (physical)
+    all((p.location > 0 && p.elevator == 0) || (p.location == 0 && p.elevator > 0)
+        for p in physical.person)
+end
+
+# At run time:
+rec = RecordSkeleton()
+sim = SimulationFSM(physical, events; seed=42,
+    policy=PolicyStack(rec, CheckInvariants(MyModel)))
+ChronoSim.run(sim, InitEvent(), (p, i, e, w) -> w > 120.0)
+```
+
+Prefer one `@invariant` per logical clause: on violation the failing *name* is
+the first diagnostic. An invariant must be a pure boolean function of `physical`
+— one argument, no mutation, no randomness — because the checker re-evaluates it
+on the failure path to recover the read set.
+
+### What its output looks like
+
+`showerror` on the thrown `InvariantViolation`, captured verbatim from an
+elevator run under a test-local corruption event that sets a person's elevator
+while leaving their floor nonzero:
+
+```
+InvariantViolation: invariant "person location xor elevator" is false
+  model    : ChronoSimExamples.ElevatorExample
+  declared : /Users/adolgert/dev/ChronoSimExamples.jl/src/elevator/elevator.jl:258
+  step     : 95 (fires since init)
+  event    : (:CorruptPerson,)
+  when     : 85.79201980830436
+  guilty   : 1 address(es) written by this fire AND read by the invariant
+    (person, 1, elevator)
+  reads    : 2 address(es) in the failing evaluation
+    (person, 1, location)
+    (person, 1, elevator)
+  replay   : replay(sim_factory, skeleton; upto=94)   # reproduces the state one step before the violation
+The invariant held after the previous step; the writes above broke it.
+```
+
+The `replay` line is the exact [`replay`](@ref) call that reconstructs the state
+one step before the break; feed it the skeleton (`recorded_skeleton(rec)`) and a
+factory that rebuilds the sim with the same constructor arguments.
+
+### What each failure form means
+
+  * `step : 0` — the initializer itself violated the invariant; fix init, not an
+    event. `replay` reads `n/a` (re-run the initializer to reproduce the state).
+  * `guilty : none identified` — no address this fire wrote is read by the
+    invariant. The invariant reads state the tracker cannot see (e.g.
+    `Param`-wrapped fields), or the corruption predates this step; use the
+    `replay` command and step forward.
+  * `WARNING : ... not a pure function` — re-evaluation under read capture
+    returned `true`: the invariant gave different answers on the same state.
+    Make it a pure function of `physical`.
+  * `replay : no skeleton recorded` — no `RecordSkeleton` shared the policy
+    stack. Compose `PolicyStack(RecordSkeleton(), CheckInvariants(MyModel))` to
+    capture a replayable prefix.
+  * `ArgumentError: no @invariant is registered for this module` — the module
+    has no declarations, or was not loaded before the policy was constructed.
+  * `@invariant "name" ... returned <T>, not Bool` — an invariant body returned a
+    non-`Bool`; an invariant must be a boolean function of the physical state.
+
+### How to turn it off
+
+Construct `SimulationFSM` without the policy (the default `NoPolicy` checks
+nothing and costs nothing), or leave a [`PolicyStack`](@ref) empty. In the
+examples' entry points, `run_elevator()` / `run_sirvillage()` check only when
+passed `policy=CheckInvariants(...)`; the test suites pass it, production callers
+do not.

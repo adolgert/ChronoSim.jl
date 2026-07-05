@@ -13,6 +13,8 @@ include("policy.jl")
 include("placetoevent.jl")
 include("framework.jl")
 include("skeleton.jl")
+include("policy_stack.jl")      # Phase 1d: PolicyStack + find_policy
+include("invariant.jl")         # Phase 1d: @invariant + CheckInvariants
 include("replay.jl")
 
 end
