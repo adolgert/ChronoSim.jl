@@ -741,3 +741,85 @@ whystopped: the run ended without an exception
 
 Diagnostic only. The violation method reads the exception the checker already
 built; the skeleton method reads a finished skeleton. Neither touches a live run.
+
+---
+
+## Check that events only write what they declare (`@fire` + `CheckEffects`)
+
+[`@fire`](@ref) derives each event's static write set (`effect_spec(EvtType)`) by
+a syntactic taint pass over its `fire!` body — the write-side mirror of
+[`@precondition`](@ref). The [`CheckEffects`](@ref) policy then verifies, after
+initialization and after every fired event, that each captured changed address
+matches a declared write mask. It is opt-in, read-only, and consumes no
+randomness, so a trajectory with it on equals one with it off; it costs a
+production run nothing when absent.
+
+### How to invoke it
+
+Annotate `fire!` with `@fire` (byte-identical runtime behavior) and pass the
+policy to the simulation:
+
+```julia
+@fire function fire!(evt::Infect, physical, when, rng)
+    physical.actors[evt.sink].strain = physical.actors[evt.source].strain
+    physical.actors[evt.sink].state = Infectious
+end
+
+sim = SimulationFSM(physical, events; seed=42, policy=CheckEffects(events))
+ChronoSim.run(sim, InitEvent(), stop)
+derivation_report(Infect)     # includes the WRITES section
+```
+
+`CheckEffects(events)` also unions in the `WriteSpec`s of any `isimmediate` event
+types in `events`, since immediate-event writes merge into the same
+`changed_places`. Compose it with other policies via `PolicyStack`.
+
+### What its output looks like
+
+The `WRITES` section of `derivation_report` (captured verbatim), showing each
+write site's mask, index cleanliness (with the widened-write count), operation,
+and rhs classification, then the rhs mix and any walker notes:
+
+```
+Derivation report for Infect
+  event fields: source, sink
+  triggers: none derived (hand-written generators)
+  WRITES (2 sites, 0 widened)
+    WRITE [actors, ℤ, strain]  CLEAN  binds: sink  op: assign  rhs: state_expr
+    WRITE [actors, ℤ, state]  CLEAN  binds: sink  op: assign  rhs: evt_pure
+  rhs mix: evt_pure 1, state_expr 1, stochastic 0, opaque 0
+```
+
+On a violation the oracle throws an [`EffectCoverageError`](@ref) (captured
+verbatim from a `fire!` that hid a write to `locations` behind an opaque helper):
+
+```
+EffectCoverageError: event Infect wrote an address not
+covered by any WriteSpec.
+  changed address: (locations, 3, cnt)
+  masked to      : (locations, _index, cnt)
+  classified     : missing_container — no WriteSpec names this top-level field (an undeclared effect)
+  declared writes (masked):
+    (actors, _index, strain)
+    (actors, _index, state)
+This event performed a write its @fire analysis did not declare — either the write hides behind an opaque helper (register it with @fragment or use a recognized mutation form) or the walker misclassified the address shape.
+```
+
+### What each failure form means
+
+  * `:missing_container` — an undeclared effect: the changed address's top-level
+    field is named by no `WriteSpec`. Usually a helper the walker could not see
+    (register it with `@fragment` or use a recognized mutation form) or a state
+    write on a container the body never assigns directly.
+  * `:shape_mismatch` — the container is declared but the leaf/index shape
+    differs. Check for an observed-container-valued field assignment (out of
+    fragment) or report a walker bug.
+  * A macro-time `@fire` error naming a `!` call — the mutation form is not in
+    the recognized table; register the helper with `@fragment` or rewrite the
+    mutation with a recognized form. See the Static Effect Analysis guide.
+
+### How to turn it off
+
+Diagnostic only. Construct the `SimulationFSM` without the policy (or leave it
+out of the `PolicyStack`); `@fire` itself only adds analysis metadata and never
+changes runtime behavior.

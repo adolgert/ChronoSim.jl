@@ -106,6 +106,7 @@ makedocs(;
         "Reference" => "reference.md",
         "Debugging & Verification" => [
             "Debugging a Simulation" => "debugging.md",
+            "Static Effect Analysis" => "effect_analysis.md",
             "Runbook" => "runbook.md",
         ],
         "Development" => [

@@ -59,6 +59,16 @@ function precondition_ast end
 # arbitrary opaque calls.
 _is_registered_fragment(@nospecialize(f)) = false
 
+# `fragment_ast(helper) -> (params::Vector{Symbol}, body)` and
+# `domain_ast(::Type{EvtType}, ::Val{field}) -> rhs_ast` are baked accessors for
+# the ORIGINAL un-inlined helper/domain source, emitted by `@fragment`/`@domain`
+# as literal-returning methods (the compile-time registries are empty after
+# precompilation, Amendment 1). Phase 4's effect lowering emits fragments as
+# Quint defs and domains as generator bodies from these. Defined only for the
+# annotated helpers/fields; consumers hasmethod-gate.
+function fragment_ast end
+function domain_ast end
+
 # Structural equality used for dedup/merge (default struct == is identity for the
 # Vector-carrying TupleIndex, so we compare explicitly).
 _idx_equal(a::FieldBinding, b::FieldBinding) = a.field == b.field
@@ -305,7 +315,14 @@ end
 
 ########################### Taint pass ###########################
 
-mutable struct _TaintCtx
+# Abstract supertype so the write-side `@fire` walker (`_FireCtx`, in
+# derive_effects.jl) can reuse the traversal by multiple dispatch instead of
+# copy-paste. The read pass's `_TaintCtx` and the write pass's `_FireCtx` both
+# subtype `_WalkCtx`; every traversal function is annotated `::_WalkCtx` so
+# `_FireCtx` inherits it and overrides only `_walk_call!`/`_walk_assign!`.
+abstract type _WalkCtx end
+
+mutable struct _TaintCtx <: _WalkCtx
     statesym::Symbol
     evtsym::Symbol
     aliases::Dict{Symbol,Any}      # local -> resolved state access chain (rooted at statesym)
@@ -390,7 +407,7 @@ function _callee_name(callee)
     return nothing
 end
 
-function _is_evt_pure(x, ctx::_TaintCtx)
+function _is_evt_pure(x, ctx::_WalkCtx)
     _is_literal(x) && return true
     if x isa Symbol
         return haskey(ctx.evt_locals, x)
@@ -425,9 +442,9 @@ function _has_state_access(e, statesym)
     return false
 end
 
-_contains_state(a, ctx::_TaintCtx) = _has_state_access(_resolve(a, ctx.aliases), ctx.statesym)
+_contains_state(a, ctx::_WalkCtx) = _has_state_access(_resolve(a, ctx.aliases), ctx.statesym)
 
-function _classify_index(ctx::_TaintCtx, idx)
+function _classify_index(ctx::_WalkCtx, idx)
     idx === _TAINT && return TaintedIndex()
     if idx isa Expr && idx.head === :tuple
         return TupleIndex(Any[_classify_index(ctx, c) for c in idx.args])
@@ -458,7 +475,7 @@ function _container_matchstr(chain, statesym)
     return stripped isa Symbol ? Any[Member(stripped)] : access_to_searchkey(stripped)
 end
 
-function _record_read!(ctx::_TaintCtx, resolved_access, source)
+function _record_read!(ctx::_WalkCtx, resolved_access, source)
     stripped = _strip_state_head(resolved_access, ctx.statesym)
     if stripped isa Symbol
         # A top-level scalar field of the physical state is a place with no
@@ -477,13 +494,13 @@ function _record_read!(ctx::_TaintCtx, resolved_access, source)
 end
 
 # Record `container[key]` as a read (haskey/get/get!/∈ per-key form).
-function _record_key_read!(ctx::_TaintCtx, container, key, source)
+function _record_key_read!(ctx::_WalkCtx, container, key, source)
     resolved = Expr(:ref, _resolve(container, ctx.aliases), key)
     _record_read!(ctx, resolved, source)
     return nothing
 end
 
-function _walk!(ctx::_TaintCtx, expr)
+function _walk!(ctx::_WalkCtx, expr)
     if expr isa Symbol
         haskey(ctx.aliases, expr) && _record_read!(ctx, ctx.aliases[expr], string(expr))
         return nothing
@@ -536,7 +553,7 @@ function _walk!(ctx::_TaintCtx, expr)
     end
 end
 
-function _walk_call!(ctx::_TaintCtx, expr)
+function _walk_call!(ctx::_WalkCtx, expr)
     callee = expr.args[1]
     args = expr.args[2:end]
     name = _callee_name(callee)
@@ -579,7 +596,7 @@ function _walk_call!(ctx::_TaintCtx, expr)
     # Opaque user function: a state-derived argument hides reads -> out of fragment.
     for a in args
         if _contains_state(a, ctx)
-            error(_fragment_error(expr, a))
+            error(_fragment_error(ctx, expr, a))
         end
     end
     for a in args
@@ -592,7 +609,7 @@ _is_gen_arg(a) = a isa Expr && (a.head === :generator || a.head === :comprehensi
 
 # Inline a registered @fragment helper call `name(args...)`. Returns false (no-op) when no
 # helper of that (module, name, arity) is registered, so the caller falls through.
-function _try_inline_fragment!(ctx::_TaintCtx, name::Symbol, args)
+function _try_inline_fragment!(ctx::_WalkCtx, name::Symbol, args)
     key = (ctx.mod, name, length(args))
     haskey(_FRAGMENT_REGISTRY, key) || return false
     params, body = _FRAGMENT_REGISTRY[key]
@@ -615,7 +632,7 @@ end
 # Inline a precondition-recursion call. Returns false when the call does not match the
 # `precondition(EvtType(cargs...), caller_state)` shape (so the caller falls through);
 # errors when the shape matches but the callee is undefined / unregistered / wrong arity.
-function _try_inline_precondition!(ctx::_TaintCtx, expr, args)
+function _try_inline_precondition!(ctx::_WalkCtx, expr, args)
     length(args) == 2 || return false
     ctor = args[1]
     (ctor isa Expr && ctor.head === :call) || return false
@@ -664,7 +681,7 @@ end
 # Walk an inlined (already substituted + α-renamed) body in a nested scope, enforcing the
 # depth bound and cycle detection. Helper locals do not leak; caller aliases stay visible
 # so substituted arguments referencing them still resolve as state reads.
-function _inline_walk!(ctx::_TaintCtx, framename::String, body)
+function _inline_walk!(ctx::_WalkCtx, framename::String, body)
     if framename in ctx.stack
         error(
             "recursive @fragment inlining: " *
@@ -673,7 +690,7 @@ function _inline_walk!(ctx::_TaintCtx, framename::String, body)
         )
     end
     ctx.depth < _INLINE_DEPTH_LIMIT || error(
-        "@precondition: @fragment inlining exceeded depth $(_INLINE_DEPTH_LIMIT) " *
+        "$(_walker_macro_name(ctx)): inlining exceeded depth $(_INLINE_DEPTH_LIMIT) " *
         "(stack: $(join(vcat(ctx.stack, framename), " -> "))).",
     )
     push!(ctx.stack, framename)
@@ -685,7 +702,7 @@ function _inline_walk!(ctx::_TaintCtx, framename::String, body)
 end
 
 # A state access chain rooted (via alias) at the state symbol, else nothing.
-function _state_chain(expr, ctx::_TaintCtx)
+function _state_chain(expr, ctx::_WalkCtx)
     r = _access_root(expr)
     if r === ctx.statesym || (r isa Symbol && haskey(ctx.aliases, r))
         return _resolve(expr, ctx.aliases)
@@ -693,7 +710,7 @@ function _state_chain(expr, ctx::_TaintCtx)
     return nothing
 end
 
-function _walk_whitelisted!(ctx::_TaintCtx, name::Symbol, args, expr)
+function _walk_whitelisted!(ctx::_WalkCtx, name::Symbol, args, expr)
     if name in (:haskey, :get, :get!)
         container = args[1]
         key = length(args) >= 2 ? args[2] : nothing
@@ -762,7 +779,7 @@ end
 # Range forms in a `for` header. Returns (:index, container_chain) for a
 # fixed-extent index loop, (:container, container_chain) for direct iteration of a
 # state container, or (:opaque, nothing).
-function _range_kind(range, ctx::_TaintCtx)
+function _range_kind(range, ctx::_WalkCtx)
     if range isa Expr && range.head === :call
         nm = _callee_name(range.args[1])
         if nm === :eachindex && length(range.args) >= 2
@@ -788,7 +805,7 @@ end
 # tainted: the value var aliases an element at an unknown key; key parts are
 # opaque locals (tainted when used as indices). Scope is restored by the caller's
 # snapshot, so these just mutate ctx in place.
-function _bind_container_vars!(ctx::_TaintCtx, var, chain)
+function _bind_container_vars!(ctx::_WalkCtx, var, chain)
     tainted_el = Expr(:ref, chain, _TAINT)
     if var isa Symbol
         ctx.aliases[var] = tainted_el
@@ -807,7 +824,7 @@ function _bind_container_vars!(ctx::_TaintCtx, var, chain)
     return nothing
 end
 
-function _forget_var!(ctx::_TaintCtx, var)
+function _forget_var!(ctx::_WalkCtx, var)
     if var isa Symbol
         delete!(ctx.aliases, var)
         delete!(ctx.evt_locals, var)
@@ -819,20 +836,30 @@ function _forget_var!(ctx::_TaintCtx, var)
     return nothing
 end
 
+# Scope snapshot/restore, overridable so `_FireCtx` also saves its stochastic/
+# `when` local sets. The read-pass `_TaintCtx` saves aliases + evt_locals only.
+_scope_snapshot(ctx::_WalkCtx) = (copy(ctx.aliases), copy(ctx.evt_locals))
+function _scope_restore!(ctx::_WalkCtx, snap)
+    (ctx.aliases, ctx.evt_locals) = snap
+    return nothing
+end
+
+# Macro name used in walker error strings, so `@fire`'s messages don't claim to
+# be `@precondition`. Overridden by `_FireCtx`.
+_walker_macro_name(::_WalkCtx) = "@precondition"
+
 # Run `block` in a nested scope: local aliases/evt-locals created inside do not
 # leak out (a straight-line alias assigned inside a loop or branch is valid only
 # within it, and reads through it are tracked there — tainted when the alias index
 # is loop-derived).
-function _scoped_block!(ctx::_TaintCtx, block)
-    saved_aliases = copy(ctx.aliases)
-    saved_evt = copy(ctx.evt_locals)
+function _scoped_block!(ctx::_WalkCtx, block)
+    snap = _scope_snapshot(ctx)
     _walk_block!(ctx, block)
-    ctx.aliases = saved_aliases
-    ctx.evt_locals = saved_evt
+    _scope_restore!(ctx, snap)
     return nothing
 end
 
-function _walk_if!(ctx::_TaintCtx, expr)
+function _walk_if!(ctx::_WalkCtx, expr)
     _walk!(ctx, expr.args[1])            # condition
     _scoped_block!(ctx, expr.args[2])    # then-branch
     if length(expr.args) >= 3
@@ -846,7 +873,7 @@ function _walk_if!(ctx::_TaintCtx, expr)
     return nothing
 end
 
-function _walk_for!(ctx::_TaintCtx, expr)
+function _walk_for!(ctx::_WalkCtx, expr)
     header = expr.args[1]
     body = expr.args[2]
     (header isa Expr && header.head === :(=)) || (
@@ -859,8 +886,7 @@ function _walk_for!(ctx::_TaintCtx, expr)
     var = header.args[1]
     range = header.args[2]
     kind, chain = _range_kind(range, ctx)
-    saved_aliases = copy(ctx.aliases)
-    saved_evt = copy(ctx.evt_locals)
+    snap = _scope_snapshot(ctx)
     if kind === :index
         _forget_var!(ctx, var)           # index var is opaque -> tainted when used
     elseif kind === :container
@@ -871,19 +897,17 @@ function _walk_for!(ctx::_TaintCtx, expr)
         _forget_var!(ctx, var)
     end
     _walk_block!(ctx, body)
-    ctx.aliases = saved_aliases
-    ctx.evt_locals = saved_evt
+    _scope_restore!(ctx, snap)
     return nothing
 end
 
-function _walk_generator!(ctx::_TaintCtx, gen)
+function _walk_generator!(ctx::_WalkCtx, gen)
     # gen: Expr(:generator, body, iterspec...) where iterspec is `var = range` or
     # Expr(:filter, cond, var=range...).
     gen isa Expr || (_walk!(ctx, gen); return nothing)
     body = gen.args[1]
     iterspecs = gen.args[2:end]
-    saved_aliases = copy(ctx.aliases)
-    saved_evt = copy(ctx.evt_locals)
+    snap = _scope_snapshot(ctx)
     conds = Any[]
     for spec in iterspecs
         if spec isa Expr && spec.head === :filter
@@ -897,12 +921,11 @@ function _walk_generator!(ctx::_TaintCtx, gen)
         _walk!(ctx, c)
     end
     _walk!(ctx, body)
-    ctx.aliases = saved_aliases
-    ctx.evt_locals = saved_evt
+    _scope_restore!(ctx, snap)
     return nothing
 end
 
-function _bind_iter!(ctx::_TaintCtx, spec)
+function _bind_iter!(ctx::_WalkCtx, spec)
     (spec isa Expr && spec.head === :(=)) || return _walk!(ctx, spec)
     var = spec.args[1]
     range = spec.args[2]
@@ -922,7 +945,7 @@ end
 # Statement sequence. An assignment binds a scoped local: a state-access RHS makes
 # a (possibly tainted) alias, an evt-pure RHS makes an evt-local, else the local is
 # opaque. Alias scope is bounded by the enclosing loop/branch (see _scoped_block!).
-function _walk_block!(ctx::_TaintCtx, block)
+function _walk_block!(ctx::_WalkCtx, block)
     stmts = block isa Expr && block.head === :block ? block.args : Any[block]
     for stmt in stmts
         stmt isa LineNumberNode && continue
@@ -935,7 +958,7 @@ function _walk_block!(ctx::_TaintCtx, block)
     return nothing
 end
 
-function _walk_assign!(ctx::_TaintCtx, stmt)
+function _walk_assign!(ctx::_WalkCtx, stmt)
     lhs = stmt.args[1]
     rhs = stmt.args[2]
     if !(lhs isa Symbol)
@@ -962,9 +985,9 @@ function _walk_assign!(ctx::_TaintCtx, stmt)
     return nothing
 end
 
-function _fragment_error(callexpr, arg)
+function _fragment_error(ctx::_WalkCtx, callexpr, arg)
     return """
-    @precondition: cannot derive generators — the call `$(callexpr)` passes state
+    $(_walker_macro_name(ctx)): cannot derive generators — the call `$(callexpr)` passes state
     (`$(arg)`) to an opaque function, which hides the reads it performs. Inline the
     helper into the precondition, or write generators by hand with @conditionsfor.
     """
@@ -1378,6 +1401,10 @@ macro fragment(fdef)
         # the expansion is a block rather than the bare function definition.
         :(Base.@__doc__ $(esc(fdef))),
         :(ChronoSim._is_registered_fragment(::typeof($(esc(name)))) = true),
+        # Baked accessor for the un-inlined helper source (Phase 4). The
+        # compile-time _FRAGMENT_REGISTRY is empty after precompilation.
+        :(ChronoSim.fragment_ast(::typeof($(esc(name)))) =
+            ($params, $(QuoteNode(body)))),
     )
 end
 
@@ -1413,12 +1440,17 @@ macro domain(assignment)
     (lhs isa Expr && lhs.head === :.) || error("@domain expects `EvtType.field = expr`")
     EvtType = lhs.args[1]
     field = _fieldsym(lhs.args[2])
-    return :(
-        function ChronoSim.derived_domain(
-            ::Type{$(esc(EvtType))}, ::Val{$(QuoteNode(field))}, $(esc(:physical))
-        )
-            $(esc(rhs))
-        end
+    return Expr(:block,
+        :(
+            function ChronoSim.derived_domain(
+                ::Type{$(esc(EvtType))}, ::Val{$(QuoteNode(field))}, $(esc(:physical))
+            )
+                $(esc(rhs))
+            end
+        ),
+        # Baked accessor for the un-inlined domain rhs (Phase 4 / diagnostics).
+        :(ChronoSim.domain_ast(::Type{$(esc(EvtType))}, ::Val{$(QuoteNode(field))}) =
+            $(QuoteNode(rhs))),
     )
 end
 
@@ -1449,37 +1481,84 @@ is CLEAN (with the fields it binds and any literal guards) or WIDENED (with the
 reason), plus per-field domain accounting.
 """
 function derivation_report(io::IO, ::Type{T}) where {T}
-    specs = derivation_spec(T)
-    plans = _plan_triggers(specs)
     fnames = fieldnames(T)
     println(io, "Derivation report for $(nameof(T))")
     println(io, "  event fields: $(isempty(fnames) ? "()" : join(fnames, ", "))")
-    for p in plans
-        if p.widened
-            println(io, "  TRIGGER $(_matchstr_str(p.matchstr))  WIDENED")
-            println(io, "    reason: $(p.reason)")
-            println(
-                io, "    enumerates domains for: $(isempty(fnames) ? "()" : join(fnames, ", "))"
-            )
-        else
-            println(io, "  TRIGGER $(_matchstr_str(p.matchstr))  CLEAN")
-            for bs in p.bindsets
-                bound = _bound_fields(bs)
-                free = Symbol[f for f in fnames if !(f in bound)]
-                println(io, "    binds: $(isempty(bound) ? "()" : join(bound, ", "))")
-                println(io, "    guards: $(_guards_str(bs))")
-                isempty(free) || println(io, "    free (enumerated): $(join(free, ", "))")
+    # Read side (`@precondition`). Hand-written events have no `derivation_spec`;
+    # print a note rather than crash so the report also serves `@fire`-only events.
+    if hasmethod(derivation_spec, Tuple{Type{T}})
+        specs = derivation_spec(T)
+        plans = _plan_triggers(specs)
+        for p in plans
+            if p.widened
+                println(io, "  TRIGGER $(_matchstr_str(p.matchstr))  WIDENED")
+                println(io, "    reason: $(p.reason)")
+                println(
+                    io,
+                    "    enumerates domains for: $(isempty(fnames) ? "()" : join(fnames, ", "))",
+                )
+            else
+                println(io, "  TRIGGER $(_matchstr_str(p.matchstr))  CLEAN")
+                for bs in p.bindsets
+                    bound = _bound_fields(bs)
+                    free = Symbol[f for f in fnames if !(f in bound)]
+                    println(io, "    binds: $(isempty(bound) ? "()" : join(bound, ", "))")
+                    println(io, "    guards: $(_guards_str(bs))")
+                    isempty(free) || println(io, "    free (enumerated): $(join(free, ", "))")
+                end
             end
         end
-    end
-    needed = _needed_domains(fnames, plans)
-    if isempty(needed)
-        println(io, "  domains required: none (every field bound by a clean read)")
-    else
-        for f in needed
-            _resolver, prov = _resolve_field_domain(T, f, specs)
-            println(io, "  domain $(nameof(T)).$(f): $prov")
+        needed = _needed_domains(fnames, plans)
+        if isempty(needed)
+            println(io, "  domains required: none (every field bound by a clean read)")
+        else
+            for f in needed
+                _resolver, prov = _resolve_field_domain(T, f, specs)
+                println(io, "  domain $(nameof(T)).$(f): $prov")
+            end
         end
+    else
+        println(io, "  triggers: none derived (hand-written generators)")
+    end
+    # Write side (`@fire`). Present only for `@fire`-annotated events.
+    if hasmethod(effect_spec, Tuple{Type{T}})
+        _writes_report(io, effect_spec(T))
+    end
+    return nothing
+end
+
+# The WRITES section of `derivation_report`, driven by the `EffectSpec` that
+# `@fire` derived. `es` is `effect_spec(T)`. Reports each write site's mask,
+# index cleanliness (CLEAN/WIDENED, with the widened-write count as the
+# over-approximation counter), operation, and rhs classification, then the rhs
+# mix and (bounded) walker notes.
+function _writes_report(io::IO, es)
+    println(io, "  WRITES ($(length(es.writes)) sites, $(es.widened_writes) widened)")
+    mix = Dict{Symbol,Int}()
+    for w in es.writes
+        mix[w.rhs] = get(mix, w.rhs, 0) + 1
+        ms = _matchstr_str(w.matchstr) * (w.subtree ? ".*" : "")
+        if spec_clean(w)
+            bound = _bound_fields(w.indices)
+            bindstr = isempty(bound) ? "" : "  binds: $(join(bound, ", "))"
+            println(io, "    WRITE $(ms)  CLEAN$(bindstr)  op: $(w.op)  rhs: $(w.rhs)")
+        else
+            println(
+                io,
+                "    WRITE $(ms)  WIDENED (tainted index in `$(w.source)`)" *
+                "  op: $(w.op)  rhs: $(w.rhs)",
+            )
+        end
+    end
+    println(
+        io,
+        "  rhs mix: evt_pure $(get(mix, :evt_pure, 0)), state_expr $(get(mix, :state_expr, 0)), " *
+        "stochastic $(get(mix, :stochastic, 0)), opaque $(get(mix, :opaque, 0))",
+    )
+    if !isempty(es.notes)
+        shown = Iterators.take(es.notes, 5)
+        println(io, "  notes: $(join(shown, "; "))" *
+            (length(es.notes) > 5 ? " (+$(length(es.notes) - 5) more)" : ""))
     end
     return nothing
 end

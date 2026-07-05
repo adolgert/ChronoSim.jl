@@ -632,12 +632,15 @@ condition form).
 returned, or the result of a full [`replay`](@ref)); an `ArgumentError` is
 thrown when `sim.when` disagrees with the skeleton's last step.
 
-Static unreachability ("no event can ever write what the predicate reads")
-requires Phase 2's effect analysis; until then the report carries the fixed
-line: reachability analysis requires effect analysis (not yet run).
+Static unreachability ("no event can ever write what the predicate reads") is
+answered by [`can_stop_change`](@ref) when the model's event-type vector is passed
+as `events` and those types carry `@fire` effect specs: the `reachability` field
+then reports `:cannot_change`/`:can_change`/`:unknown`. Without `events` (or when
+the types lack effect specs) the report keeps the fixed line: reachability
+analysis requires effect analysis (not yet run).
 """
 function whyrunning(sim::SimulationFSM, skel::TrajectorySkeleton, stop_predicate;
-                    nsteps::Int=50)
+                    nsteps::Int=50, events=nothing)
     n = length(skel.steps)
     if n > 0 && sim.when != skel.steps[end].when
         throw(ArgumentError(
@@ -691,7 +694,32 @@ function whyrunning(sim::SimulationFSM, skel::TrajectorySkeleton, stop_predicate
     end
 
     return WhyrunningReport(predicate_value, reads, window, top_events, predicate_writes,
-        "reachability analysis requires effect analysis (not yet run)")
+        _reachability_line(sim, r.reads, events))
+end
+
+# The `reachability` field: the real `can_stop_change` verdict when `events` is
+# given and at least one type carries an `effect_spec` (a partial spec set yields
+# an honest :unknown naming the unanalyzed types); the Phase-2 stub only when no
+# events were given or none has a spec. Kept to a single line for the line budget.
+function _reachability_line(sim::SimulationFSM, reads, events)
+    events === nothing && return "reachability analysis requires effect analysis (not yet run)"
+    any(T -> hasmethod(effect_spec, Tuple{Type{T}}), events) ||
+        return "reachability analysis requires effect analysis (not yet run)"
+    sw = can_stop_change(reads, events;
+        enabled_types=unique(typeof.(values(sim.enabled_events))))
+    if sw.verdict === :cannot_change
+        return "reachability: no event can ever write what the stop predicate reads " *
+               "(the run provably cannot stop by state change)"
+    elseif sw.verdict === :unknown
+        return "reachability: unknown — event types lack @fire effect specs: " *
+               join(sw.unanalyzed, ", ")
+    else
+        writers = unique(Symbol[h.event for h in sw.hits])
+        base = "reachability: these event types can write a stop-predicate read: " *
+               join(writers, ", ")
+        return isempty(sw.enabled_hits) && !isempty(sw.disabled_hits) ?
+            base * " (none currently enabled)" : base
+    end
 end
 
 ########## whystopped
