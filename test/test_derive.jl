@@ -848,3 +848,14 @@ end
     cell_gen.generator(e -> push!(acc2, e), board, 2)
     @test acc2 == [_DM.ScalarGate(2)]
 end
+
+@testset "domain_ast bakes the @domain rhs verbatim (amendment C3)" begin
+    # The baked accessor returns the ORIGINAL un-inlined rhs expression (Phase 4
+    # lowers it); the compile-time expansion context is long gone here.
+    @test ChronoSim.domain_ast(_DM.AnyFlag, Val(:idx)) == :(eachindex(physical.cell))
+    @test ChronoSim.domain_ast(_DM.Route, Val(:idx)) == :(eachindex(physical.cell))
+    @test ChronoSim.domain_ast(_DM.Cross, Val(:i)) == :(eachindex(physical.cell))
+    @test ChronoSim.domain_ast(_DM.Cross, Val(:j)) == :(eachindex(physical.cell))
+    # No @domain -> no method (consumers hasmethod-gate).
+    @test !hasmethod(ChronoSim.domain_ast, Tuple{Type{_DM.DoorScan},Val{:idx}})
+end
