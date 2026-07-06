@@ -2,7 +2,7 @@ using ReTest
 using ChronoSim
 using ChronoSim.ObservedState
 using CompetingClocks
-using CompetingClocks: CombinedNextReaction
+using CompetingClocks: NextReactionMethod
 using Distributions
 using Random
 import ChronoSim: precondition, generators, enable, fire!
@@ -35,7 +35,7 @@ on_postfire(p::StackTagPolicy, sim, ck, event, when, changed) =
 function _stack_sim(n; policy=NoPolicy(), observer=nothing, seed=1234)
     return SimulationFSM(
         WakeBoard(n), [WakeFast, WakeSlow];
-        rng=Xoshiro(seed), sampler=CombinedNextReaction{Tuple,Float64}(),
+        rng=Xoshiro(seed), sampler=NextReactionMethod(), key_type=Tuple,
         observer=observer, policy=policy,
     )
 end

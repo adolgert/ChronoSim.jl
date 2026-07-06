@@ -2,7 +2,7 @@ using ReTest
 using ChronoSim
 using ChronoSim.ObservedState
 using CompetingClocks
-using CompetingClocks: CombinedNextReaction
+using CompetingClocks: NextReactionMethod
 using Distributions
 using Random
 import ChronoSim: precondition, generators, enable, fire!
@@ -125,7 +125,7 @@ function _race_run(n::Int; seed::Int, metadata=nothing)
     observer = (p, when, evt, changed) -> push!(obs_traj, (clock_key(evt), when))
     sim = SimulationFSM(
         SkeletonRace.RaceBoard(1), [SkeletonRace.FireA, SkeletonRace.FireB];
-        rng=Xoshiro(seed), sampler=CombinedNextReaction{Tuple,Float64}(),
+        rng=Xoshiro(seed), sampler=NextReactionMethod(), key_type=Tuple,
         observer=observer, policy=rec,
     )
     stop = (p, i, e, w) -> i > n
@@ -152,7 +152,7 @@ end
     observer = (p, when, evt, changed) -> push!(obs2, (clock_key(evt), when))
     sim = SimulationFSM(
         SkeletonRace.RaceBoard(1), [SkeletonRace.FireA, SkeletonRace.FireB];
-        rng=copy(skel.rng_state), sampler=CombinedNextReaction{Tuple,Float64}(),
+        rng=copy(skel.rng_state), sampler=NextReactionMethod(), key_type=Tuple,
         observer=observer,
     )
     stop = (p, i, e, w) -> i > 20
@@ -182,7 +182,7 @@ end
     rec = RecordSkeleton()
     sim = SimulationFSM(
         SkeletonFlip.WakeBoard(1), [SkeletonFlip.WakeFast, SkeletonFlip.WakeSlow];
-        rng=Xoshiro(1234), sampler=CombinedNextReaction{Tuple,Float64}(), policy=rec,
+        rng=Xoshiro(1234), sampler=NextReactionMethod(), key_type=Tuple, policy=rec,
     )
     stop = (p, i, e, w) -> false
     ChronoSim.run(sim, SkeletonFlip.init!, stop)
@@ -223,7 +223,7 @@ end
     observer = (p, when, evt, changed) -> push!(obs_plain, (clock_key(evt), when))
     sim = SimulationFSM(
         SkeletonRace.RaceBoard(1), [SkeletonRace.FireA, SkeletonRace.FireB];
-        rng=Xoshiro(777), sampler=CombinedNextReaction{Tuple,Float64}(),
+        rng=Xoshiro(777), sampler=NextReactionMethod(), key_type=Tuple,
         observer=observer,
     )
     stop = (p, i, e, w) -> i > 30

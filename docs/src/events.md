@@ -132,9 +132,11 @@ ChronoSim.run(sim, initializer, stop_condition)
 ```
 
 `SimulationFSM` takes the physical state and a vector of the event *types*
-in the model. By default it builds a sampler from CompetingClocks.jl; you
-can pass a specific sampler with the `sampler` keyword, and either a `seed`
-or an explicit `rng`.
+in the model. By default it builds the historical next-reaction sampler from
+CompetingClocks.jl; you can select a different one by passing a sampler method
+spec via the `sampler` keyword (e.g. `sampler=FirstReactionMethod()` after
+`using CompetingClocks: FirstReactionMethod`), and either a `seed` or an
+explicit `rng`.
 
 The `initializer` is a function that sets up the state at time zero. Writes
 it makes are recorded exactly like the writes of a firing, and those writes

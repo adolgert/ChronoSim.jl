@@ -2,7 +2,7 @@ using ReTest
 using ChronoSim
 using ChronoSim.ObservedState
 using CompetingClocks
-using CompetingClocks: CombinedNextReaction
+using CompetingClocks: NextReactionMethod
 using Distributions
 using Random
 import ChronoSim: precondition, generators, enable, fire!
@@ -196,7 +196,7 @@ end # module WhyShapes
 function _why_race_sim(policy; seed=0)
     return SimulationFSM(
         SkeletonRace.RaceBoard(1), [SkeletonRace.FireA, SkeletonRace.FireB];
-        rng=Xoshiro(seed), sampler=CombinedNextReaction{Tuple,Float64}(), policy=policy)
+        rng=Xoshiro(seed), sampler=NextReactionMethod(), key_type=Tuple, policy=policy)
 end
 _why_race_factory(policy) = (_why_race_sim(policy; seed=999), SkeletonRace.init!)
 function _why_record_race(n; seed)
@@ -209,7 +209,7 @@ end
 function _why_flip_sim(policy; seed=0)
     return SimulationFSM(
         SkeletonFlip.WakeBoard(1), [SkeletonFlip.WakeFast, SkeletonFlip.WakeSlow];
-        rng=Xoshiro(seed), sampler=CombinedNextReaction{Tuple,Float64}(), policy=policy)
+        rng=Xoshiro(seed), sampler=NextReactionMethod(), key_type=Tuple, policy=policy)
 end
 _why_flip_factory(policy) = (_why_flip_sim(policy; seed=999), SkeletonFlip.init!)
 function _why_record_flip(; seed)
@@ -223,7 +223,7 @@ const _GATE_EVENTS =
     [WhyGate.Tick, WhyGate.Gate, WhyGate.GateHand, WhyGate.GateB, WhyGate.Sleep]
 function _why_gate_sim(policy; seed=0)
     return SimulationFSM(WhyGate.GateBoard(1), _GATE_EVENTS;
-        rng=Xoshiro(seed), sampler=CombinedNextReaction{Tuple,Float64}(), policy=policy)
+        rng=Xoshiro(seed), sampler=NextReactionMethod(), key_type=Tuple, policy=policy)
 end
 _why_gate_factory(policy) = (_why_gate_sim(policy; seed=999), WhyGate.init!)
 function _why_record_gate(n; seed)
@@ -235,7 +235,7 @@ end
 
 function _why_blind_sim(policy; seed=0)
     return SimulationFSM(WhyBlind.BlindBoard(2), [WhyBlind.Blocked, WhyBlind.Bump];
-        rng=Xoshiro(seed), sampler=CombinedNextReaction{Tuple,Float64}(), policy=policy)
+        rng=Xoshiro(seed), sampler=NextReactionMethod(), key_type=Tuple, policy=policy)
 end
 _why_blind_factory(policy) = (_why_blind_sim(policy; seed=999), WhyBlind.init!)
 function _why_record_blind(n; seed)
@@ -492,7 +492,7 @@ end
     rec = RecordSkeleton()
     policy = PolicyStack(rec, CheckInvariants(TwinFlag))
     sim = SimulationFSM(TwinFlag.FlagBoard(1), [TwinFlag.Tick, TwinFlag.Corrupt];
-        rng=Xoshiro(1234), sampler=CombinedNextReaction{Tuple,Float64}(), policy=policy)
+        rng=Xoshiro(1234), sampler=NextReactionMethod(), key_type=Tuple, policy=policy)
     err = try
         ChronoSim.run(sim, TwinFlag.init!, (p, i, e, w) -> false)
         nothing

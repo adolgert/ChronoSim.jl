@@ -1,7 +1,9 @@
 using Logging
 using Random
+import CompetingClocks
 using CompetingClocks:
-    SSA, CombinedNextReaction, enable!, disable!, next, keytype, steploglikelihood
+    SamplingContext, SamplerBuilder, NextReactionMethod, enable!, disable!, next,
+    keytype, steploglikelihood
 
 using Distributions
 
@@ -9,7 +11,7 @@ export SimulationFSM, ModelDefinitionError, TraceEvaluation, trace_likelihood
 
 ########## The Simulation Finite State Machine (FSM)
 
-mutable struct SimulationFSM{State,Sampler,CK,P<:ExecutionPolicy}
+mutable struct SimulationFSM{State,Sampler<:SamplingContext,CK,P<:ExecutionPolicy}
     physical::State
     sampler::Sampler
     immediategen::GeneratorSearch
@@ -20,6 +22,8 @@ mutable struct SimulationFSM{State,Sampler,CK,P<:ExecutionPolicy}
     enabling_times::Dict{CK,Float64}
     observer                    # untouched: untyped, backward compatible
     policy::P                   # NEW, last field
+    step_likelihood::Bool       # opt-in trace-likelihood capability
+    likelihood_eltype::DataType # eltype(θ) for ForwardDiff
 end
 
 
@@ -37,14 +41,14 @@ end
 
 
 """
-    SimulationFSM(physical_state, trans_rules; seed, rng, sampler, observer=nothing)
+    SimulationFSM(physical_state, trans_rules; sampler, key_type, step_likelihood,
+                  likelihood_eltype, seed, rng, observer=nothing, policy=NoPolicy())
 
 Create a simulation.
 
-The `physical_state` is of type `PhysicalState`. The sampler is of type
-`CompetingClocks.SSA`. The `trans_rules` are a list of type `SimEvent`.
-The seed is an integer seed for a `Xoshiro` random number generator. The
-observer is a callback with the signature:
+The `physical_state` is of type `PhysicalState`. The `trans_rules` are a list of
+type `SimEvent`. The seed is an integer seed for a `Xoshiro` random number
+generator. The observer is a callback with the signature:
 
 ```
 observer(physical, when::Float64, event::SimEvent, changed_places::AbstractSet{Tuple})
@@ -56,9 +60,39 @@ represent which places were changed.
 The `policy` keyword is an [`ExecutionPolicy`](@ref) that observes the executor
 at its hook points; it defaults to [`NoPolicy`](@ref), which compiles away and
 costs a production run nothing.
+
+# Sampler selection
+
+The `sampler` keyword takes a CompetingClocks sampler *method spec* or a
+`CompetingClocks.SamplerBuilder`, and `SimulationFSM` owns the random number
+generator and builds the underlying `SamplingContext` itself.
+
+  * `sampler=nothing` (default) uses `NextReactionMethod()`, which reproduces the
+    historical `CombinedNextReaction` sampler and its exact rng stream.
+  * `sampler=spec` where `spec isa CompetingClocks.SamplerSpec` (e.g.
+    `NextReactionMethod()`, `FirstReactionMethod()`) builds a context around that
+    method.
+  * `sampler=builder` where `builder isa SamplerBuilder` uses the builder as-is;
+    in that case `key_type`, `step_likelihood`, and `likelihood_eltype` must not
+    also be passed (the builder already carries them).
+
+The `key_type` keyword overrides the clock-key type (default
+`common_base_key_tuple` of the events). Set `step_likelihood=true` to
+opt in to the trace-likelihood machinery ([`trace_likelihood`](@ref)); passing a
+non-`Float64` `likelihood_eltype` (e.g. `eltype(θ)` for `ForwardDiff`)
+auto-enables it.
+
+Passing a sampler *instance* (e.g. `CombinedNextReaction{K,Float64}()` or a
+`MemorySampler`) is no longer supported and throws an `ArgumentError` with
+migration guidance.
 """
 function SimulationFSM(
-    physical, events; sampler=nothing, observer=nothing, rng=nothing, seed=nothing,
+    physical, events;
+    sampler=nothing,
+    key_type=nothing,
+    step_likelihood::Bool=false,
+    likelihood_eltype::DataType=Float64,
+    observer=nothing, rng=nothing, seed=nothing,
     policy::ExecutionPolicy=NoPolicy(),
 )
     randgen = if !isnothing(rng)
@@ -69,20 +103,60 @@ function SimulationFSM(
         Xoshiro()
     end
 
-    if isnothing(sampler)
-        ClockKey = common_base_key_tuple(events)
-        sampler = CombinedNextReaction{ClockKey,Float64}()
-        @debug "Creating a sampler with clock key type $ClockKey"
+    if sampler isa SamplerBuilder
+        if key_type !== nothing || step_likelihood || likelihood_eltype !== Float64
+            throw(ArgumentError(
+                "When `sampler` is a SamplerBuilder it already carries the clock " *
+                "key type and likelihood settings; do not also pass `key_type`, " *
+                "`step_likelihood`, or `likelihood_eltype`."))
+        end
+        builder = sampler
+        if builder.time_type !== Float64 || builder.start_time != 0.0 ||
+                builder.support_delayed
+            throw(ArgumentError(
+                "SimulationFSM requires a SamplerBuilder with time_type=Float64, " *
+                "start_time=0.0, and support_delayed=false; the simulation clock " *
+                "is Float64, starts at 0.0, and draws via next(), which does not " *
+                "handle delayed reactions."))
+        end
+        ClockKey = builder.clock_type
+        sim_step_likelihood = builder.step_likelihood || builder.path_likelihood ||
+            builder.likelihood_cnt > 1
+        sim_likelihood_eltype = builder.likelihood_eltype
     else
-        ClockKey = keytype(sampler)
+        # A non-Float64 accumulator implies a likelihood watcher is needed.
+        sim_step_likelihood = step_likelihood || likelihood_eltype !== Float64
+        sim_likelihood_eltype = likelihood_eltype
+        ClockKey = key_type !== nothing ? key_type : common_base_key_tuple(events)
+        method = if isnothing(sampler)
+            # Pin the historical default; never let the builder auto-select, which
+            # would pick a different sampler and change every seeded test.
+            NextReactionMethod()
+        elseif sampler isa CompetingClocks.SamplerSpec
+            sampler
+        else
+            throw(ArgumentError(
+                "The `sampler` keyword now takes a sampler *method spec* " *
+                "(e.g. NextReactionMethod(), FirstReactionMethod()) or a " *
+                "CompetingClocks.SamplerBuilder, not a sampler instance. " *
+                "SimulationFSM owns the rng and builds the SamplingContext itself. " *
+                "Replace `sampler=CombinedNextReaction{K,Float64}()` with " *
+                "`sampler=NextReactionMethod(), key_type=K`."))
+        end
+        builder = SamplerBuilder(
+            ClockKey, Float64; method=method,
+            step_likelihood=sim_step_likelihood, likelihood_eltype=sim_likelihood_eltype,
+        )
+        @debug "Creating a sampler with clock key type $ClockKey"
     end
+    ctx = SamplingContext(builder, randgen)
     generator_searches = generators_from_events(events)
     if isnothing(observer)
         observer = (args...) -> nothing
     end
-    return SimulationFSM{typeof(physical),typeof(sampler),ClockKey,typeof(policy)}(
+    return SimulationFSM{typeof(physical),typeof(ctx),ClockKey,typeof(policy)}(
         physical,
-        sampler,
+        ctx,
         generator_searches["immediate"],
         0.0,
         randgen,
@@ -91,12 +165,15 @@ function SimulationFSM(
         Dict{ClockKey,Float64}(),
         observer,
         policy,
+        sim_step_likelihood,
+        sim_likelihood_eltype,
     )
 end
 
 
 function checksim(sim::SimulationFSM)
     @assert keys(sim.enabled_events) == keys(sim.event_dependency.depnet.event)
+    @assert sim.when == time(sim.sampler)
 end
 
 struct ModelDefinitionError <: Exception
@@ -157,7 +234,9 @@ function sim_event_enable(event::SimEvent, event_key, sim, when)
         return enabling_spec
     end
     (dist, enable_time) = reads_result.result
-    enable!(sim.sampler, event_key, dist, enable_time, sim.when, sim.rng)
+    # User contract is absolute `enable_time`; the context takes a relative shift
+    # `te = ctx.time + relative_te`, and `sim.when == time(ctx)` here.
+    enable!(sim.sampler, event_key, dist, enable_time - sim.when)
     on_enable(sim.policy, sim, event_key, event, dist, enable_time)
     return (; reads=reads_result.reads)
 end
@@ -172,7 +251,8 @@ function sim_event_reenable(event::SimEvent, event_key, sim)
     end
     if !isnothing(reads_result.result)
         (dist, enable_time) = reads_result.result
-        enable!(sim.sampler, event_key, dist, enable_time, sim.when, sim.rng)
+        # Absolute `enable_time` → relative shift; `sim.when == time(ctx)` here.
+        enable!(sim.sampler, event_key, dist, enable_time - sim.when)
         on_enable(sim.policy, sim, event_key, event, dist, enable_time)
     end
     return reads_result.reads
@@ -270,7 +350,7 @@ function disable_clocks!(sim::SimulationFSM, clock_keys)
     @debug "Disable clock $(clock_keys)"
     for clock_done in clock_keys
         on_disable(sim.policy, sim, clock_done)
-        disable!(sim.sampler, clock_done, sim.when)
+        disable!(sim.sampler, clock_done)
         delete!(sim.enabled_events, clock_done)
         delete!(sim.enabling_times, clock_done)
     end
@@ -314,7 +394,8 @@ function fire!(sim::SimulationFSM, when, what)
     # `fire!` rather than `disable!`. Disabling would censor the draw and let a
     # reusing sampler (e.g. CombinedNextReaction) resurrect residual randomness
     # for a draw that was fully consumed -- a statistics bug for non-exponential
-    # distributions.
+    # distributions. The SamplingContext's `fire!` sets `ctx.time = when` and
+    # delegates to the underlying sampler's `fire!`, preserving this invariant.
     fire!(sim.sampler, what, when)
     delete!(sim.enabled_events, what)
     delete!(sim.enabling_times, what)
@@ -371,7 +452,7 @@ is between events.
 # Next-event source for the forward executor: draw from the sampler.
 struct _SamplerNext end
 function (::_SamplerNext)(sim::SimulationFSM, step_idx)
-    (when, what) = next(sim.sampler, sim.when, sim.rng)
+    (when, what) = next(sim.sampler)
     if isfinite(when) && !isnothing(what)
         return (when, what)
     else
@@ -454,8 +535,10 @@ The result of evaluating a recorded trace against a model with
 
 # Fields
 
-  * `loglikelihood::Float64` — sum of the per-step log-likelihoods, or `-Inf`
-    when the trace is infeasible under the model.
+  * `loglikelihood::L` — sum of the per-step log-likelihoods, or `-Inf`
+    when the trace is infeasible under the model. The element type `L` is
+    `sim.likelihood_eltype` (`Float64` by default, or a `ForwardDiff.Dual`
+    when `likelihood_eltype=eltype(θ)` was passed for gradients).
   * `feasible::Bool` — `true` when every step of the trace named an enabled
     event at a time strictly after the previous event.
   * `steps_evaluated::Int` — number of steps successfully evaluated; equals
@@ -466,15 +549,20 @@ The result of evaluating a recorded trace against a model with
     `reason` is `:not_enabled` (the event was not in `sim.enabled_events` when
     its turn came) or `:time_order` (its time was not strictly greater than the
     simulation clock).
-  * `steploglik::Vector{Float64}` — the per-step log-likelihood contributions,
+  * `steploglik::Vector{L}` — the per-step log-likelihood contributions,
     one entry per evaluated step.
+
+The `sim` passed to [`trace_likelihood`](@ref) must be constructed with
+`step_likelihood=true` so its `SamplingContext` records the enabled-clock
+likelihood. To make the result differentiable with `ForwardDiff`, also pass
+`likelihood_eltype=eltype(θ)`, which sets `L` to the Dual number type.
 """
-struct TraceEvaluation
-    loglikelihood::Float64
+struct TraceEvaluation{L<:Real}
+    loglikelihood::L
     feasible::Bool
     steps_evaluated::Int
     first_infeasible::Union{Nothing,Tuple{Int,Any,Symbol}}
-    steploglik::Vector{Float64}
+    steploglik::Vector{L}
 end
 
 function Base.show(io::IO, ev::TraceEvaluation)
@@ -498,12 +586,12 @@ function Base.show(io::IO, ::MIME"text/plain", ev::TraceEvaluation)
 end
 
 # Per-step gate for the evaluator: feasibility check + accumulation.
-mutable struct _TraceAccumulator
-    steploglik::Vector{Float64}
+mutable struct _TraceAccumulator{L<:Real}
+    steploglik::Vector{L}
     feasible::Bool
     first_infeasible::Union{Nothing,Tuple{Int,Any,Symbol}}
 end
-_TraceAccumulator() = _TraceAccumulator(Float64[], true, nothing)
+_TraceAccumulator{L}() where {L<:Real} = _TraceAccumulator{L}(L[], true, nothing)
 function (acc::_TraceAccumulator)(sim::SimulationFSM, step_idx, what, when)
     reason = if !haskey(sim.enabled_events, what)
         :not_enabled
@@ -517,7 +605,9 @@ function (acc::_TraceAccumulator)(sim::SimulationFSM, step_idx, what, when)
         acc.first_infeasible = (step_idx, what, reason)
         return true                       # stop the loop; do NOT fire
     end
-    push!(acc.steploglik, steploglikelihood(sim.sampler.track, sim.when, when, what))
+    # The accumulator runs BEFORE fire! advances the clocks, so ctx.time (which
+    # the context supplies as t0 internally) is the previous event time.
+    push!(acc.steploglik, steploglikelihood(sim.sampler, when, what))
     return false
 end
 
@@ -538,27 +628,27 @@ stops and the result has `feasible == false`, `loglikelihood == -Inf`, and
 `first_infeasible` identifying the step. A trace entry with a non-finite time
 ends evaluation early without marking the trace infeasible.
 
-`sim.sampler` must expose the enabled-clock record at `sim.sampler.track`; wrap
-any sampler in a `CompetingClocks.MemorySampler`:
+`sim` must be constructed with `step_likelihood=true` so its `SamplingContext`
+records the enabled-clock likelihood. To make the result differentiable with
+`ForwardDiff`, also pass `likelihood_eltype=eltype(θ)`:
 
 ```julia
-base_sampler = CombinedNextReaction{K,T}()
-memory_sampler = MemorySampler(base_sampler)
+sim = SimulationFSM(physical, events; step_likelihood=true, likelihood_eltype=eltype(θ))
 ```
 """
 function trace_likelihood(
     sim::SimulationFSM, init_evt::SimEvent, init_func::Function, trace::AbstractVector
 )
-    if !hasproperty(sim.sampler, :track)
-        throw(ArgumentError(
-            "trace_likelihood needs a sampler that records enabled clocks; " *
-            "wrap your sampler: MemorySampler($(nameof(typeof(sim.sampler)))(...))."))
-    end
+    sim.step_likelihood || throw(ArgumentError(
+        "trace_likelihood needs a simulation built with step_likelihood=true; " *
+        "for gradients also pass likelihood_eltype=eltype(θ). " *
+        "Example: SimulationFSM(physical, events; step_likelihood=true)"))
     Base.require_one_based_indexing(trace)
-    acc = _TraceAccumulator()
+    L = sim.likelihood_eltype
+    acc = _TraceAccumulator{L}()
     initialize!(init_evt, init_func, sim)
     _step_loop!(sim, _TraceNext(trace), acc)
-    loglikelihood = acc.feasible ? sum(acc.steploglik; init=0.0) : -Inf
+    loglikelihood = acc.feasible ? sum(acc.steploglik; init=zero(L)) : convert(L, -Inf)
     return TraceEvaluation(
         loglikelihood, acc.feasible, length(acc.steploglik), acc.first_infeasible,
         acc.steploglik,

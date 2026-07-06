@@ -2,7 +2,7 @@ using ReTest
 using ChronoSim
 using ChronoSim.ObservedState
 using CompetingClocks
-using CompetingClocks: CombinedNextReaction
+using CompetingClocks: NextReactionMethod
 using Distributions
 using Random
 import ChronoSim: precondition, generators, enable, fire!
@@ -275,7 +275,7 @@ module HarvestFix
 using ChronoSim
 using ChronoSim.ObservedState
 using CompetingClocks
-using CompetingClocks: CombinedNextReaction
+using CompetingClocks: NextReactionMethod
 using Distributions
 using Random
 import ChronoSim: precondition, generators, enable, fire!
@@ -327,7 +327,7 @@ end
 const EVENTS = [Turn, Reset]
 function run_it(policy)
     g = Grid(3)
-    sim = SimulationFSM(g, EVENTS; sampler=CombinedNextReaction{Tuple,Float64}(),
+    sim = SimulationFSM(g, EVENTS; sampler=NextReactionMethod(), key_type=Tuple,
         rng=Xoshiro(11), policy=policy)
     initf = function (p, when, rng)
         for i in eachindex(p.cell)
@@ -350,7 +350,7 @@ module HarvestPlainFix
 using ChronoSim
 using ChronoSim.ObservedState
 using CompetingClocks
-using CompetingClocks: CombinedNextReaction
+using CompetingClocks: NextReactionMethod
 using Distributions
 using Random
 import ChronoSim: precondition, generators, enable, fire!
@@ -403,7 +403,7 @@ end
 const EVENTS = [Toggle, Plain]
 function run_it(policy)
     g = Grid(3)
-    sim = SimulationFSM(g, EVENTS; sampler=CombinedNextReaction{Tuple,Float64}(),
+    sim = SimulationFSM(g, EVENTS; sampler=NextReactionMethod(), key_type=Tuple,
         rng=Xoshiro(7), policy=policy)
     initf = function (p, when, rng)
         for i in eachindex(p.cell)

@@ -14,7 +14,7 @@
 #
 module ElevatorExample
 using CompetingClocks
-using CompetingClocks: CombinedNextReaction
+using CompetingClocks: NextReactionMethod
 using Distributions
 using Logging
 using Random
@@ -742,8 +742,6 @@ function run_elevator()
     elevator_cnt = 1
     floor_cnt = 3
     minutes = 120.0
-    ClockKey=Tuple
-    Sampler = CombinedNextReaction{ClockKey,Float64}
     physical = ElevatorSystem(person_cnt, elevator_cnt, floor_cnt)
     included_transitions = [
         PickNewDestination,
@@ -777,8 +775,6 @@ function run_with_trace()
     elevator_cnt = 2
     floor_cnt = 5
     minutes = 120.0
-    ClockKey=Tuple
-    Sampler = CombinedNextReaction{ClockKey,Float64}
     physical = ElevatorSystem(person_cnt, elevator_cnt, floor_cnt)
     included_transitions = [
         PickNewDestination,
@@ -796,7 +792,8 @@ function run_with_trace()
     sim = SimulationFSM(
         physical,
         included_transitions;
-        sampler=Sampler(),
+        sampler=NextReactionMethod(),
+        key_type=Tuple,
         rng=Xoshiro(93472934),
         observer=tla_recorder,
     )

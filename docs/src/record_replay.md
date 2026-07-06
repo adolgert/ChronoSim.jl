@@ -36,7 +36,6 @@ trajectory is byte-identical to the same-seed run unrecorded.
 ```julia
 using ChronoSim
 using ChronoSim.ObservedState
-using CompetingClocks: CombinedNextReaction
 using Distributions
 using Random: Xoshiro
 import ChronoSim: precondition, generators, enable, fire!
@@ -93,7 +92,7 @@ using .Race: RaceBoard, FireA, FireB
 # Record a 30-step run of the two-clock race.
 rec = RecordSkeleton(metadata=(model="race", n=1, seed=12345))
 sim = SimulationFSM(RaceBoard(1), [FireA, FireB];
-    rng=Xoshiro(12345), sampler=CombinedNextReaction{Tuple,Float64}(), policy=rec)
+    rng=Xoshiro(12345), policy=rec)
 ChronoSim.run(sim, Race.init!, (p, i, e, w) -> i > 30)
 skel = recorded_skeleton(rec)
 ```
@@ -128,7 +127,7 @@ give it a **factory** that rebuilds the identical simulation:
 
 ```julia
 factory = policy -> (SimulationFSM(RaceBoard(1), [FireA, FireB];
-    rng=Xoshiro(12345), sampler=CombinedNextReaction{Tuple,Float64}(),
+    rng=Xoshiro(12345),
     policy=policy),
     Race.init!)
 ```

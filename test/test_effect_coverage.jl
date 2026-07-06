@@ -2,7 +2,7 @@ using ReTest
 using ChronoSim
 using ChronoSim.ObservedState
 using CompetingClocks
-using CompetingClocks: CombinedNextReaction
+using CompetingClocks: NextReactionMethod
 using Distributions
 using Random
 import ChronoSim: precondition, generators, enable, fire!, isimmediate
@@ -15,7 +15,7 @@ module OracleModel
 using ChronoSim
 using ChronoSim.ObservedState
 using CompetingClocks
-using CompetingClocks: CombinedNextReaction
+using CompetingClocks: NextReactionMethod
 using Distributions
 using Random
 import ChronoSim: precondition, generators, enable, fire!
@@ -193,7 +193,7 @@ end
 @testset "oracle passes a conforming full run" begin
     board = OM.Board(3)
     sim = SimulationFSM(board, [OM.Wake]; rng=Xoshiro(7),
-        sampler=CombinedNextReaction{Tuple,Float64}(),
+        sampler=NextReactionMethod(), key_type=Tuple,
         policy=ChronoSim.CheckEffects([OM.Wake]))
     ChronoSim.run(sim, OM.good_init, (p, i, e, w) -> i > 5)
     @test sim.when >= 0.0
@@ -227,7 +227,7 @@ end
 @testset "oracle checks the init event (on_init)" begin
     board = OM.Board(3)
     sim = SimulationFSM(board, [OM.Wake]; rng=Xoshiro(9),
-        sampler=CombinedNextReaction{Tuple,Float64}(),
+        sampler=NextReactionMethod(), key_type=Tuple,
         policy=ChronoSim.CheckEffects([OM.Wake]))
     err = @test_throws ChronoSim.EffectCoverageError ChronoSim.run(
         sim, OM.BadInit(), (p, i, e, w) -> i > 3)
@@ -239,7 +239,7 @@ end
     # and the postfire check on TimedTick passes.
     board = OI.ChainBoard(1)
     sim = SimulationFSM(board, [OI.TimedTick, OI.Chain]; rng=Xoshiro(90210),
-        sampler=CombinedNextReaction{Tuple,Float64}(),
+        sampler=NextReactionMethod(), key_type=Tuple,
         policy=ChronoSim.CheckEffects([OI.TimedTick, OI.Chain]))
     ChronoSim.run(sim, OI.init!, (p, i, e, w) -> i > 5)
     @test board.cell[1].b == board.cell[1].a
@@ -248,7 +248,7 @@ end
     # postfire check on TimedTick throws.
     board2 = OI.ChainBoard(1)
     sim2 = SimulationFSM(board2, [OI.TimedTick, OI.Chain]; rng=Xoshiro(90210),
-        sampler=CombinedNextReaction{Tuple,Float64}(),
+        sampler=NextReactionMethod(), key_type=Tuple,
         policy=ChronoSim.CheckEffects([OI.TimedTick]))   # Chain excluded
     err = @test_throws ChronoSim.EffectCoverageError ChronoSim.run(
         sim2, OI.init!, (p, i, e, w) -> i > 5)
@@ -313,7 +313,7 @@ end
 @testset "postfire hook is allocation free when CheckEffects is absent" begin
     board = OM.Board(1)
     sim = SimulationFSM(board, [OM.Wake]; rng=Xoshiro(3),
-        sampler=CombinedNextReaction{Tuple,Float64}())
+        sampler=NextReactionMethod(), key_type=Tuple)
     _postfire_loop(sim, 1)     # warmup / compile
     @test @allocated(_postfire_loop(sim, 100_000)) == 0
 end

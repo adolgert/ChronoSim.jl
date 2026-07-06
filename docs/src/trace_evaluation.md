@@ -26,16 +26,17 @@ Three situations bring a modeler here:
   hand-edited one — may name an event the model never enabled. `trace_likelihood`
   catches that as an infeasible verdict rather than silently returning a number.
 
-## The MemorySampler requirement
+## The `step_likelihood` requirement
 
 Scoring a step means asking the model *which clocks were enabled, with what
-distributions, at this instant* — the competing-clock set. A plain sampler does
-not keep that set queryable after the fact, so the evaluation simulation's
-sampler must be wrapped in a `CompetingClocks.MemorySampler`. This is the one
+distributions, at this instant* — the competing-clock set. A plain simulation
+does not keep that set queryable after the fact, so the evaluation simulation
+must be built with `step_likelihood=true`, which tells its `SamplingContext` to
+record the enabled-clock likelihood as the run walks the trace. This is the one
 setup rule; forget it and `trace_likelihood` throws an `ArgumentError` reading
-*"trace_likelihood needs a sampler that records enabled clocks"*. The
-`MemorySampler` is only needed on the **evaluation** sim — the run that produced
-the trace can use any sampler.
+*"trace_likelihood needs a simulation built with step_likelihood=true"*. The
+flag is only needed on the **evaluation** sim — the run that produced the trace
+can be built with the default settings.
 
 ## A worked example: the two-clock race
 
@@ -49,7 +50,6 @@ so the survivor keeps racing. `FireA` has rate `LA = 2.0`, `FireB` has rate
 ```julia
 using ChronoSim
 using ChronoSim.ObservedState
-using CompetingClocks: CombinedNextReaction, MemorySampler
 using Distributions
 using Random: Xoshiro
 import ChronoSim: precondition, generators, enable, fire!
@@ -111,13 +111,13 @@ observer = (physical, when, event, changed) -> begin
 end
 fsim = SimulationFSM(RaceBoard(1), [FireA, FireB];
     rng=Xoshiro(424242),
-    sampler=CombinedNextReaction{Tuple,Float64}(),
     observer=observer)
 ChronoSim.run(fsim, Race.init!, (p, i, e, w) -> i > 20)
 
-# 2. Evaluate on a *fresh* sim whose sampler records enabled clocks.
+# 2. Evaluate on a *fresh* sim built with step_likelihood=true so it records
+#    the enabled-clock set at each step.
 esim = SimulationFSM(RaceBoard(1), [FireA, FireB];
-    rng=Xoshiro(7), sampler=MemorySampler(CombinedNextReaction{Tuple,Float64}()))
+    rng=Xoshiro(7), step_likelihood=true)
 ev = trace_likelihood(esim, Race.init!, trace)
 ```
 
@@ -184,6 +184,143 @@ trace_likelihood(esim, Race.init!, fixed).loglikelihood   # = -3.015093350212
 Two `FireA` and one `FireB` ending at `t = 1.1` give
 `2 log 2 + log 3 − 5·1.1 = -3.0150933502119996`. The evaluator agrees.
 
+## Differentiating a trace likelihood
+
+Once the sequence of events is fixed, the trace log-likelihood is a smooth
+function of the clock distributions' rate parameters, and its gradient with
+respect to those parameters is the *score function*. Because `SimulationFSM`
+now drives CompetingClocks through the high-level `SamplingContext`, that
+gradient is available directly from
+[ForwardDiff.jl](https://github.com/JuliaDiff/ForwardDiff.jl): score for
+maximum-likelihood or Hamiltonian Monte Carlo, and the negative Hessian for the
+observed information (standard errors).
+
+The mechanics are one keyword plus one modelling rule:
+
+* **`likelihood_eltype=eltype(θ)`** on `SimulationFSM` is what routes
+  `ForwardDiff.Dual` numbers into the likelihood accumulator. Pass it together
+  with `step_likelihood=true`: when the closure is later evaluated at a plain
+  `Float64` vector, `eltype(θ)` is `Float64` and only the explicit
+  `step_likelihood=true` keeps `trace_likelihood` working. The result's
+  `loglikelihood` (and every entry of `steploglik`) then has element type
+  `eltype(θ)`: a `Float64` under plain evaluation, a `Dual` under
+  differentiation, so the *same* closure serves both.
+* **The parameters must reach the events' `enable` functions
+  Dual-generically.** The derivative information rides in the distribution
+  parameters, so the `Exponential`/`Weibull`/… each step re-proposes must be
+  rebuilt from the vector ForwardDiff perturbs. Route `θ` through a `Ref` or a
+  parametric field of the physical state whose element type is not pinned to
+  `Float64` — an `Any`-typed `Ref` is the simplest — so a `Dual` fits where a
+  `Float64` did. Event *times* stay `Float64` throughout.
+
+Under the hood the sampler always runs on primal `Float64` values (CompetingClocks
+strips the `Dual`s at the single boundary through which every `enable!` reaches
+the sampler), while the likelihood watcher keeps the `Dual`s and accumulates the
+gradient. Sampling happens at a concrete parameter point; only the scoring is
+differentiated. This is the statistically correct split, not a compromise — see
+CompetingClocks' "Differentiating the Path Likelihood" narrative for the theory.
+
+Here is the two-clock race again, rewritten so its rates come from a module
+global `Ref` that a caller can fill with either plain numbers or `Dual`s. The
+`Ref` is `Any`-typed precisely so one closure serves both:
+
+```julia
+using ChronoSim
+using ChronoSim.ObservedState
+using Distributions
+using ForwardDiff
+using Random: Xoshiro
+import ChronoSim: precondition, generators, enable, fire!
+
+module ADRace
+using ChronoSim
+using ChronoSim.ObservedState
+using Distributions
+import ChronoSim: precondition, generators, enable, fire!
+
+# Rates reach enable() Dual-generically: an `Any`-typed Ref so (Float64, Float64)
+# and (Dual, Dual) tuples both fit. Exponential takes the scale, so rate λ is
+# Exponential(1/λ).
+const RATES = Ref{NTuple{2,Any}}((2.0, 3.0))
+
+@keyedby ADCell Int64 begin
+    a::Int64
+    b::Int64
+end
+
+@observedphysical ADBoard begin
+    cell::ObservedVector{ADCell,Member}
+end
+
+function ADBoard(n::Int)
+    cells = ObservedArray{ADCell,Member}(undef, n)
+    for i in eachindex(cells)
+        cells[i] = ADCell(0, 0)
+    end
+    return ADBoard(cells)
+end
+
+struct FireA <: SimEvent
+    idx::Int64
+end
+@precondition precondition(evt::FireA, state) = state.cell[evt.idx].a >= 0
+enable(::FireA, state, when) = (Exponential(1 / RATES[][1]), when)
+fire!(evt::FireA, state, when, rng) = (state.cell[evt.idx].a += 1; nothing)
+
+struct FireB <: SimEvent
+    idx::Int64
+end
+@precondition precondition(evt::FireB, state) = state.cell[evt.idx].b >= 0
+enable(::FireB, state, when) = (Exponential(1 / RATES[][2]), when)
+fire!(evt::FireB, state, when, rng) = (state.cell[evt.idx].b += 1; nothing)
+
+function init!(state, when, rng)
+    state.cell[1].a = 0
+    state.cell[1].b = 0
+    return nothing
+end
+end # module
+
+using .ADRace: ADBoard, RATES
+
+# A fixed trace: FireA fires at 0.3 and 1.1, FireB at 0.7.
+trace = Tuple{Float64,Tuple}[(0.3, (:FireA, 1)), (0.7, (:FireB, 1)), (1.1, (:FireA, 1))]
+
+# The differentiable closure: push θ into RATES, build an evaluation sim whose
+# likelihood eltype matches θ, and return the trace log-likelihood.
+function loglik(θ)
+    RATES[] = (θ[1], θ[2])
+    sim = SimulationFSM(ADBoard(1), [ADRace.FireA, ADRace.FireB];
+        rng=Xoshiro(7), step_likelihood=true, likelihood_eltype=eltype(θ),
+        key_type=Tuple)
+    return trace_likelihood(sim, ADRace.init!, trace).loglikelihood
+end
+
+score = ForwardDiff.gradient(loglik, [2.0, 3.0])      # the score s(θ) = ∇ log L
+info  = -ForwardDiff.hessian(loglik, [2.0, 3.0])      # observed information
+```
+
+For this always-enabled exponential race the score has a closed form,
+`∂ log L / ∂λ_k = n_k/λ_k − t_N` with `n_k` the number of times clock `k`
+fired and `t_N` the last event time, so the answer is checkable by hand. With
+two `FireA` firings, one `FireB`, and `t_N = 1.1`:
+
+```julia
+score ≈ [2/2.0 - 1.1, 1/3.0 - 1.1]   # ≈ [-0.1, -0.7666…]
+```
+
+The same closure evaluated at a plain `Float64` vector returns a `Float64`
+equal to the value computed in [Checking the number by hand](@ref) above —
+`eltype(θ)` is then `Float64`, and the explicit `step_likelihood=true` keeps
+ordinary evaluation working. Non-exponential clocks need nothing special: replace the
+`Exponential` in `enable` with, say, `Weibull(θ[1], θ[2])` and the same code
+differentiates a genuinely semi-Markov race. Any distribution whose
+`logpdf`/`logccdf` are differentiable in its parameters works.
+
+Infeasibility survives differentiation: an infeasible trace still produces
+`feasible == false` and a `loglikelihood` of `-Inf`, converted to the
+`Dual` element type when `θ` carries `Dual`s.
+
 ## Reading an infeasible verdict
 
 Corrupt step 17 to name a clock the model never enabled — `(:FireA, 99)`, an
@@ -236,8 +373,8 @@ Two non-failure endings are worth knowing:
 * An **empty trace** is feasible with `loglikelihood = 0.0` and zero steps.
 
 And the one setup error: an `ArgumentError` reading *"trace_likelihood needs a
-sampler that records enabled clocks"* means the evaluation sim's sampler was not
-wrapped in a `MemorySampler`. Wrap it as shown above.
+simulation built with step_likelihood=true"* means the evaluation sim was built
+without that flag. Add `step_likelihood=true` as shown above.
 
 ## What to do with the answer
 

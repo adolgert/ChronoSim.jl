@@ -1,5 +1,11 @@
 # Plan
 
+!!! note "Historical design note"
+    This page records the framework's original design thinking. Some code
+    sketches here (the `@simulation` macro, `sampler = CombinedNextReaction`)
+    were never implemented or predate the current API; treat them as intent,
+    not as usage guidance. For current usage see [Events](@ref) and the runbook.
+
 This simulation framework asks a question: How can we simulate with time-varying
 hazards and get full expressiveness and statistical capability?
 
