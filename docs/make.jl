@@ -105,6 +105,10 @@ makedocs(;
         ],
         "Reference" => "reference.md",
         "Debugging & Verification" => [
+            "Overview" => "debugging_verification_overview.md",
+            "Evaluating a Trace" => "trace_evaluation.md",
+            "Recording & Replaying" => "record_replay.md",
+            "Declaring Invariants" => "invariants.md",
             "Debugging a Simulation" => "debugging.md",
             "Static Effect Analysis" => "effect_analysis.md",
             "Linting a Model" => "lint_footprints.md",

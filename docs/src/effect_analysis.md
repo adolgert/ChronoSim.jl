@@ -154,3 +154,10 @@ The two-line fix is to make the write visible — either mark the helper
 directly in the `fire!` body. `:missing_container` means the changed field's
 top-level container is named by no spec; `:shape_mismatch` means the container is
 declared but at a different leaf or index shape.
+
+## Related
+
+* Runbook: [Check that events only write what they declare](@ref "Check that events only write what they declare (`@fire` + `CheckEffects`)").
+* [Linting a model's footprints](@ref "Linting a model's footprints") — consumes
+  the write masks `@fire` derives.
+* [Debugging & Verification](@ref) — the overview and symptom-to-technique table.

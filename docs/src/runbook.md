@@ -12,7 +12,10 @@ feature and gives, in order:
 4. **How to turn it off** — every debugging feature is opt-in; this says what
    "off" is.
 
-Entries are added as each phase of the debugging-and-verification plan lands.
+Entries are added as each debugging-and-verification feature lands. For the
+narrative behind each feature — when to reach for it and how to read its
+answer — see the [overview](@ref "Debugging & Verification") and its linked
+guides.
 
 ---
 
@@ -643,8 +646,9 @@ whyrunning over window 2160:2209; stop predicate is false
   reachability analysis requires effect analysis (not yet run)
 ```
 
-The last line is a Phase-2 stub: the static "no event can ever write what the
-predicate reads" verdict needs effect analysis, which is not yet built. Until
+The last line is a stub: the static "no event can ever write what the
+predicate reads" verdict needs effect-analysis reachability
+(`can_stop_change`) wired into `whyrunning`, which is not yet done. Until
 then the report says only that nothing wrote those addresses *recently*.
 
 ### What each failure form means
@@ -860,8 +864,8 @@ helpers `@fragment`. Derived (`@precondition`) events need nothing.
 
 Captured verbatim from the SIRVillage model
 (`lint([InitEvent, Travel, Infect, Recover, Reset, Mutate]; physical=Village(30,10,1.0,Xoshiro(2938423)))`).
-This report was reviewed by a human once and is archived here (plan definition of
-done 2):
+This report was reviewed by a human once and is archived here as the reference
+output:
 
 ```
 LintReport: 6 events
@@ -1005,7 +1009,7 @@ The outcome is: NoError
 ```
 
 Wall-clocks scale with depth and instance size: on the 3-person elevator the
-compiled `inv` proves at depth 5 in ≈ 25 s; the Phase-0 hand translation's type
+compiled `inv` proves at depth 5 in ≈ 25 s; an early hand translation's type
 invariant at depth 10 took ≈ 10 min and its safety invariant at depth 8 ≈ 1.5 min
 (`quint_spike/RESULTS.md`). Start small and grow the depth.
 

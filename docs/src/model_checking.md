@@ -84,7 +84,7 @@ quint verify --max-steps=5 --invariant=inv_no_ghost_calls elevator.qnt
 `quint run` samples random traces and is the right first tool — it falsifies in
 seconds. `quint verify` explores *every* trace to the given depth and proves the
 invariant (or returns a counterexample). Depth costs time: on the 3-person
-instance the compiled `inv` at depth 5 proves in ~25 s; the Phase-0 hand
+instance the compiled `inv` at depth 5 proves in ~25 s; an early hand
 translation took ~10 min for its type invariant at depth 10 and ~1.5 min for its
 safety invariant at depth 8 (the calibration table lives in
 `quint_spike/RESULTS.md`). Choose small instances and grow the depth until the
@@ -180,3 +180,14 @@ fragment, never a silent superset. The `// WIDENED:` marker mechanism and
 mode — a proof over a widened spec would still be sound for safety, just no
 longer exact. Future work: ITF-JSON trace export, that widening mode, and lifting
 the integer restriction where a bounded real abstraction is tractable.
+
+## Related
+
+* Runbook: [Compile a model to Quint](@ref "Compile a model to Quint (`compile_quint`)"),
+  [Verify invariants with Apalache](@ref "Verify invariants with Apalache (`quint verify`)"),
+  [Validate a recorded trace](@ref "Validate a recorded trace (`validate_trace`)").
+* [Declaring and checking invariants](@ref "Declaring and checking invariants") —
+  the `@invariant`s this compiles and proves.
+* [Recording and replaying a run](@ref "Recording and replaying a run") — the
+  skeleton [`validate_trace`](@ref) checks against the spec.
+* [Debugging & Verification](@ref) — the overview and symptom-to-technique table.

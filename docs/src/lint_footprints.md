@@ -26,7 +26,8 @@ is the one thing `lint` promises to find (in the sound direction).
     shared address). Not a bug per se; a hint about shared state.
   * **write→rate** — NOT analyzed in v1. Every report prints a fixed line saying
     so. Enable-time (`enable`) reads are runtime-only in this version; the
-    dependency network tracks them dynamically, and Phase 4 will lower them.
+    dependency network tracks them dynamically, and a future version will lower
+    them.
   * **dead addresses** — physical fields written by no event and read by no guard
     (info; a rate-only input such as a distance matrix appears here by design).
 
@@ -124,7 +125,7 @@ The honest-scope commitments (binding):
     *between* index positions. It cannot tell that two events touch disjoint
     elements unless the index constraints are literal or finitely enumerable.
   * **No expression semantics, no SMT.** The optional Satisfiability stretch is
-    dropped; Phase 4's model checker subsumes it.
+    dropped; the [model checker](@ref "Model checking a simulation") subsumes it.
   * **No rate (`enable`) reads.** Write→rate edges are not analyzed in v1, stated in
     every report.
   * **Enumeration is finite and capped.** With a live `physical` instance, a
@@ -140,3 +141,12 @@ The honest-scope commitments (binding):
     tested in CI as *static ⊇ dynamic* — a `LintHarvest` policy records every
     runtime enable-dependency edge on a smoke run and `static_covers_dynamic`
     asserts the static report covers all of them.
+
+## Related
+
+* Runbook: [Lint a model's footprints](@ref "Lint a model's footprints (interference, races, missed triggers)").
+* [Static effect analysis (`@fire`)](@ref "Static effect analysis (`@fire`)") —
+  where the write masks `lint` reads come from.
+* [Debugging a simulation](@ref "Debugging a simulation") — the runtime why-verbs
+  that catch a missed trigger `lint` would flag statically.
+* [Debugging & Verification](@ref) — the overview and symptom-to-technique table.

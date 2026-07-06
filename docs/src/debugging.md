@@ -174,9 +174,9 @@ looks wrong:
 
 * A **run that will not stop** is [`whyrunning`](@ref): it shows the stop
   predicate's reads, their values and writers, and whether the recent event churn
-  touches any of them. Its static "can never stop" verdict is a Phase-2 stub for
-  now (it carries the line *reachability analysis requires effect analysis (not
-  yet run)*). See *"Ask why the run has not stopped"*.
+  touches any of them. Its static "can never stop" verdict is not yet
+  implemented (it carries the line *reachability analysis requires effect
+  analysis (not yet run)*). See *"Ask why the run has not stopped"*.
 
 * A **violated invariant** is [`whystopped`](@ref): it names the guilty writer
   event, the guilty addresses with their last and prior writers, and the exact
@@ -184,3 +184,12 @@ looks wrong:
   under `PolicyStack(RecordSkeleton(), CheckInvariants(Model))` — recorder first —
   so the violation carries a replayable prefix. See *"Read out why the run
   stopped"*.
+
+## Related
+
+* Runbook: [Ask why an event did not fire](@ref "Ask why an event did not fire"),
+  [Ask why the run has not stopped](@ref "Ask why the run has not stopped"),
+  [Read out why the run stopped](@ref "Read out why the run stopped").
+* [Recording and replaying a run](@ref "Recording and replaying a run") — the
+  skeleton the verbs read.
+* [Debugging & Verification](@ref) — the overview and symptom-to-technique table.
