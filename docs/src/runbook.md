@@ -29,12 +29,11 @@ never throws on an infeasible trace; it returns a
 
 ### How to invoke it
 
-The evaluator needs a sampler that records the enabled-clock set at each step.
-Wrap any base sampler in a `CompetingClocks.MemorySampler`:
+The evaluator needs a sim that records the enabled-clock set at each step.
+Build the evaluation sim with `step_likelihood=true`:
 
 ```julia
 using ChronoSim
-using CompetingClocks: CombinedNextReaction, MemorySampler
 using Random: Xoshiro
 
 # 1. Record a trace with a forward run. The observer stores (when, clock_key).
@@ -46,19 +45,22 @@ end
 fsim = SimulationFSM(
     MyBoard(1), [MyEventA, MyEventB];
     rng=Xoshiro(424242),
-    sampler=CombinedNextReaction{Tuple,Float64}(),
     observer=observer,
 )
 ChronoSim.run(fsim, my_init!, (p, i, e, w) -> i > 20)
 
-# 2. Evaluate the trace on a *fresh* sim whose sampler records enabled clocks.
+# 2. Evaluate the trace on a *fresh* sim built with step_likelihood=true.
 esim = SimulationFSM(
     MyBoard(1), [MyEventA, MyEventB];
     rng=Xoshiro(7),
-    sampler=MemorySampler(CombinedNextReaction{Tuple,Float64}()),
+    step_likelihood=true,
 )
 ev = trace_likelihood(esim, my_init!, trace)
 ```
+
+To differentiate the trace log-likelihood with `ForwardDiff`, pass
+`likelihood_eltype=eltype(θ)` in addition to `step_likelihood=true`; see
+[Differentiating a trace likelihood](@ref).
 
 The `initializer` (`my_init!` above) is either an initialization function
 `(physical, when, rng) -> nothing` or a `SimEvent` whose `fire!` sets up the
@@ -131,15 +133,16 @@ infeasible — `feasible` stays `true`, mirroring a forward run that exhausts it
 events. This is the trace's normal end-of-data sentinel, not an error.
 
 If `trace_likelihood` throws an `ArgumentError` reading
-`trace_likelihood needs a sampler that records enabled clocks`, the evaluation
-sampler was not wrapped in a `MemorySampler`. Wrap it as shown above.
+`trace_likelihood needs a simulation built with step_likelihood=true`, the
+evaluation sim was built without that flag. Add `step_likelihood=true` as shown
+above.
 
 ### How to turn it off
 
 There is nothing to turn off. Trace evaluation is a separate entry point
 (`trace_likelihood`) that you call explicitly; it does not run during a normal
-`run` and adds no cost to a production simulation. The only requirement is the
-`MemorySampler` wrapper on the evaluation sim's sampler.
+`run` and adds no cost to a production simulation. The only requirement is
+building the evaluation sim with `step_likelihood=true`.
 
 ---
 
@@ -240,7 +243,6 @@ exported; call `ChronoSim.run` / `replay` (the latter is exported):
 
 ```julia
 using ChronoSim
-using CompetingClocks: CombinedNextReaction
 using Random: Xoshiro
 
 # 1. Record.
@@ -523,13 +525,13 @@ using ChronoSim
 # 1. Record the run whose missing event you want to explain.
 rec = RecordSkeleton()
 sim = SimulationFSM(physical, EVENTS;
-    sampler=CombinedNextReaction{Tuple,Float64}(), rng=Xoshiro(seed), policy=rec)
+    rng=Xoshiro(seed), policy=rec)
 ChronoSim.run(sim, init_physical, stop)
 skel = recorded_skeleton(rec)
 
 # 2. A factory that rebuilds the same sim (rng is overwritten by replay).
 factory = policy -> (SimulationFSM(physical_ctor_args..., EVENTS;
-    sampler=CombinedNextReaction{Tuple,Float64}(), rng=Xoshiro(seed), policy=policy),
+    rng=Xoshiro(seed), policy=policy),
     init_physical)
 
 # 3. Ask.
@@ -689,7 +691,7 @@ prefix (order matters):
 rec = RecordSkeleton()
 sim = SimulationFSM(physical, EVENTS;
     policy=PolicyStack(rec, CheckInvariants(MyModel)),
-    sampler=CombinedNextReaction{Tuple,Float64}(), rng=Xoshiro(seed))
+    rng=Xoshiro(seed))
 err = try
     ChronoSim.run(sim, init_physical, stop); nothing
 catch e; e end

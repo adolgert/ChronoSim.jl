@@ -3,7 +3,7 @@ using ChronoSim
 using ChronoSim: ProbePolicy, NoPolicy
 using ChronoSim.ObservedState
 using CompetingClocks
-using CompetingClocks: CombinedNextReaction
+using CompetingClocks: NextReactionMethod
 using Distributions
 using Random
 import ChronoSim: precondition, generators, enable, fire!
@@ -20,7 +20,7 @@ import ChronoSim: precondition, generators, enable, fire!
 function _race_sim(policy; seed=0, observer=nothing)
     return SimulationFSM(
         SkeletonRace.RaceBoard(1), [SkeletonRace.FireA, SkeletonRace.FireB];
-        rng=Xoshiro(seed), sampler=CombinedNextReaction{Tuple,Float64}(),
+        rng=Xoshiro(seed), sampler=NextReactionMethod(), key_type=Tuple,
         observer=(observer === nothing ? ((a...) -> nothing) : observer), policy=policy,
     )
 end
@@ -39,7 +39,7 @@ _race_factory(policy) = (_race_sim(policy; seed=999), SkeletonRace.init!)
 function _flip_sim(policy; seed=0)
     return SimulationFSM(
         SkeletonFlip.WakeBoard(1), [SkeletonFlip.WakeFast, SkeletonFlip.WakeSlow];
-        rng=Xoshiro(seed), sampler=CombinedNextReaction{Tuple,Float64}(), policy=policy,
+        rng=Xoshiro(seed), sampler=NextReactionMethod(), key_type=Tuple, policy=policy,
     )
 end
 function _record_flip(; seed)

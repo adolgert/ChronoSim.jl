@@ -30,12 +30,11 @@ opt-in and costs a production run nothing; you turn it on by passing a
 
 ```julia
 using ChronoSim
-using CompetingClocks: CombinedNextReaction
 using Random: Xoshiro
 
 rec = RecordSkeleton()
 sim = SimulationFSM(ElevatorSystem(3, 2, 5), EVENTS;
-    sampler=CombinedNextReaction{Tuple,Float64}(), rng=Xoshiro(93472934), policy=rec)
+    rng=Xoshiro(93472934), policy=rec)
 s = 5    # a correct twin of this model first fires StopElevator(2) at step 5,
          # so stop this run just before that step: the state where the stop is due
 ChronoSim.run(sim, init_physical, (p, i, e, w) -> i >= s)
@@ -55,7 +54,7 @@ the skeleton, a `sim_factory` that rebuilds the same simulation (the
 
 ```julia
 factory = policy -> (SimulationFSM(ElevatorSystem(3, 2, 5), EVENTS;
-    sampler=CombinedNextReaction{Tuple,Float64}(), rng=Xoshiro(93472934), policy=policy),
+    rng=Xoshiro(93472934), policy=policy),
     init_physical)
 
 rep = whynot(skel, factory, StopElevator(2))

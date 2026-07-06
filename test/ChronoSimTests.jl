@@ -37,6 +37,7 @@ include("test_replay.jl")
 include("test_skeleton.jl")
 include("test_static.jl")
 include("test_trace_eval.jl")
+include("test_trace_autodiff.jl")
 include("test_why.jl")
 
 

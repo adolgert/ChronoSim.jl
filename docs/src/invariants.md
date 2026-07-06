@@ -84,7 +84,6 @@ exactly `cell[idx].b`.
 ```julia
 using ChronoSim
 using ChronoSim.ObservedState
-using CompetingClocks: CombinedNextReaction
 using Distributions
 using Random: Xoshiro
 import ChronoSim: precondition, generators, enable, fire!
@@ -159,7 +158,7 @@ prefix *before* the checker throws, so the violation can carry a replay command.
 ```julia
 rec = RecordSkeleton()
 sim = SimulationFSM(FlagBoard(1), [Tick, Corrupt];
-    rng=Xoshiro(1234), sampler=CombinedNextReaction{Tuple,Float64}(),
+    rng=Xoshiro(1234),
     policy=PolicyStack(rec, CheckInvariants(TwinFlag)))
 err = try
     ChronoSim.run(sim, TwinFlag.init!, (p, i, e, w) -> false)

@@ -14,7 +14,7 @@ module TinyDerived
 using ChronoSim
 using ChronoSim.ObservedState
 using CompetingClocks
-using CompetingClocks: CombinedNextReaction
+using CompetingClocks: NextReactionMethod
 using Distributions
 using Random
 import ChronoSim: precondition, generators, enable, fire!
@@ -78,7 +78,7 @@ end
 function run_tiny(; seed=12345, ncell=3)
     physical = Board(ncell)
     sim = SimulationFSM(
-        physical, [Wake, Sleep]; rng=Xoshiro(seed), sampler=CombinedNextReaction{Tuple,Float64}()
+        physical, [Wake, Sleep]; rng=Xoshiro(seed), sampler=NextReactionMethod(), key_type=Tuple
     )
     init = (p, when, rng) -> initialize!(p, rng)
     # No time bound is needed: the model exhausts its fuel and stops on its own.

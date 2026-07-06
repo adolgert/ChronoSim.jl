@@ -2,7 +2,7 @@
 
 julia_version = "1.12.5"
 manifest_format = "2.0"
-project_hash = "85be117075ce89e66cc059e7a46686003a351a43"
+project_hash = "0c9249383bbfe974866ba7b9bb3f51fc6c0ba7b3"
 
 [[deps.AliasTables]]
 deps = ["PtrArrays", "Random"]
@@ -15,18 +15,24 @@ uuid = "56f22d72-fd6d-98f1-02f0-08ddc0907c33"
 version = "1.11.0"
 
 [[deps.ChronoSim]]
-deps = ["CompetingClocks", "Distributions", "Logging", "OrderedCollections", "Random"]
+deps = ["CompetingClocks", "Distributions", "Logging", "OrderedCollections", "Random", "Serialization"]
 path = "."
 uuid = "3d4a2042-d4c0-4032-96bb-6b9d4a3cae87"
 version = "0.1.0-DEV"
 
 [[deps.CompetingClocks]]
 deps = ["DataStructures", "Distributions", "Logging", "Random"]
-git-tree-sha1 = "15f5f78cc810fc30686745e527bf97bad737d967"
+git-tree-sha1 = "6429c4622c835e1ec2a63d699b0ac597000ea36b"
 repo-rev = "main"
 repo-url = "https://github.com/adolgert/CompetingClocks.jl"
 uuid = "5bb9b785-358c-4fee-af0f-b94a146244a8"
-version = "0.3.0"
+version = "0.3.1"
+
+    [deps.CompetingClocks.extensions]
+    CompetingClocksForwardDiffExt = "ForwardDiff"
+
+    [deps.CompetingClocks.weakdeps]
+    ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 
 [[deps.CompilerSupportLibraries_jll]]
 deps = ["Artifacts", "Libdl"]

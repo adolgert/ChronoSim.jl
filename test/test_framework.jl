@@ -1,7 +1,7 @@
 using ReTest
 using Distributions
 using ChronoSim
-using CompetingClocks: FirstReaction, enable!
+using CompetingClocks: FirstReactionMethod, enable!
 
 
 struct TestFrameworkEvent <: SimEvent end
@@ -203,8 +203,7 @@ end
     event_dependency = TestDealEventDependency(TestDealEvent[event], TestDealEvent[])
     physical = TestDealSystem(0, 0, 0, 0, 0)
     event_list = [TestDealEvent]
-    sampler = FirstReaction{TestDealClockKey,Float64}()
-    sim = SimulationFSM(physical, event_list; sampler=sampler)
+    sim = SimulationFSM(physical, event_list; sampler=FirstReactionMethod(), key_type=TestDealClockKey)
     changed_places = Set([:car])
     ChronoSim.deal_with_changes(sim, event_dependency, [], changed_places)
     @test event.called_precondition == 1
@@ -231,10 +230,9 @@ end
     event_dependency = TestDealEventDependency(TestDealEvent[event], TestDealEvent[])
     physical = TestDealSystem(0, 0, 0, 0, 0)
     event_list = [TestDealEvent]
-    sampler = FirstReaction{TestDealClockKey,Float64}()
-    sim = SimulationFSM(physical, event_list; sampler=sampler)
+    sim = SimulationFSM(physical, event_list; sampler=FirstReactionMethod(), key_type=TestDealClockKey)
     if event.prev_enabled
-        enable!(sampler, clock_key(event), Exponential(), 0.0, 0.0, sim.rng)
+        enable!(sim.sampler, clock_key(event), Exponential())
         sim.enabled_events[clock_key(event)] = event
         sim.enabling_times[clock_key(event)] = sim.when
     end
@@ -265,10 +263,9 @@ end
     event_dependency = TestDealEventDependency(TestDealEvent[event], TestDealEvent[])
     physical = TestDealSystem(0, 0, 0, 0, 0)
     event_list = [TestDealEvent]
-    sampler = FirstReaction{TestDealClockKey,Float64}()
-    sim = SimulationFSM(physical, event_list; sampler=sampler)
+    sim = SimulationFSM(physical, event_list; sampler=FirstReactionMethod(), key_type=TestDealClockKey)
     if event.prev_enabled
-        enable!(sampler, clock_key(event), Exponential(), 0.0, 0.0, sim.rng)
+        enable!(sim.sampler, clock_key(event), Exponential())
         sim.enabled_events[clock_key(event)] = event
         sim.enabling_times[clock_key(event)] = sim.when
     end
@@ -300,10 +297,9 @@ end
     event_dependency = TestDealEventDependency(TestDealEvent[event], TestDealEvent[])
     physical = TestDealSystem(0, 0, 0, 0, 0)
     event_list = [TestDealEvent]
-    sampler = FirstReaction{TestDealClockKey,Float64}()
-    sim = SimulationFSM(physical, event_list; sampler=sampler)
+    sim = SimulationFSM(physical, event_list; sampler=FirstReactionMethod(), key_type=TestDealClockKey)
     if event.prev_enabled
-        enable!(sampler, clock_key(event), Exponential(), 0.0, 0.0, sim.rng)
+        enable!(sim.sampler, clock_key(event), Exponential())
         sim.enabled_events[clock_key(event)] = event
         sim.enabling_times[clock_key(event)] = sim.when
     end
@@ -338,10 +334,9 @@ end
     event_dependency = TestDealEventDependency(TestDealEvent[event], TestDealEvent[])
     physical = TestDealSystem(0, 0, 0, 0, 0)
     event_list = [TestDealEvent]
-    sampler = FirstReaction{TestDealClockKey,Float64}()
-    sim = SimulationFSM(physical, event_list; sampler=sampler)
+    sim = SimulationFSM(physical, event_list; sampler=FirstReactionMethod(), key_type=TestDealClockKey)
     if event.prev_enabled
-        enable!(sampler, clock_key(event), Exponential(), 0.0, 0.0, sim.rng)
+        enable!(sim.sampler, clock_key(event), Exponential())
         sim.enabled_events[clock_key(event)] = event
         sim.enabling_times[clock_key(event)] = sim.when
     end
@@ -375,10 +370,9 @@ end
     event_dependency = TestDealEventDependency(TestDealEvent[event], TestDealEvent[])
     physical = TestDealSystem(0, 0, 0, 0, 0)
     event_list = [TestDealEvent]
-    sampler = FirstReaction{TestDealClockKey,Float64}()
-    sim = SimulationFSM(physical, event_list; sampler=sampler)
+    sim = SimulationFSM(physical, event_list; sampler=FirstReactionMethod(), key_type=TestDealClockKey)
     if event.prev_enabled
-        enable!(sampler, clock_key(event), Exponential(), 0.0, 0.0, sim.rng)
+        enable!(sim.sampler, clock_key(event), Exponential())
         sim.enabled_events[clock_key(event)] = event
         sim.enabling_times[clock_key(event)] = sim.when
     end
@@ -427,11 +421,10 @@ end
     event_dependency = TestDealEventDependency(TestDealEvent[event], TestDealEvent[rate_event])
     physical = TestDealSystem(0, 0, 0, 0, 0)
     event_list = [TestDealEvent]
-    sampler = FirstReaction{TestDealClockKey,Float64}()
-    sim = SimulationFSM(physical, event_list; sampler=sampler)
+    sim = SimulationFSM(physical, event_list; sampler=FirstReactionMethod(), key_type=TestDealClockKey)
     for add_en in [event, rate_event]
         if add_en.prev_enabled
-            enable!(sampler, clock_key(add_en), Exponential(), 0.0, 0.0, sim.rng)
+            enable!(sim.sampler, clock_key(add_en), Exponential())
             sim.enabled_events[clock_key(add_en)] = add_en
             sim.enabling_times[clock_key(add_en)] = sim.when
         end
@@ -479,11 +472,10 @@ end
     event_dependency = TestDealEventDependency(TestDealEvent[event], TestDealEvent[rate_event])
     physical = TestDealSystem(0, 0, 0, 0, 0)
     event_list = [TestDealEvent]
-    sampler = FirstReaction{TestDealClockKey,Float64}()
-    sim = SimulationFSM(physical, event_list; sampler=sampler)
+    sim = SimulationFSM(physical, event_list; sampler=FirstReactionMethod(), key_type=TestDealClockKey)
     for add_en in [event, rate_event]
         if add_en.prev_enabled
-            enable!(sampler, clock_key(add_en), Exponential(), 0.0, 0.0, sim.rng)
+            enable!(sim.sampler, clock_key(add_en), Exponential())
             sim.enabled_events[clock_key(add_en)] = add_en
             sim.enabling_times[clock_key(add_en)] = sim.when
         end

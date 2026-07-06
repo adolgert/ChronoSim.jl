@@ -1,7 +1,7 @@
 using ReTest
 using ChronoSim
 using ChronoSim.ObservedState
-using CompetingClocks: CombinedNextReaction
+using CompetingClocks: NextReactionMethod
 using Distributions
 using Random
 import ChronoSim: precondition, generators, enable, fire!, isimmediate
@@ -69,7 +69,7 @@ _addr_leaf(t) = (x = t[end]; x isa ChronoSim.Member ? x.name : Symbol(x))
     sim = SimulationFSM(
         ImmediateMerge.ChainBoard(1), [ImmediateMerge.TimedTick, ImmediateMerge.Chain];
         rng=Xoshiro(90210),
-        sampler=CombinedNextReaction{Tuple,Float64}(),
+        sampler=NextReactionMethod(), key_type=Tuple,
         observer=observer,
     )
     ChronoSim.run(sim, ImmediateMerge.init!, (p, i, e, w) -> i > 5)
