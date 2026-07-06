@@ -909,3 +909,189 @@ does not analyze it.
 Diagnostic only — nothing runs unless you call `lint`. The `LintHarvest` policy
 is opt-in and used only by the static⊇dynamic CI test; leave it out of the
 `PolicyStack` for production replicates.
+
+## Compile a model to Quint (`compile_quint`)
+
+Print a model's registered guards, effects, helpers, and invariants as a Quint
+module for model checking. Pure Julia — no toolchain needed to emit.
+
+### How to invoke it
+
+```julia
+using ChronoSim
+qm = compile_quint(MyModel, EVENTS, physical_snapshot;
+                   name="mymodel", invariants=InvariantModule)
+write_quint("mymodel.qnt", qm)
+show(stdout, MIME"text/plain"(), qm.report)
+```
+
+`EVENTS` is the same event-type vector passed to `SimulationFSM`; the physical
+snapshot supplies `init` literals and array extents. `invariants` names the module
+holding the `@invariant`s (default: the events module). Opt-outs: `skip_events`
+drops an event (module marked PARTIAL); `assume_true_guards` compiles an event
+whose `precondition` is literally `true` (reliability `StartDay`, sirvillage
+`Travel`).
+
+### What its output looks like
+
+```
+quint compilation: elevator (9 events)
+  clean   : PickNewDestination CallElevator OpenElevatorDoors ...
+  widened : (none)
+  assumed : (none)
+  skipped : (none)
+  refused : (none)
+constants promoted: floor_cnt
+records collapsed : ElevatorCall -> requested
+fields erased     : (none)
+invariants        : 8 compiled, 0 refused
+widenings total   : 0 (v1 refuses where the design allowed widening; `// WIDENED:` markers reserved)
+```
+
+### What each failure form means
+
+`compile_quint` gathers *all* problems and throws one `QuintCompileError`, each
+entry naming the event, construct, and source:
+
+* **`:no_precondition` / `:no_fire`** — annotate `@precondition` / `@fire`, or opt
+  out with `assume_true_guards` / `skip_events`.
+* **`:float_read`** — a guard/invariant/index reads a `Float64`. The spec is the
+  integer jump skeleton; model the gate as an integer/enum field or skip the event.
+* **`:unclassified_loop`** — a loop matching none of the five idioms
+  (filter-accumulate, existential flag, universal flag, count/sum, min-by /
+  capped scan). Rewrite it as one of those, or as a reducer over a generator.
+* **`:loop_read_write_overlap`** — a `fire!` loop reads a variable the same loop
+  writes in a way independent per-variable folds cannot express (e.g. an element
+  write reading a scalar the loop increments). Use a local counter (compiled as
+  one ordered `foldl`), or make the read field-disjoint / loop-indexed.
+* **`:unordered_fold`** — a min-by or capped scan over dict keys: no defined
+  iteration order. Iterate an array index range instead.
+
+v1 refuses every case the design allowed to widen, so a compiled module is exact
+on the integer fragment; `// WIDENED:` markers and `report.widenings` are the
+reserved surface for a future opt-in widening mode (the reconciliation test pins
+both at 0).
+
+### How to turn it off
+
+Nothing is default-on; compilation is an offline call you make explicitly.
+
+## Verify invariants with Apalache (`quint verify`)
+
+Prove a compiled model's invariants hold over every reachable state to a bounded
+depth.
+
+### How to invoke it
+
+The compiled module names its invariants `inv_<declared name>` plus the grouping
+`val inv` (the conjunction of all of them — the usual target).
+
+```bash
+export JAVA_HOME=".../temurin-17/Contents/Home"; export PATH="$JAVA_HOME/bin:$PATH"
+npx quint verify --max-steps=5 --invariant=inv mymodel.qnt
+# localize a violation one invariant at a time:
+npx quint verify --max-steps=5 --invariant=inv_no_ghost_calls mymodel.qnt
+```
+
+The first `verify` downloads Apalache 0.56.1 into `~/.quint` (~1 min, one-time).
+
+### What its output looks like
+
+```
+State 0: state invariant 0 holds.
+...
+The outcome is: NoError
+[ok] No violation found
+```
+
+Wall-clocks scale with depth and instance size: on the 3-person elevator the
+compiled `inv` proves at depth 5 in ≈ 25 s; the Phase-0 hand translation's type
+invariant at depth 10 took ≈ 10 min and its safety invariant at depth 8 ≈ 1.5 min
+(`quint_spike/RESULTS.md`). Start small and grow the depth.
+
+### What each failure form means
+
+`The outcome is: Error` with a counterexample trace means an invariant was
+violated at some reachable state. Analyze *which side is wrong* — a translation
+bug (the spec is stricter or looser than the model) or a genuine model finding —
+by re-deriving the compiled action by hand against the Julia source. `NoError`
+means proved to that depth (not a proof at greater depths).
+
+### How to turn it off
+
+Don't call it — verification is a manual, offline step.
+
+## Validate a recorded trace (`validate_trace`)
+
+Check that a recorded trajectory is a legal path of the compiled spec: every state
+satisfies the invariants, and every transition is accepted by the recorded event's
+compiled action.
+
+### How to invoke it
+
+```julia
+rec = RecordSkeleton()
+sim, init = factory(rec)                 # factory(policy) -> (sim, initializer)
+ChronoSim.run(sim, init, stop)
+skel = recorded_skeleton(rec)
+
+qm  = compile_quint(model, EVENTS, physical; invariants=InvModule)
+rep = validate_trace(qm, skel, factory)  # factory is exactly replay's factory
+show(stdout, MIME"text/plain"(), rep)
+```
+
+### What its output looks like
+
+A pass (captured from the elevator, 4 recorded steps):
+
+```
+trace validation: elevator
+  steps        : 4 checked / 4 total
+  invariants   : PASSED
+  transitions  : PASSED
+  log[invariants]  : /tmp/quint_trace_xyz/stage1_run.log
+  log[transitions]  : /tmp/quint_trace_xyz/stage2_verify.log
+  wall-clock   : 14.0 s
+```
+
+A stage-2 failure (captured: the same trajectory checked against a module whose
+CallElevator guard was mis-emitted with `mutate_for_test`) — the ascending
+localization loop names the exact rejected transition:
+
+```
+trace validation: elevator
+  steps        : 4 checked / 4 total
+  invariants   : PASSED
+  transitions  : FAILED
+  first failure: step 3 event CallElevator at when=3.0204157240506944 (transitions stage)
+  log[invariants]  : .../stage1_run.log
+  log[localize]  : .../stage2_localize_4.log
+  log[transitions]  : .../stage2_verify.log
+  wall-clock   : 49.17 s
+```
+
+### What each failure form means
+
+* **`invariants: FAILED`** (stage 1, `quint run`) — a reconstructed state violates
+  a compiled invariant: the simulator and the spec disagree on which states are
+  legal. `first_failure` names the violating state's step and event (parsed from
+  the deterministic counterexample's `t_i`).
+* **`transitions: FAILED`** (stage 2, `quint verify`, reported as Apalache
+  `Deadlock`) — a recorded transition is rejected by the compiled guard/effect: the
+  guard the simulator ran and the guard the spec models disagree. This is the
+  thesis case; the mutation test (`mutate_for_test`) proves the loop has teeth,
+  and the `notReach_k` localization loop pins the first rejected step.
+* **`:skipped`** — the toolchain is absent (`invariants` needs Node; `transitions`
+  needs a JVM), or the trace fires an event omitted by `skip_events` (a PARTIAL
+  module cannot force that transition — `skip_reason` names the step). The report
+  quotes the exact install commands from `quint_spike/VERSIONS.md`. Steps beyond
+  `maxsteps` are reported, never silently dropped.
+* **`:error`** — the checker crashed or printed unrecognizable output; the log
+  tail is in `skip_reason` and the full log at the reported path. Distinct from
+  `:failed` by construction.
+
+### How to turn it off
+
+Nothing is default-on. A `ReplayDivergence` raised during reconstruction is a
+pre-existing determinism bug (different constructor args or package versions),
+surfaced as-is, not swallowed.
