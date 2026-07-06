@@ -9,7 +9,7 @@ the spec checks your runs exhaustively, and your runs check the compiler.
 
 Compiling needs nothing but Julia. *Checking* the emitted module needs the Quint
 toolchain (Node) and, for symbolic proofs, a JVM for Apalache — both discovered by
-[`find_quint_toolchain`](@ref) and, when absent, reported as a loud `:skipped`
+[`find_quint_toolchain`](@ref ChronoSim.find_quint_toolchain) and, when absent, reported as a loud `:skipped`
 verdict rather than a silent pass.
 
 ## 1. What you get

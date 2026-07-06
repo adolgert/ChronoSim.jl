@@ -150,7 +150,7 @@ pre-initialization RNG state and, per fired event, its clock key, firing time,
 changed addresses, and enable/disable/proposal history. It is opt-in: a
 simulation constructed without the policy records nothing and pays nothing.
 Retrieve the result with [`recorded_skeleton`](@ref) and, optionally, persist it
-with [`save_skeleton`](@ref) / [`load_skeleton`](@ref).
+with [`save_skeleton`](@ref) / [`load_skeleton`](@ref ChronoSim.load_skeleton).
 
 ### How to invoke it
 

@@ -277,4 +277,10 @@ function save_skeleton(path::AbstractString, skel::TrajectorySkeleton)
     return String(path)
 end
 
+"""
+    load_skeleton(path) -> TrajectorySkeleton
+
+Read a skeleton written by [`save_skeleton`](@ref). The format is bound to the
+Julia version and package struct layouts; see `save_skeleton` for the caveats.
+"""
 load_skeleton(path::AbstractString) = deserialize(path)::TrajectorySkeleton

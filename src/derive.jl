@@ -31,7 +31,14 @@ index_clean(::LiteralIndex) = true
 index_clean(::TaintedIndex) = false
 index_clean(t::TupleIndex) = all(index_clean, t.components)
 
-# A single state-read site derived from the precondition body.
+"""
+    ReadSpec
+
+One state-read site derived from a `@precondition` (or `@guard`) body:
+`matchstr` is the masked address path, `indices` classifies each index
+position (`FieldBinding`/`LiteralIndex`/`TaintedIndex`/`TupleIndex`), and
+`source` is the original access text for diagnostics.
+"""
 struct ReadSpec
     matchstr::Vector{Any}   # e.g. [Member(:elevator), MEMBERINDEX, Member(:floor)]
     indices::Vector{Any}    # one index spec per MEMBERINDEX position, path order

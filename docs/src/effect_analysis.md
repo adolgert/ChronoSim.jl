@@ -2,7 +2,7 @@
 
 `@precondition` derives what an event *reads*. `@fire` closes the loop by deriving
 what an event *writes*: a syntactic taint pass over the `fire!` body produces a
-static set of [`WriteSpec`](@ref)s — the event's effect footprint — which a
+static set of [`WriteSpec`](@ref ChronoSim.WriteSpec)s — the event's effect footprint — which a
 runtime oracle then checks against what the event actually changed. The write
 masks feed footprint-interference lints, model-checkable effect lowering, and the
 `whyrunning` "provably cannot stop" verdict.
@@ -19,7 +19,7 @@ you the other half:
   * **Conformance.** [`CheckEffects`](@ref) asserts, after every fire, that every
     changed address matches a declared write — catching an undeclared write the
     moment it happens instead of when a trajectory eventually diverges.
-  * **Reachability.** [`can_stop_change`](@ref) answers whether any event can ever
+  * **Reachability.** [`can_stop_change`](@ref ChronoSim.can_stop_change) answers whether any event can ever
     write what a stop predicate reads; when none can, `whyrunning` reports the run
     *provably* cannot stop by state change.
   * **Downstream analysis.** The kept write masks and rhs ASTs are the input to
@@ -102,7 +102,7 @@ walker lost track of something.
 
 ## What the oracle catches
 
-[`CheckEffects`](@ref) is an [`ExecutionPolicy`](@ref) that enforces the
+[`CheckEffects`](@ref) is an [`ExecutionPolicy`](@ref ChronoSim.ExecutionPolicy) that enforces the
 conformance contract `changed ⊆ declared`: after initialization and after every
 fire, every captured changed address must match some declared write mask (unioned
 with the specs of any `isimmediate` event types you pass in). Because widening and
