@@ -46,12 +46,28 @@ if isdir(literate_src_dir)
 else
     jlfiles = []
 end
+# Files whose generated markdown must be fully static: their code fences are
+# plain ` ```julia ` blocks that Documenter never executes (no `@example`
+# blocks). Use this for pages that demonstrate heavy dependencies that are not
+# in `docs/Project.toml`; they are run and asserted separately (see, e.g.,
+# `docs/calibration/` for `statistical_calibration.jl`).
+static_literate = Set(["statistical_calibration.jl"])
 for readfile in jlfiles
     input_file = joinpath(literate_src_dir, readfile)
     output_file = joinpath(src_dir, replace(readfile, ".jl" => ".md"))
     if fresh || !isfile(output_file) || mtime(input_file) > mtime(output_file)
         println("Processing Literate file: $readfile")
-        Literate.markdown(input_file, src_dir; postprocess=postprocess_markdown, execute=false)
+        if readfile in static_literate
+            Literate.markdown(
+                input_file, src_dir;
+                postprocess=postprocess_markdown, execute=false,
+                codefence=("````julia" => "````"),
+            )
+        else
+            Literate.markdown(
+                input_file, src_dir; postprocess=postprocess_markdown, execute=false,
+            )
+        end
 
         # Move any generated images to the literate subdirectory
         for img_file in readdir(src_dir)
@@ -107,6 +123,7 @@ makedocs(;
         "Debugging & Verification" => [
             "Overview" => "debugging_verification_overview.md",
             "Evaluating a Trace" => "trace_evaluation.md",
+            "Calibrating from an Event Log" => "statistical_calibration.md",
             "Recording & Replaying" => "record_replay.md",
             "Declaring Invariants" => "invariants.md",
             "Debugging a Simulation" => "debugging.md",
