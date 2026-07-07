@@ -389,6 +389,9 @@ without that flag. Add `step_likelihood=true` as shown above.
 
 ## Related
 
+* [Calibrating from an Event Log](@ref "Calibrating a model from an event log") —
+  turns this differentiable log-likelihood into MLE, Metropolis, NUTS, and Turing
+  fits that recover clock parameters from an observed trace.
 * [Runbook: Evaluate a recorded trace](@ref "Evaluate a recorded trace") — the
   mechanical reference and field list.
 * [Recording and replaying a run](@ref "Recording and replaying a run") —
