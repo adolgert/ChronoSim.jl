@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Calibrating from an Event Log · ChronoSim.jl</title><meta name="title" content="Calibrating from an Event Log · ChronoSim.jl"/><meta property="og:title" content="Calibrating from an Event Log · ChronoSim.jl"/><meta property="twitter:title" content="Calibrating from an Event Log · ChronoSim.jl"/><meta name="description" content="Documentation for ChronoSim.jl."/><meta property="og:description" content="Documentation for ChronoSim.jl."/><meta property="twitter:description" content="Documentation for ChronoSim.jl."/><meta property="og:url" content="https://computingkitchen.com/ChronoSim.jl/statistical_calibration/"/><meta property="twitter:url" content="https://computingkitchen.com/ChronoSim.jl/statistical_calibration/"/><link rel="canonical" href="https://computingkitchen.com/ChronoSim.jl/statistical_calibration/"/><script data-outdated-warner src="../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL=".."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../assets/documenter.js"></script><script src="../search_index.js"></script><script src="../siteinfo.js"></script><script src="../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../assets/themeswap.js"></script><link href="../assets/custom.css" rel="stylesheet" type="text/css"/></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../">ChronoSim.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><span class="tocitem">Home</span><ul><li><a class="tocitem" href="../">ChronoSim</a></li><li><a class="tocitem" href="../intro/">Introduction</a></li><li><a class="tocitem" href="../not_chrono/">Why Not Hand Made</a></li><li><a class="tocitem" href="../whatitis/">What It Does</a></li></ul></li><li><span class="tocitem">Examples</span><ul><li><a class="tocitem" href="../getting_started/">Getting Started</a></li><li><a class="tocitem" href="../elevator_tutorial/">Build an Elevator</a></li></ul></li><li><span class="tocitem">Manual</span><ul><li><input class="collapse-toggle" id="menuitem-3-1" type="checkbox"/><label class="tocitem" for="menuitem-3-1"><span class="docs-label">Simulation State</span><i class="docs-chevron"></i></label><ul class="collapsed"><li><a class="tocitem" href="../observedphysical/">Declaring the Simulation State</a></li><li><a class="tocitem" href="../observedmacro/">The <code>@obsread</code> and <code>@obswrite</code> Macros</a></li><li><a class="tocitem" href="../customstate/">Custom State Types</a></li></ul></li><li><a class="tocitem" href="../events/">Events</a></li><li><a class="tocitem" href="../generators/">Generators</a></li></ul></li><li><a class="tocitem" href="../reference/">Reference</a></li><li><span class="tocitem">Debugging &amp; Verification</span><ul><li><a class="tocitem" href="../debugging_verification_overview/">Overview</a></li><li><a class="tocitem" href="../trace_evaluation/">Evaluating a Trace</a></li><li class="is-active"><a class="tocitem" href>Calibrating from an Event Log</a><ul class="internal"><li><a class="tocitem" href="#Sizes-and-seeds,-all-in-one-place"><span>Sizes and seeds, all in one place</span></a></li><li><a class="tocitem" href="#§1-The-model:-a-two-clock-race-with-swappable-clocks"><span>§1  The model: a two-clock race with swappable clocks</span></a></li><li><a class="tocitem" href="#§2-Simulate-an-event-log"><span>§2  Simulate an event log</span></a></li><li><a class="tocitem" href="#§3-One-differentiable-closure,-four-consumers"><span>§3  One differentiable closure, four consumers</span></a></li><li><a class="tocitem" href="#§4a-Maximum-likelihood-with-Optim-ForwardDiff"><span>§4a  Maximum likelihood with Optim + ForwardDiff</span></a></li><li><a class="tocitem" href="#§4b-Posterior-via-LogDensityProblems-AdvancedMH"><span>§4b  Posterior via LogDensityProblems + AdvancedMH</span></a></li><li><a class="tocitem" href="#§4c-NUTS-via-AdvancedHMC-—-the-migration&#39;s-payoff"><span>§4c  NUTS via AdvancedHMC — the migration&#39;s payoff</span></a></li><li><a class="tocitem" href="#§4d-The-same-fit-as-a-Turing-@model"><span>§4d  The same fit as a Turing <code>@model</code></span></a></li><li><a class="tocitem" href="#§5-A-Weibull-clock:-the-semi-Markov-niche"><span>§5  A Weibull clock: the semi-Markov niche</span></a></li><li><a class="tocitem" href="#§6-Notes"><span>§6  Notes</span></a></li></ul></li><li><a class="tocitem" href="../record_replay/">Recording &amp; Replaying</a></li><li><a class="tocitem" href="../invariants/">Declaring Invariants</a></li><li><a class="tocitem" href="../debugging/">Debugging a Simulation</a></li><li><a class="tocitem" href="../effect_analysis/">Static Effect Analysis</a></li><li><a class="tocitem" href="../lint_footprints/">Linting a Model</a></li><li><a class="tocitem" href="../model_checking/">Model Checking a Simulation</a></li><li><a class="tocitem" href="../runbook/">Runbook</a></li></ul></li><li><span class="tocitem">Development</span><ul><li><a class="tocitem" href="../state_contract/">State Contract</a></li><li><a class="tocitem" href="../derivation_internals/">Derivation Internals</a></li><li><a class="tocitem" href="../categorize/">Where ChronoSim Fits</a></li><li><a class="tocitem" href="../plan/">Plan</a></li><li><a class="tocitem" href="../event_update/">Event Updates</a></li><li><a class="tocitem" href="../architecture_diagram/">Architecture</a></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Debugging &amp; Verification</a></li><li class="is-active"><a href>Calibrating from an Event Log</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Calibrating from an Event Log</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/adolgert/ChronoSim.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/adolgert/ChronoSim.jl/blob/main/docs/literate_src/statistical_calibration.jl" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Calibrating-a-model-from-an-event-log"><a class="docs-heading-anchor" href="#Calibrating-a-model-from-an-event-log">Calibrating a model from an event log</a><a id="Calibrating-a-model-from-an-event-log-1"></a><a class="docs-heading-anchor-permalink" href="#Calibrating-a-model-from-an-event-log" title="Permalink"></a></h1><p>The <a href="../trace_evaluation/">trace-evaluation page</a> showed that once a trajectory is fixed, a ChronoSim trace log-likelihood is a smooth, differentiable function of the clock distributions&#39; parameters. That is the hook the whole Julia statistics ecosystem hangs on: a differentiable log-likelihood is all a maximum-likelihood optimizer, a Metropolis–Hastings sampler, a Hamiltonian Monte Carlo sampler, or a probabilistic-programming language needs. This page <em>calibrates</em> a model — recovers the clock parameters from an observed event log — through <strong>four different stacks in turn</strong>, all driven by the <em>same one-line closure</em>:</p><ul><li><strong>Optim</strong> for the maximum-likelihood estimate (score from ForwardDiff),</li><li><strong>LogDensityProblems + AdvancedMH</strong> for a random-walk Metropolis posterior,</li><li><strong>AdvancedHMC</strong> for the NUTS posterior — every leapfrog step differentiates <code>trace_likelihood</code>, which is the whole point of the SamplingContext migration,</li><li><strong>Turing</strong> for the same fit written as a <code>@model</code>.</li></ul><p>We do it first on a competing <strong>exponential</strong> race, where the MLE and score have a closed form we can check by hand, then swap in a <strong>Weibull</strong> clock to get a genuinely semi-Markov model — the &quot;empty niche&quot; that memoryless tooling cannot reach — and check <em>that</em> against an independent clock-age walker.</p><div class="admonition is-info" id="This-page-is-static-6bf7843b14ce19d7"><header class="admonition-header">This page is static<a class="admonition-anchor" href="#This-page-is-static-6bf7843b14ce19d7" title="Permalink"></a></header><div class="admonition-body"><p>Every code block below is real, runnable code, but the documentation build does <strong>not</strong> execute it — the heavy sampling stacks are not in the docs environment. The script lives at <code>docs/literate_src/statistical_calibration.jl</code> and runs top-to-bottom against <code>docs/calibration/Project.toml</code>; its inline <code>@assert</code>s are its acceptance test. The chain summaries shown in fenced blocks are the output of the <code>println</code> calls beside them, pasted from a real run and reproduced on the same platform with the committed <code>Manifest.toml</code> (BLAS/LAPACK can differ across architectures).</p></div></div><pre><code class="language-julia hljs">using ChronoSim
+using ChronoSim.ObservedState
+using Distributions
+using Random
+using LinearAlgebra
+using ForwardDiff
+using Optim
+using ADTypes: AutoForwardDiff
+using LogDensityProblems
+using LogDensityProblemsAD: ADgradient
+import AdvancedMH
+import AdvancedHMC
+using AbstractMCMC
+using MCMCChains
+using Turing</code></pre><h2 id="Sizes-and-seeds,-all-in-one-place"><a class="docs-heading-anchor" href="#Sizes-and-seeds,-all-in-one-place">Sizes and seeds, all in one place</a><a id="Sizes-and-seeds,-all-in-one-place-1"></a><a class="docs-heading-anchor-permalink" href="#Sizes-and-seeds,-all-in-one-place" title="Permalink"></a></h2><p>Every chain length, trace length, and RNG seed is a named constant here, so the committed outputs are a deterministic function of this file plus the <code>Manifest.toml</code>. Shrinking the sampler constants is the one knob for runtime.</p><pre><code class="language-julia hljs">const N_EXP_STEPS = 200      # events in the exponential-race log
+const N_WEI_STEPS = 500      # events in the Weibull-race log
+const N_MH_DRAWS = 20_000    # AdvancedMH random-walk draws (kept)
+const N_MH_BURN = 2_000      # AdvancedMH warm-up draws (discarded)
+const N_HMC_ADAPT = 500      # AdvancedHMC NUTS adaptation steps
+const N_HMC_DRAWS = 500      # AdvancedHMC NUTS kept draws
+const N_TUR_ADAPT = 500      # Turing NUTS adaptation steps
+const N_TUR_DRAWS = 1_000    # Turing NUTS kept draws
+const N_WEI_ADAPT = 400      # Weibull AdvancedHMC adaptation steps
+const N_WEI_DRAWS = 400      # Weibull AdvancedHMC kept draws
+
+const SEED_EXP_LOG = 112        # exponential forward run
+const SEED_WEI_LOG = 102        # Weibull forward run
+const SEED_MH = 20240601        # AdvancedMH
+const SEED_HMC = 20240602       # AdvancedHMC (exponential)
+const SEED_TUR = 20240603       # Turing
+const SEED_WEI_HMC = 20240604   # AdvancedHMC (Weibull)</code></pre><h2 id="§1-The-model:-a-two-clock-race-with-swappable-clocks"><a class="docs-heading-anchor" href="#§1-The-model:-a-two-clock-race-with-swappable-clocks">§1  The model: a two-clock race with swappable clocks</a><a id="§1-The-model:-a-two-clock-race-with-swappable-clocks-1"></a><a class="docs-heading-anchor-permalink" href="#§1-The-model:-a-two-clock-race-with-swappable-clocks" title="Permalink"></a></h2><p>The model is the competing race of the trace-evaluation page, generalized in one way: instead of hard-coded rates, each event reads its distribution <strong>object</strong> from a module global <code>CLOCKS</code>, an <code>Any</code>-typed <code>Ref</code> so that (a) <code>ForwardDiff.Dual</code> numbers reach <code>enable</code> for the gradient, and (b) the <em>same</em> module serves both the exponential and the Weibull experiments — we only swap what we store in <code>CLOCKS</code>. Both clocks are perpetually enabled (trivially-true preconditions) and the fired clock is re-proposed on firing, so every clock stays in the enabled set for the whole run. That shape is deliberate: it sidesteps a known upstream CombinedNextReaction stale-entry issue that would otherwise perturb the likelihood of a clock that leaves the enabled set.</p><pre><code class="language-julia hljs">module CalibRace
+using ChronoSim
+using ChronoSim.ObservedState
+using Distributions
+import ChronoSim: precondition, generators, enable, fire!</code></pre><p>Distribution objects, <code>Any</code>-typed so Float64 params, Dual params, and either an <code>Exponential</code> or a <code>Weibull</code> all fit the same slot.</p><pre><code class="language-julia hljs">const CLOCKS = Ref{NTuple{2,Any}}((Exponential(1.0), Exponential(1 / 1.6)))
+
+@keyedby RaceCell Int64 begin
+    a::Int64
+    b::Int64
+end
+
+@observedphysical RaceBoard begin
+    cell::ObservedVector{RaceCell,Member}
+end
+
+function RaceBoard(n::Int)
+    cells = ObservedArray{RaceCell,Member}(undef, n)
+    for i in eachindex(cells)
+        cells[i] = RaceCell(0, 0)
+    end
+    return RaceBoard(cells)
+end
+
+struct FireA &lt;: SimEvent
+    idx::Int64
+end
+@precondition precondition(evt::FireA, state) = state.cell[evt.idx].a &gt;= 0
+enable(::FireA, state, when) = (CLOCKS[][1], when)
+fire!(evt::FireA, state, when, rng) = (state.cell[evt.idx].a += 1; nothing)
+
+struct FireB &lt;: SimEvent
+    idx::Int64
+end
+@precondition precondition(evt::FireB, state) = state.cell[evt.idx].b &gt;= 0
+enable(::FireB, state, when) = (CLOCKS[][2], when)
+fire!(evt::FireB, state, when, rng) = (state.cell[evt.idx].b += 1; nothing)
+
+function init!(state, when, rng)
+    state.cell[1].a = 0
+    state.cell[1].b = 0
+    return nothing
+end
+end # module
+
+using .CalibRace: RaceBoard, FireA, FireB</code></pre><h2 id="§2-Simulate-an-event-log"><a class="docs-heading-anchor" href="#§2-Simulate-an-event-log">§2  Simulate an event log</a><a id="§2-Simulate-an-event-log-1"></a><a class="docs-heading-anchor-permalink" href="#§2-Simulate-an-event-log" title="Permalink"></a></h2><p><code>simulate_log</code> runs the forward executor and records <code>(when, clock_key)</code> for each firing, skipping the synthetic <code>InitializeEvent</code>. This is the &quot;observed data&quot; a field study would hand us; downstream, only the trace is used.</p><pre><code class="language-julia hljs">function simulate_log(nsteps; seed)
+    trace = Tuple{Float64,Tuple}[]
+    observer = (physical, when, event, changed) -&gt; begin
+        event isa ChronoSim.InitializeEvent &amp;&amp; return nothing
+        push!(trace, (when, clock_key(event)))
+    end
+    sim = SimulationFSM(
+        RaceBoard(1), [FireA, FireB];
+        rng=Xoshiro(seed), key_type=Tuple, observer=observer,
+    )
+    ChronoSim.run(sim, CalibRace.init!, (p, i, e, w) -&gt; i &gt; nsteps)
+    return trace
+end</code></pre><p>Ground truth for the exponential race: rates λ = [1.0, 1.6].</p><pre><code class="language-julia hljs">const EXP_TRUTH = [1.0, 1.6]
+CalibRace.CLOCKS[] = (Exponential(1 / EXP_TRUTH[1]), Exponential(1 / EXP_TRUTH[2]))
+const EXP_LOG = simulate_log(N_EXP_STEPS; seed=SEED_EXP_LOG)</code></pre><p>Summaries of the log we will reuse: the counts and the final time.</p><pre><code class="language-julia hljs">exp_na = count(t -&gt; t[2][1] == :FireA, EXP_LOG)
+exp_nb = count(t -&gt; t[2][1] == :FireB, EXP_LOG)
+exp_tN = EXP_LOG[end][1]
+@assert exp_na + exp_nb == N_EXP_STEPS</code></pre><h2 id="§3-One-differentiable-closure,-four-consumers"><a class="docs-heading-anchor" href="#§3-One-differentiable-closure,-four-consumers">§3  One differentiable closure, four consumers</a><a id="§3-One-differentiable-closure,-four-consumers-1"></a><a class="docs-heading-anchor-permalink" href="#§3-One-differentiable-closure,-four-consumers" title="Permalink"></a></h2><p>This is the load-bearing function. <code>make_loglik(trace, θ_to_clocks)</code> returns a closure <code>θ -&gt; loglikelihood</code>: it writes the clocks derived from <code>θ</code> into the module global, builds an evaluation sim whose <code>likelihood_eltype</code> matches <code>eltype(θ)</code> (so <code>Float64</code> gives a <code>Float64</code> and a <code>Dual</code> vector gives a <code>Dual</code>), and returns the trace log-likelihood. Every stack below consumes this one closure — nothing about the optimizer or sampler leaks into the model.</p><pre><code class="language-julia hljs">function make_loglik(trace, θ_to_clocks)
+    return function loglik(θ)
+        CalibRace.CLOCKS[] = θ_to_clocks(θ)
+        sim = SimulationFSM(
+            RaceBoard(1), [FireA, FireB];
+            rng=Xoshiro(7), step_likelihood=true, likelihood_eltype=eltype(θ),
+            key_type=Tuple,
+        )
+        return trace_likelihood(sim, CalibRace.init!, trace).loglikelihood
+    end
+end</code></pre><p>The two parameterizations. <code>Exponential</code> in Distributions.jl takes the <em>scale</em>, so in <code>exp_clocks</code> a rate λ becomes <code>Exponential(1/λ)</code>. The Weibull variant (used in §5) keeps clock A memoryless and lets clock B age; note that <code>wei_clocks</code> parameterizes clock A by its <em>scale</em> <code>θ[1]</code> (not a rate), so <code>θ[1]</code> there and <code>θ[1]</code> above coincide only because the ground truth is 1.0.</p><pre><code class="language-julia hljs">exp_clocks(θ) = (Exponential(1 / θ[1]), Exponential(1 / θ[2]))
+wei_clocks(θ) = (Exponential(θ[1]), Weibull(θ[2], θ[3]))
+
+loglik_exp = make_loglik(EXP_LOG, exp_clocks)</code></pre><h3 id="Pre-gate:-the-closure-reproduces-the-closed-form"><a class="docs-heading-anchor" href="#Pre-gate:-the-closure-reproduces-the-closed-form">Pre-gate: the closure reproduces the closed form</a><a id="Pre-gate:-the-closure-reproduces-the-closed-form-1"></a><a class="docs-heading-anchor-permalink" href="#Pre-gate:-the-closure-reproduces-the-closed-form" title="Permalink"></a></h3><p>For an always-enabled exponential race the log-likelihood telescopes to <span>$n_A \log\lambda_A + n_B \log\lambda_B - (\lambda_A+\lambda_B)\,t_N$</span>. If the closure does not match this at the truth, nothing downstream is trustworthy, so we assert it first.</p><pre><code class="language-julia hljs">exp_closed_form(λ) = exp_na * log(λ[1]) + exp_nb * log(λ[2]) - (λ[1] + λ[2]) * exp_tN
+@assert isapprox(loglik_exp(EXP_TRUTH), exp_closed_form(EXP_TRUTH); atol=1e-9)</code></pre><h2 id="§4a-Maximum-likelihood-with-Optim-ForwardDiff"><a class="docs-heading-anchor" href="#§4a-Maximum-likelihood-with-Optim-ForwardDiff">§4a  Maximum likelihood with Optim + ForwardDiff</a><a id="§4a-Maximum-likelihood-with-Optim-ForwardDiff-1"></a><a class="docs-heading-anchor-permalink" href="#§4a-Maximum-likelihood-with-Optim-ForwardDiff" title="Permalink"></a></h2><p>We optimize in the log-parameter space <span>$\varphi = \log\theta$</span> so the rates stay positive with no box constraints, and let Optim get its gradient from ForwardDiff via the ADTypes object <code>AutoForwardDiff()</code>. The negative log-likelihood is the objective.</p><pre><code class="language-julia hljs">nll_exp(φ) = -loglik_exp(exp.(φ))
+mle_res = optimize(nll_exp, log.(EXP_TRUTH), LBFGS(); autodiff=AutoForwardDiff())
+exp_mle = exp.(Optim.minimizer(mle_res))</code></pre><p>For the always-enabled exponential race the MLE is closed-form, <span>$\hat\lambda_k = n_k / t_N$</span>, so we can check the optimizer exactly.</p><pre><code class="language-julia hljs">@assert isapprox(exp_mle, [exp_na, exp_nb] ./ exp_tN; rtol=1e-6)</code></pre><p>Standard errors come from the observed information, the negative Hessian of the log-likelihood at the MLE. For this model it is diagonal with entries <span>$n_k / \hat\lambda_k^2$</span>, so the standard error of <span>$\hat\lambda_k$</span> is <span>$\hat\lambda_k / \sqrt{n_k}$</span> — again checkable by hand.</p><pre><code class="language-julia hljs">exp_info = -ForwardDiff.hessian(loglik_exp, exp_mle)
+exp_se = sqrt.(diag(inv(exp_info)))
+@assert isapprox(exp_se, exp_mle ./ sqrt.([exp_na, exp_nb]); rtol=1e-6)</code></pre><p>The committed text block below is exactly the output of these <code>println</code>s; re-run the script and diff to refresh it.</p><pre><code class="language-julia hljs">println(&quot;n_A = &quot;, exp_na, &quot;   n_B = &quot;, exp_nb, &quot;   t_N = &quot;, round(exp_tN; digits=3))
+println(&quot;MLE  λ̂ = &quot;, round.(exp_mle; digits=3), &quot;   (truth &quot;, EXP_TRUTH, &quot;)&quot;)
+println(&quot;SE       &quot;, round.(exp_se; digits=3))</code></pre><pre><code class="language-text hljs">n_A = 77   n_B = 123   t_N = 76.688
+MLE  λ̂ = [1.004, 1.604]   (truth [1.0, 1.6])
+SE       [0.114, 0.145]</code></pre><h2 id="§4b-Posterior-via-LogDensityProblems-AdvancedMH"><a class="docs-heading-anchor" href="#§4b-Posterior-via-LogDensityProblems-AdvancedMH">§4b  Posterior via LogDensityProblems + AdvancedMH</a><a id="§4b-Posterior-via-LogDensityProblems-AdvancedMH-1"></a><a class="docs-heading-anchor-permalink" href="#§4b-Posterior-via-LogDensityProblems-AdvancedMH" title="Permalink"></a></h2><p>To go Bayesian we wrap the closure in a <code>LogDensityProblems</code> target. The prior is <span>$\varphi = \log\theta \sim \mathrm{Normal}(0,1)$</span> on each component, which is exactly a <code>LogNormal(0,1)</code> prior on the rates themselves — putting the prior on the log scale means the sampler explores an unconstrained space and we avoid any change-of-variables Jacobian bookkeeping.</p><pre><code class="language-julia hljs">struct TracePosterior{L}
+    loglik::L
+    dim::Int
+end
+
+LogDensityProblems.dimension(p::TracePosterior) = p.dim
+function LogDensityProblems.capabilities(::Type{&lt;:TracePosterior})
+    return LogDensityProblems.LogDensityOrder{0}()
+end
+function LogDensityProblems.logdensity(p::TracePosterior, φ)
+    logprior = sum(logpdf(Normal(0.0, 1.0), φi) for φi in φ)
+    return logprior + p.loglik(exp.(φ))
+end
+
+exp_post = TracePosterior(loglik_exp, 2)</code></pre><p>AdvancedMH&#39;s <code>RWMH</code> takes a symmetric random-walk proposal; a small isotropic Gaussian in log space mixes well here. We <code>sample</code> directly on the LogDensityProblems object, start at the MLE, and discard a short warm-up. The explicit <code>Xoshiro</code> seed makes the chain reproducible.</p><pre><code class="language-julia hljs">mh_proposal = AdvancedMH.RWMH(MvNormal(zeros(2), (0.08^2) * I))
+mh_chain = AbstractMCMC.sample(
+    Xoshiro(SEED_MH), exp_post, mh_proposal, N_MH_DRAWS;
+    initial_params=log.(exp_mle), discard_initial=N_MH_BURN,
+    param_names=[&quot;logλA&quot;, &quot;logλB&quot;], chain_type=Chains,
+)</code></pre><p>The chain samples <span>$\varphi$</span>; transform back to rates for the posterior mean and check recovery plus a healthy effective sample size.</p><pre><code class="language-julia hljs">mh_rates = exp.(Array(mh_chain))
+mh_mean = vec(mean(mh_rates; dims=1))
+mh_ess = minimum(ess(mh_chain).nt.ess)
+@assert isapprox(mh_mean, EXP_TRUTH; rtol=0.15)
+@assert mh_ess &gt; 200
+
+println(&quot;AdvancedMH RWMH, &quot;, N_MH_DRAWS, &quot; draws (&quot;, N_MH_BURN, &quot; warm-up discarded)&quot;)
+println(&quot;  posterior mean rates = &quot;, round.(mh_mean; digits=3), &quot;   (truth &quot;, EXP_TRUTH, &quot;)&quot;)
+println(&quot;  ESS = &quot;, round.(Int, ess(mh_chain).nt.ess))</code></pre><pre><code class="language-text hljs">AdvancedMH RWMH, 20000 draws (2000 warm-up discarded)
+  posterior mean rates = [0.998, 1.602]   (truth [1.0, 1.6])
+  ESS = [1219, 2023]</code></pre><h2 id="§4c-NUTS-via-AdvancedHMC-—-the-migration&#39;s-payoff"><a class="docs-heading-anchor" href="#§4c-NUTS-via-AdvancedHMC-—-the-migration&#39;s-payoff">§4c  NUTS via AdvancedHMC — the migration&#39;s payoff</a><a id="§4c-NUTS-via-AdvancedHMC-—-the-migration&#39;s-payoff-1"></a><a class="docs-heading-anchor-permalink" href="#§4c-NUTS-via-AdvancedHMC-—-the-migration&#39;s-payoff" title="Permalink"></a></h2><p>AdvancedHMC needs gradients, so we wrap the same posterior in an <code>ADgradient(AutoForwardDiff(), …)</code> and hand it to <code>LogDensityModel</code>. Every leapfrog step now differentiates <code>trace_likelihood</code> through the whole event log — the concrete payoff of driving CompetingClocks through the number-generic <code>SamplingContext</code>. Before the migration this path did not exist.</p><pre><code class="language-julia hljs">exp_hmc_model = AdvancedHMC.LogDensityModel(ADgradient(AutoForwardDiff(), exp_post))
+hmc_chain = AbstractMCMC.sample(
+    Xoshiro(SEED_HMC), exp_hmc_model, AdvancedHMC.NUTS(0.8), N_HMC_ADAPT + N_HMC_DRAWS;
+    n_adapts=N_HMC_ADAPT, discard_initial=N_HMC_ADAPT,
+    initial_params=log.(exp_mle), chain_type=Chains,
+)
+
+hmc_rates = exp.(Array(hmc_chain))
+hmc_mean = vec(mean(hmc_rates; dims=1))
+hmc_rhat = maximum(skipmissing(rhat(hmc_chain).nt.rhat))
+hmc_ess = minimum(ess(hmc_chain).nt.ess)
+@assert isapprox(hmc_mean, EXP_TRUTH; rtol=0.15)
+@assert hmc_rhat &lt; 1.05
+@assert hmc_ess &gt; 200
+
+println(&quot;AdvancedHMC NUTS, &quot;, N_HMC_ADAPT, &quot; adapt + &quot;, N_HMC_DRAWS, &quot; draws&quot;)
+println(&quot;  posterior mean rates = &quot;, round.(hmc_mean; digits=3), &quot;   (truth &quot;, EXP_TRUTH, &quot;)&quot;)
+println(&quot;  r̂ = &quot;, round(hmc_rhat; digits=3), &quot;, ESS = &quot;, round.(Int, ess(hmc_chain).nt.ess))</code></pre><pre><code class="language-text hljs">AdvancedHMC NUTS, 500 adapt + 500 draws
+  posterior mean rates = [0.994, 1.599]   (truth [1.0, 1.6])
+  r̂ = 1.003, ESS = [887, 930]</code></pre><h2 id="§4d-The-same-fit-as-a-Turing-@model"><a class="docs-heading-anchor" href="#§4d-The-same-fit-as-a-Turing-@model">§4d  The same fit as a Turing <code>@model</code></a><a id="§4d-The-same-fit-as-a-Turing-@model-1"></a><a class="docs-heading-anchor-permalink" href="#§4d-The-same-fit-as-a-Turing-@model" title="Permalink"></a></h2><p>Turing expresses the same posterior declaratively. <code>LogNormal(0,1)</code> priors on the rates match §4b&#39;s Normal-on-log-θ prior, and <code>@addlogprob!</code> folds in the ChronoSim trace log-likelihood as the &quot;data&quot; term. Turing&#39;s default AD backend is ForwardDiff, which is exactly what threads Duals through <code>enable</code>: only ForwardDiff <code>Dual</code>s are stripped at the primal sampling boundary by CompetingClocks&#39; <code>CompetingClocksForwardDiffExt</code>. Reverse-mode tracked/taped values have no analogous extension and the state mutates underneath them, so NUTS-with-ForwardDiff (or the gradient-free <code>MH()</code>) is the supported route.</p><pre><code class="language-julia hljs">@model function race_model(loglik)
+    λA ~ LogNormal(0.0, 1.0)
+    λB ~ LogNormal(0.0, 1.0)
+    Turing.@addlogprob! loglik([λA, λB])
+end
+
+tur_chain = sample(
+    Xoshiro(SEED_TUR), race_model(loglik_exp), Turing.NUTS(N_TUR_ADAPT, 0.8), N_TUR_DRAWS,
+)
+tur_mean = [mean(tur_chain[:λA]), mean(tur_chain[:λB])]</code></pre><p>Turing samples the rates directly (it handles the constraint transform internally), so its posterior mean should agree with the AdvancedHMC mean of §4c up to Monte-Carlo error.</p><pre><code class="language-julia hljs">@assert isapprox(tur_mean, hmc_mean; rtol=0.1)
+
+println(&quot;Turing NUTS(&quot;, N_TUR_ADAPT, &quot;, 0.8), &quot;, N_TUR_DRAWS, &quot; draws&quot;)
+println(&quot;  posterior mean rates = &quot;, round.(tur_mean; digits=3),
+    &quot;   (AdvancedHMC gave &quot;, round.(hmc_mean; digits=3), &quot;)&quot;)</code></pre><pre><code class="language-text hljs">Turing NUTS(500, 0.8), 1000 draws
+  posterior mean rates = [1.008, 1.595]   (AdvancedHMC gave [0.994, 1.599])</code></pre><h2 id="§5-A-Weibull-clock:-the-semi-Markov-niche"><a class="docs-heading-anchor" href="#§5-A-Weibull-clock:-the-semi-Markov-niche">§5  A Weibull clock: the semi-Markov niche</a><a id="§5-A-Weibull-clock:-the-semi-Markov-niche-1"></a><a class="docs-heading-anchor-permalink" href="#§5-A-Weibull-clock:-the-semi-Markov-niche" title="Permalink"></a></h2><p>Now the point of it all. Swap clock B from an <code>Exponential</code> to a <code>Weibull</code> whose shape exceeds one, and the race is no longer memoryless: clock B <em>ages</em> while it waits, and — because it keeps running across firings of clock A — that age is carried across events. This is the semi-Markov behaviour that memoryless (CTMC) tooling structurally cannot represent, and it is where a GSMP framework earns its keep. Ground truth is <code>θ = [scaleA, shapeB, scaleB] = [1.0, 1.7, 1.2]</code>; a shape of 1.7 &gt; 1 means wearout.</p><pre><code class="language-julia hljs">const WEI_TRUTH = [1.0, 1.7, 1.2]
+CalibRace.CLOCKS[] = wei_clocks(WEI_TRUTH)
+const WEI_LOG = simulate_log(N_WEI_STEPS; seed=SEED_WEI_LOG)
+loglik_wei = make_loglik(WEI_LOG, wei_clocks)</code></pre><h3 id="§5(i)-An-independent-clock-age-walker"><a class="docs-heading-anchor" href="#§5(i)-An-independent-clock-age-walker">§5(i)  An independent clock-age walker</a><a id="§5(i)-An-independent-clock-age-walker-1"></a><a class="docs-heading-anchor-permalink" href="#§5(i)-An-independent-clock-age-walker" title="Permalink"></a></h3><p>The strongest correctness statement on this page does not trust the framework at all. This ~15-line walker recomputes the log-likelihood directly from the semi-Markov definition: each clock has an <em>age</em> (time since it was last enabled), both start at zero, and only the winner&#39;s age resets when it fires — the loser keeps aging. A clock that survives an interval <span>$[t_0, t_1]$</span> contributes conditional survival <span>$\log S(\mathrm{age}_1) - \log S(\mathrm{age}_0)$</span> (<code>logccdf</code> differences); the winner contributes the conditional density <span>$\log f(\mathrm{age}_1) - \log S(\mathrm{age}_0)$</span>. For an exponential the age terms cancel and this reduces to the memoryless form; for the Weibull they do not, and <em>that difference is the memory</em>.</p><pre><code class="language-julia hljs">function analytic_semimarkov_loglik(trace, clocks)
+    te = [0.0, 0.0]          # time each clock was last enabled (both at t=0)
+    tprev = 0.0
+    ll = 0.0
+    for (tnow, key) in trace
+        w = key[1] === :FireA ? 1 : 2
+        for k in 1:2
+            d = clocks[k]
+            age0 = tprev - te[k]
+            age1 = tnow - te[k]
+            if k == w
+                ll += logpdf(d, age1) - logccdf(d, age0)   # winner: conditional density
+            else
+                ll += logccdf(d, age1) - logccdf(d, age0)   # loser: conditional survival
+            end
+        end
+        te[w] = tnow          # only the winner is re-enabled; its age resets
+        tprev = tnow
+    end
+    return ll
+end</code></pre><p>The walker and the framework agree to floating-point tolerance — an independent confirmation that ChronoSim scores semi-Markov memory correctly.</p><pre><code class="language-julia hljs">@assert isapprox(analytic_semimarkov_loglik(WEI_LOG, wei_clocks(WEI_TRUTH)), loglik_wei(WEI_TRUTH); atol=1e-8)</code></pre><h3 id="§5(ii)-Maximum-likelihood-in-three-dimensions"><a class="docs-heading-anchor" href="#§5(ii)-Maximum-likelihood-in-three-dimensions">§5(ii)  Maximum likelihood in three dimensions</a><a id="§5(ii)-Maximum-likelihood-in-three-dimensions-1"></a><a class="docs-heading-anchor-permalink" href="#§5(ii)-Maximum-likelihood-in-three-dimensions" title="Permalink"></a></h3><p>There is no closed form now, but the same Optim + ForwardDiff recipe works verbatim in three log-parameters. We validate by recovery within four standard errors, and — the commercially interesting claim — assert that the fitted shape is <em>significantly</em> greater than one: the data reveal wearout, not memorylessness.</p><pre><code class="language-julia hljs">nll_wei(φ) = -loglik_wei(exp.(φ))
+wei_res = optimize(nll_wei, log.(WEI_TRUTH), LBFGS(); autodiff=AutoForwardDiff())
+wei_mle = exp.(Optim.minimizer(wei_res))
+wei_info = -ForwardDiff.hessian(loglik_wei, wei_mle)
+wei_se = sqrt.(diag(inv(wei_info)))
+
+@assert all(abs.(wei_mle .- WEI_TRUTH) .&lt; 4 .* wei_se)
+@assert wei_mle[2] - 4 * wei_se[2] &gt; 1     # shape is significantly &gt; 1: the clock ages
+
+println(&quot;Weibull MLE  θ̂ = [scaleA, shapeB, scaleB] = &quot;, round.(wei_mle; digits=3),
+    &quot;   (truth &quot;, WEI_TRUTH, &quot;)&quot;)
+println(&quot;SE                                           &quot;, round.(wei_se; digits=3))
+println(&quot;shape − 4·SE = &quot;, round(wei_mle[2] - 4 * wei_se[2]; digits=3), &quot; &gt; 1&quot;)</code></pre><pre><code class="language-text hljs">Weibull MLE  θ̂ = [scaleA, shapeB, scaleB] = [0.996, 1.808, 1.19]   (truth [1.0, 1.7, 1.2])
+SE                                           [0.062, 0.092, 0.044]
+shape − 4·SE = 1.44 &gt; 1</code></pre><h3 id="§5(iii)-A-Bayesian-Weibull-fit-with-AdvancedHMC"><a class="docs-heading-anchor" href="#§5(iii)-A-Bayesian-Weibull-fit-with-AdvancedHMC">§5(iii)  A Bayesian Weibull fit with AdvancedHMC</a><a id="§5(iii)-A-Bayesian-Weibull-fit-with-AdvancedHMC-1"></a><a class="docs-heading-anchor-permalink" href="#§5(iii)-A-Bayesian-Weibull-fit-with-AdvancedHMC" title="Permalink"></a></h3><p>One posterior for the three-parameter Weibull race, again through NUTS, to show the whole pipeline carries over unchanged. We check that the marginal 90% credible interval covers the truth for every parameter.</p><pre><code class="language-julia hljs">wei_post = TracePosterior(loglik_wei, 3)
+wei_hmc_model = AdvancedHMC.LogDensityModel(ADgradient(AutoForwardDiff(), wei_post))
+wei_chain = AbstractMCMC.sample(
+    Xoshiro(SEED_WEI_HMC), wei_hmc_model, AdvancedHMC.NUTS(0.8), N_WEI_ADAPT + N_WEI_DRAWS;
+    n_adapts=N_WEI_ADAPT, discard_initial=N_WEI_ADAPT,
+    initial_params=log.(wei_mle), chain_type=Chains,
+)
+
+wei_draws = exp.(Array(wei_chain))
+wei_lo = [quantile(wei_draws[:, k], 0.05) for k in 1:3]
+wei_hi = [quantile(wei_draws[:, k], 0.95) for k in 1:3]
+@assert all(wei_lo .&lt;= WEI_TRUTH .&lt;= wei_hi)
+
+println(&quot;Weibull AdvancedHMC NUTS, &quot;, N_WEI_ADAPT, &quot; adapt + &quot;, N_WEI_DRAWS, &quot; draws&quot;)
+for (k, nm) in enumerate((&quot;scaleA&quot;, &quot;shapeB&quot;, &quot;scaleB&quot;))
+    println(&quot;  90% CI &quot;, nm, &quot; : [&quot;, round(wei_lo[k]; digits=3), &quot;, &quot;,
+        round(wei_hi[k]; digits=3), &quot;]  ∋ &quot;, WEI_TRUTH[k])
+end</code></pre><pre><code class="language-text hljs">Weibull AdvancedHMC NUTS, 400 adapt + 400 draws
+  90% CI scaleA : [0.899, 1.112]  ∋ 1.0
+  90% CI shapeB : [1.65, 1.947]  ∋ 1.7
+  90% CI scaleB : [1.117, 1.265]  ∋ 1.2</code></pre><h2 id="§6-Notes"><a class="docs-heading-anchor" href="#§6-Notes">§6  Notes</a><a id="§6-Notes-1"></a><a class="docs-heading-anchor-permalink" href="#§6-Notes" title="Permalink"></a></h2><p><strong>Runtime.</strong> On the reference machine (Apple Silicon, Julia 1.12) this script runs in about <strong>1 minute 45 seconds</strong> end-to-end after precompilation; the AdvancedMH and HMC chains dominate. Every sampler length is a named constant at the top of the file — shrink them if you need it faster.</p><p><strong>Thread-safety.</strong> The model reads its clocks from a <em>module global</em> <code>Ref</code>, so the likelihood closure is <strong>not</strong> thread-safe: never run these chains with <code>MCMCThreads()</code>. Two chains sharing the process would race on <code>CalibRace.CLOCKS</code>. Sequential chains (or separate processes) are fine, and are what the seeds above assume. A thread-safe model would instead carry its parameters in a field of the physical state rather than a global.</p><p><strong>Where to go next.</strong> The <a href="../trace_evaluation/">trace-evaluation page</a> is the narrative for <code>trace_likelihood</code> itself — feasibility verdicts, the closed-form check, and the ForwardDiff mechanics this page builds on.</p><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p><script type="module">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({
+    startOnLoad: true,
+    theme: "neutral"
+});
+</script></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../trace_evaluation/">« Evaluating a Trace</a><a class="docs-footer-nextpage" href="../record_replay/">Recording &amp; Replaying »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.17.0 on <span class="colophon-date" title="Tuesday 7 July 2026 01:14">Tuesday 7 July 2026</span>. Using Julia version 1.12.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
