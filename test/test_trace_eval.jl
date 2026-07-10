@@ -252,8 +252,9 @@ end
              log(DA) - DA * (1.5 - 0.9)
     @test ev.feasible == true
     @test ev.steps_evaluated == 3
-    # BROKEN until CompetingClocks fixes stale-entry pollution in
-    # CombinedNextReaction.steploglikelihood (fired/disabled clocks must be
-    # filtered by heap_handle > 0). The polluted value is expect - DC * 1.1.
-    @test_broken ev.loglikelihood ≈ expect atol = 1e-10
+    # CompetingClocks fixed the stale-entry pollution in
+    # CombinedNextReaction.steploglikelihood (fired/disabled clocks filtered by
+    # heap_handle > 0), so the pinned value holds; the polluted value had been
+    # expect - DC * 1.1.
+    @test ev.loglikelihood ≈ expect atol = 1e-10
 end
