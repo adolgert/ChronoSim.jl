@@ -5,6 +5,7 @@ include("physical_interface.jl")
 include("generator_interface.jl")
 include("ObservedState/ObservedState.jl")
 include("events.jl")
+include("recipe.jl")            # Milestone 2 (G4): θ-free DistRecipe behind the seam
 include("generators.jl")
 include("derive.jl")
 include("derive_effects.jl")    # Phase 2: @fire + WriteSpec + can_stop_change
@@ -13,8 +14,10 @@ include("coverage.jl")
 include("policy.jl")
 include("effect_coverage.jl")   # Phase 2: CheckEffects oracle (needs ExecutionPolicy)
 include("placetoevent.jl")
+include("counting_rng.jl")      # Adoption 1: draw-counting rng proxy (used by framework.jl)
 include("framework.jl")
 include("skeleton.jl")
+include("minimal_record.jl")    # Adoption 1/2: minimal record schema + effect check
 include("policy_stack.jl")      # Phase 1d: PolicyStack + find_policy
 include("invariant.jl")         # Phase 1d: @invariant + CheckInvariants
 include("replay.jl")

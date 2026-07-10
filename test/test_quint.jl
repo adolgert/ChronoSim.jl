@@ -586,7 +586,7 @@ end
     ER = ChronoSim.EnableRecord{CK}
     steps = [ChronoSim.SkeletonStep{CK}((:EvtA, 1), 1.5, Tuple[], ER[], CK[], CK[]),
              ChronoSim.SkeletonStep{CK}((:EvtB, 2), 2.5, Tuple[], ER[], CK[], CK[])]
-    skel = TrajectorySkeleton{CK}(Xoshiro(1), nothing,
+    skel = TrajectorySkeleton{CK}(UInt64(1), nothing,   # milestone 4: seed field replaced the Xoshiro snapshot
         ChronoSim.SkeletonInit{CK}(0.0, Tuple[], ER[], CK[], CK[]), steps)
     log = joinpath(mktempdir(), "s1.log")
     write(log, "[State 0]\n  t_i: 1\n[State 1]\n  t_i: 2\n[State 2]\n  t_i: 3\n[violation]\n")

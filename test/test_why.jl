@@ -254,7 +254,7 @@ function _hand_skeleton()
         EnableRecord{CK}[], CK[], CK[])
     s2 = SkeletonStep{CK}((:E, 2), 2.0, Tuple[mem(:y)],
         EnableRecord{CK}[], CK[], CK[])
-    return TrajectorySkeleton{CK}(Xoshiro(0), nothing, init, [s1, s2])
+    return TrajectorySkeleton{CK}(UInt64(0), nothing, init, [s1, s2])
 end
 
 ########## Tests ##########
@@ -439,7 +439,7 @@ end
     CK = Tuple
     addr = (Member(:cell), 1, Member(:b))
     init = SkeletonInit{CK}(0.0, Tuple[addr], EnableRecord{CK}[], CK[], CK[])
-    skel = TrajectorySkeleton{CK}(Xoshiro(0), nothing, init, SkeletonStep{CK}[])
+    skel = TrajectorySkeleton{CK}(UInt64(0), nothing, init, SkeletonStep{CK}[])
     v = InvariantViolation("a xor b", TwinFlag, LineNumberNode(1, :here), 1,
         (:Corrupt, 1), 0.5, Tuple[addr], Tuple[addr], Tuple[addr],
         true, skel, nothing)

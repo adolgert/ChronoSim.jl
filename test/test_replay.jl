@@ -16,7 +16,7 @@ import ChronoSim: precondition, generators, enable, fire!
 # (test_replay before test_skeleton) is fine.
 
 # Build a race sim with the given policy. The rng passed is overwritten by
-# replay's copy!(sim.rng, skeleton.rng_state), so any seed works for a factory.
+# replay's _apply_seeds!(sim, skeleton.seed), so any seed works for a factory.
 function _race_sim(policy; seed=0, observer=nothing)
     return SimulationFSM(
         SkeletonRace.RaceBoard(1), [SkeletonRace.FireA, SkeletonRace.FireB];
@@ -54,7 +54,7 @@ _flip_factory(policy) = (_flip_sim(policy; seed=999), SkeletonFlip.init!)
 function _with_step(skel, i, newstep)
     steps = copy(skel.steps)
     steps[i] = newstep
-    return typeof(skel)(skel.rng_state, skel.metadata, skel.init, steps)
+    return typeof(skel)(skel.seed, skel.metadata, skel.init, steps)
 end
 
 @testset "replay reproduces a recorded run" begin
@@ -136,7 +136,7 @@ end
     @test length(skel.steps) == 1                 # survivor disabled after the flip
     extra = skel.steps[1]
     steps2 = vcat(skel.steps, [extra])
-    skel2 = typeof(skel)(skel.rng_state, skel.metadata, skel.init, steps2)
+    skel2 = typeof(skel)(skel.seed, skel.metadata, skel.init, steps2)
     err = try
         replay(_flip_factory, skel2)
         nothing

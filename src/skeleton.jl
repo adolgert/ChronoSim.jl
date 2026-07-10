@@ -69,9 +69,12 @@ The recorded skeleton of one simulation run, produced by
 
 # Fields
 
-  * `rng_state::Xoshiro` — a copy of the simulation RNG taken before the
-    initializer ran; restoring it and re-running reproduces the trajectory
-    exactly.
+  * `seed::UInt64` — the simulation's master seed. Milestone 4 moved randomness
+    ownership into the sampler and the FSM's keyed fire streams, both derived from
+    this one seed, so rebuilding a sim from `seed` (via `_apply_seeds!`) and
+    re-running reproduces the trajectory exactly. This replaces the old
+    `rng_state::Xoshiro` snapshot: a fresh-run replay from t=0 needs only the seed,
+    because every per-clock and per-event stream reseeds deterministically from it.
   * `metadata::Any` — the opaque value given to `RecordSkeleton`.
   * `init::SkeletonInit{CK}` — the initialization record: `when`, the
     addresses the initializer wrote (`changed`), and the clocks proposed and
@@ -90,7 +93,7 @@ enable after it was last disabled or fired. `init.disabled` is always empty
 under the current executor and is kept for format stability.
 """
 struct TrajectorySkeleton{CK}
-    rng_state::Xoshiro
+    seed::UInt64
     metadata::Any
     init::SkeletonInit{CK}
     steps::Vector{SkeletonStep{CK}}
@@ -111,7 +114,7 @@ end
     RecordSkeleton(; metadata=nothing)
 
 An [`ExecutionPolicy`](@ref) that records a [`TrajectorySkeleton`](@ref) of
-the run: the pre-initialization RNG state, and per fired event its clock key,
+the run: the master seed, and per fired event its clock key,
 firing time, changed state addresses, and the enable/disable/proposal history
 that preceded it. Recording is opt-in: pass `policy=RecordSkeleton()` to
 [`SimulationFSM`](@ref); a simulation constructed without it records nothing
@@ -145,7 +148,9 @@ function on_preinit(p::RecordSkeleton, sim)
     init = SkeletonInit{CK}(sim.when, Tuple[], EnableRecord{CK}[], CK[], CK[])
     steps = SkeletonStep{CK}[]
     sizehint!(steps, 4096)
-    skel = TrajectorySkeleton{CK}(copy(sim.rng), p.metadata, init, steps)
+    # Record the master seed, not an RNG snapshot: milestone 4 derives every
+    # stream family from it, so the seed alone reproduces a fresh-run replay.
+    skel = TrajectorySkeleton{CK}(sim.seed, p.metadata, init, steps)
     p.recorder = _SkeletonRecorder{CK}(skel, EnableRecord{CK}[], CK[], CK[])
     return nothing
 end
@@ -227,10 +232,10 @@ Base.hash(a::SkeletonInit, h::UInt) =
         hash(a.when, hash(:SkeletonInit, h))))))
 
 Base.:(==)(a::TrajectorySkeleton, b::TrajectorySkeleton) =
-    a.rng_state == b.rng_state && isequal(a.metadata, b.metadata) &&
+    a.seed == b.seed && isequal(a.metadata, b.metadata) &&
     a.init == b.init && a.steps == b.steps
 Base.hash(a::TrajectorySkeleton, h::UInt) =
-    hash(a.steps, hash(a.init, hash(a.metadata, hash(a.rng_state,
+    hash(a.steps, hash(a.init, hash(a.metadata, hash(a.seed,
         hash(:TrajectorySkeleton, h)))))
 
 ########## Show

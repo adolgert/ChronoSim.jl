@@ -107,8 +107,9 @@ and return the live simulation for inspection.
 arguments as the recorded run and with the given `policy` passed through
 (`SimulationFSM(...; policy=policy)`), plus the same initializer (a `SimEvent`
 or an init function) that was given to `run`. Any `seed`/`rng` the factory
-passes is overwritten: replay restores `skeleton.rng_state` before
-initializing, so the re-run consumes the identical random stream.
+passes is overwritten: replay re-derives every stream family from
+`skeleton.seed` (via `_apply_seeds!`) before initializing, so the re-run
+consumes the identical randomness.
 
 At every step, the fired `(clock_key, when)` is checked against
 `skeleton.steps` at the same code point where `run` evaluates its stop
@@ -143,7 +144,7 @@ function replay(sim_factory::Function, skeleton::TrajectorySkeleton;
     sim.policy === policy || throw(ArgumentError(
         "sim_factory must pass the policy it is given: SimulationFSM(...; policy=policy)"))
     (init_evt, init_func) = _resolve_initializer(initializer)   # mirrors run's two forms
-    copy!(sim.rng, skeleton.rng_state)      # 1b decision 1: the exact restore point
+    _apply_seeds!(sim, skeleton.seed)       # milestone 4: rebuild every stream family from the recorded seed
     initialize!(init_evt, init_func, sim)   # on_preinit -> callback -> enables, as recorded
     limit == 0 && return sim
     gate = _ReplayGate(skeleton.steps, limit, 0)

@@ -1,5 +1,5 @@
 [sources]
-CompetingClocks = {url = "https://github.com/adolgert/CompetingClocks.jl", rev = "main"}
+CompetingClocks = {path = "../../CompetingClocks.jl"}
 
 [deps]
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
