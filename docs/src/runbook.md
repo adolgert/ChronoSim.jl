@@ -195,8 +195,9 @@ The one-line form (used when a skeleton is printed inside another structure) is:
 TrajectorySkeleton(16003 steps, t=0.0..14.998863194116215)
 ```
 
-The recorded fields are `skel.rng_state` (a copy of the RNG taken before the
-initializer ran), `skel.metadata` (the opaque value above), `skel.init` (the
+The recorded fields are `skel.seed` (the simulation's master seed, from which
+replay re-derives every random stream family), `skel.metadata` (the opaque
+value above), `skel.init` (the
 initialization record: `when`, `changed`, `enabled`, `disabled`, `proposed`),
 and `skel.steps` (one `SkeletonStep` per fired event, in firing order, each with
 `clock`, `when`, `changed`, `enabled`, `disabled`, `proposed`).
@@ -266,8 +267,9 @@ The factory is called as `factory(policy)` and must return
 `(sim, initializer)`: a fresh `SimulationFSM` built with the given `policy`
 passed through (`SimulationFSM(...; policy=policy)`) and the same initializer (a
 `SimEvent` or an init function) given to `run`. Any `seed`/`rng` the factory
-sets is overwritten — `replay` restores `skel.rng_state`, so the re-run consumes
-the identical random stream. Model identification (constructor arguments, git
+sets is overwritten — `replay` reseeds every stream family from `skel.seed`, so
+the re-run consumes the identical randomness. Model identification (constructor
+arguments, git
 SHA) belongs in `skel.metadata` at record time; reproducing the constructor is
 the caller's responsibility.
 

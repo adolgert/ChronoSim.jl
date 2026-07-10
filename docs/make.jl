@@ -95,6 +95,10 @@ else
         prettyurls=get(ENV, "CI", nothing) == "true",
         edit_link="main",
         assets=["assets/custom.css"],
+        # reference.md is a single autodocs page over the whole package; the
+        # adoption milestones grew it past Documenter's 200 KiB default.
+        size_threshold=512 * 2^10,
+        size_threshold_warn=300 * 2^10,
     )
 end
 
@@ -118,8 +122,16 @@ makedocs(;
             "Simulation State" => ["observedphysical.md", "observedmacro.md", "customstate.md"],
             "Events" => "events.md",
             "Generators" => "generators.md",
+            "Parameters and Differentiation" => "parameters.md",
+            "Records and the Effect Check" => "minimal_records.md",
+            "Coupling and Memory Declarations" => "declarations.md",
+            "Cloning and Branching" => "cloning.md",
+            "Randomness and Reproducibility" => "randomness.md",
         ],
-        "Reference" => "reference.md",
+        "Reference" => [
+            "API" => "reference.md",
+            "The Framework Guarantees" => "guarantees.md",
+        ],
         "Debugging & Verification" => [
             "Overview" => "debugging_verification_overview.md",
             "Evaluating a Trace" => "trace_evaluation.md",
@@ -133,6 +145,8 @@ makedocs(;
             "Runbook" => "runbook.md",
         ],
         "Development" => [
+            "How the System Fits Together" => "estimator_architecture.md",
+            "Migration Notes" => "migration.md",
             "State Contract" => "state_contract.md",
             "Derivation Internals" => "derivation_internals.md",
             "Where ChronoSim Fits" => "categorize.md",

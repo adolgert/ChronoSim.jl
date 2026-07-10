@@ -120,9 +120,10 @@ serialization format is version-bound.
 ## The determinism contract
 
 `replay` does not store state snapshots — it *re-runs* the model. To make that
-re-run reproduce the original exactly, it restores the skeleton's pre-init RNG
-state and drives the same executor kernel `run` uses, checking the fired
-`(clock_key, when)` against the recording at every step. That only works if you
+re-run reproduce the original exactly, it reseeds every random stream family
+from the skeleton's recorded master seed and drives the same executor kernel
+`run` uses, checking the fired `(clock_key, when)` against the recording at
+every step. That only works if you
 give it a **factory** that rebuilds the identical simulation:
 
 ```julia
@@ -140,8 +141,10 @@ The contract on `sim_factory` is precise:
   installs its own probe/verification policy there. Dropping it is an
   `ArgumentError`.
 * It must rebuild with the **same constructor arguments** as the recorded run.
-  Any `seed`/`rng` it sets is overwritten — `replay` restores `skel.rng_state`,
-  so the re-run consumes the identical random stream. Reproducing the constructor
+  Any `seed`/`rng` it sets is overwritten — `replay` re-derives every random
+  stream family from `skel.seed`, the recorded master seed (see
+  [Randomness and reproducibility](@ref "Randomness and reproducibility")), so
+  the re-run consumes the identical randomness. Reproducing the constructor
   is the caller's job; this is why the constructor arguments belong in
   `skel.metadata`.
 
