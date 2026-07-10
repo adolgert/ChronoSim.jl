@@ -22,14 +22,29 @@
 # get a genuinely semi-Markov model — the "empty niche" that memoryless tooling
 # cannot reach — and check *that* against an independent clock-age walker.
 #
+# !!! note "The θ (parameter) seam"
+#     This page is written against the **θ seam** (design guarantee G4). Each
+#     event's `enable` takes the parameter vector `θ` as an explicit argument —
+#     `enable(event, physical, θ, when)` — and the simulation carries `θ` in its
+#     `params` field, set with the `params=` keyword. There is **no module
+#     global**: `θ` flows from the caller, through `sim.params`, into `enable`,
+#     and reaches `ForwardDiff` as a vector of `Dual`s without any mutable state
+#     being swapped between evaluations. (The pre-seam version of this page kept
+#     the clocks in an `Any`-typed `Ref` that every `enable` closed over and that
+#     the closure rewrote before each call; the seam removes that global and the
+#     thread-unsafety that came with it.)
+#
 # !!! note "This page is static"
 #     Every code block below is real, runnable code, but the documentation build
 #     does **not** execute it — the heavy sampling stacks are not in the docs
 #     environment. The script lives at `docs/literate_src/statistical_calibration.jl`
 #     and runs top-to-bottom against `docs/calibration/Project.toml`; its inline
-#     `@assert`s are its acceptance test. The chain summaries shown in fenced
-#     blocks are the output of the `println` calls beside them, pasted from a
-#     real run and reproduced on the same platform with the committed
+#     `@assert`s are its acceptance test. The exponential-race MLE gradient check
+#     (§4a) is also mirrored as an executable regression in
+#     `test/test_theta_seam.jl` (`theta:` testset "the exponential-race MLE is
+#     recovered…"), which runs in the package suite. The chain summaries shown in
+#     fenced blocks are the output of the `println` calls beside them, pasted from
+#     a real run and reproduced on the same platform with the committed
 #     `Manifest.toml` (BLAS/LAPACK can differ across architectures).
 
 using ChronoSim
@@ -72,28 +87,29 @@ const SEED_HMC = 20240602       # AdvancedHMC (exponential)
 const SEED_TUR = 20240603       # Turing
 const SEED_WEI_HMC = 20240604   # AdvancedHMC (Weibull)
 
-# ## §1  The model: a two-clock race with swappable clocks
+# ## §1  The model: a two-clock race read from θ
 #
 # The model is the competing race of the trace-evaluation page, generalized in
-# one way: instead of hard-coded rates, each event reads its distribution
-# **object** from a module global `CLOCKS`, an `Any`-typed `Ref` so that (a)
-# `ForwardDiff.Dual` numbers reach `enable` for the gradient, and (b) the *same*
-# module serves both the exponential and the Weibull experiments — we only swap
-# what we store in `CLOCKS`. Both clocks are perpetually enabled (trivially-true
+# one way: instead of hard-coded rates, each event **builds its distribution
+# from `θ`** in the four-argument `enable`. The parameter vector reaches `enable`
+# as the simulation's `params`, so `ForwardDiff.Dual` numbers thread straight
+# through with no global to rewrite. The distribution *family* is a structural
+# choice, not a parameter, so the exponential and the Weibull experiments are two
+# small model modules that differ only in what `enable` constructs; both read
+# their numbers from `θ`. Both clocks are perpetually enabled (trivially-true
 # preconditions) and the fired clock is re-proposed on firing, so every clock
 # stays in the enabled set for the whole run. That shape is deliberate: it
 # sidesteps a known upstream CombinedNextReaction stale-entry issue that would
 # otherwise perturb the likelihood of a clock that leaves the enabled set.
 
-module CalibRace
+# The **exponential** race. `θ = [λA, λB]` are rates; `Exponential` in
+# Distributions.jl takes the *scale*, so rate λ becomes `Exponential(inv(λ))`.
+
+module ExpRace
 using ChronoSim
 using ChronoSim.ObservedState
 using Distributions
 import ChronoSim: precondition, generators, enable, fire!
-
-# Distribution objects, `Any`-typed so Float64 params, Dual params, and either
-# an `Exponential` or a `Weibull` all fit the same slot.
-const CLOCKS = Ref{NTuple{2,Any}}((Exponential(1.0), Exponential(1 / 1.6)))
 
 @keyedby RaceCell Int64 begin
     a::Int64
@@ -116,14 +132,14 @@ struct FireA <: SimEvent
     idx::Int64
 end
 @precondition precondition(evt::FireA, state) = state.cell[evt.idx].a >= 0
-enable(::FireA, state, when) = (CLOCKS[][1], when)
+enable(::FireA, state, θ, when) = (Exponential(inv(θ[1])), when)
 fire!(evt::FireA, state, when, rng) = (state.cell[evt.idx].a += 1; nothing)
 
 struct FireB <: SimEvent
     idx::Int64
 end
 @precondition precondition(evt::FireB, state) = state.cell[evt.idx].b >= 0
-enable(::FireB, state, when) = (CLOCKS[][2], when)
+enable(::FireB, state, θ, when) = (Exponential(inv(θ[2])), when)
 fire!(evt::FireB, state, when, rng) = (state.cell[evt.idx].b += 1; nothing)
 
 function init!(state, when, rng)
@@ -133,33 +149,84 @@ function init!(state, when, rng)
 end
 end # module
 
-using .CalibRace: RaceBoard, FireA, FireB
+# The **Weibull** race (used in §5). Clock A stays memoryless but is now
+# parameterized by its *scale* `θ[1]` (not a rate); clock B is a `Weibull` with
+# shape `θ[2]` and scale `θ[3]`, so it *ages* while it waits.
+
+module WeiRace
+using ChronoSim
+using ChronoSim.ObservedState
+using Distributions
+import ChronoSim: precondition, generators, enable, fire!
+
+@keyedby RaceCell Int64 begin
+    a::Int64
+    b::Int64
+end
+
+@observedphysical RaceBoard begin
+    cell::ObservedVector{RaceCell,Member}
+end
+
+function RaceBoard(n::Int)
+    cells = ObservedArray{RaceCell,Member}(undef, n)
+    for i in eachindex(cells)
+        cells[i] = RaceCell(0, 0)
+    end
+    return RaceBoard(cells)
+end
+
+struct FireA <: SimEvent
+    idx::Int64
+end
+@precondition precondition(evt::FireA, state) = state.cell[evt.idx].a >= 0
+enable(::FireA, state, θ, when) = (Exponential(θ[1]), when)
+fire!(evt::FireA, state, when, rng) = (state.cell[evt.idx].a += 1; nothing)
+
+struct FireB <: SimEvent
+    idx::Int64
+end
+@precondition precondition(evt::FireB, state) = state.cell[evt.idx].b >= 0
+enable(::FireB, state, θ, when) = (Weibull(θ[2], θ[3]), when)
+fire!(evt::FireB, state, when, rng) = (state.cell[evt.idx].b += 1; nothing)
+
+function init!(state, when, rng)
+    state.cell[1].a = 0
+    state.cell[1].b = 0
+    return nothing
+end
+end # module
 
 # ## §2  Simulate an event log
 #
-# `simulate_log` runs the forward executor and records `(when, clock_key)` for
-# each firing, skipping the synthetic `InitializeEvent`. This is the "observed
-# data" a field study would hand us; downstream, only the trace is used.
+# `simulate_log` runs the forward executor at a parameter vector `θ` (threaded
+# through `params=`) and records `(when, clock_key)` for each firing, skipping
+# the synthetic `InitializeEvent`. This is the "observed data" a field study
+# would hand us; downstream, only the trace is used. The model is passed as its
+# `RaceBoard` constructor, event list, and `init!` so the same function serves
+# both the exponential and the Weibull races.
 
-function simulate_log(nsteps; seed)
+function simulate_log(mk_board, events, init!, θ; nsteps, seed)
     trace = Tuple{Float64,Tuple}[]
     observer = (physical, when, event, changed) -> begin
         event isa ChronoSim.InitializeEvent && return nothing
         push!(trace, (when, clock_key(event)))
     end
     sim = SimulationFSM(
-        RaceBoard(1), [FireA, FireB];
-        rng=Xoshiro(seed), key_type=Tuple, observer=observer,
+        mk_board(), events;
+        rng=Xoshiro(seed), key_type=Tuple, observer=observer, params=θ,
     )
-    ChronoSim.run(sim, CalibRace.init!, (p, i, e, w) -> i > nsteps)
+    ChronoSim.run(sim, init!, (p, i, e, w) -> i > nsteps)
     return trace
 end
 
 # Ground truth for the exponential race: rates λ = [1.0, 1.6].
 
 const EXP_TRUTH = [1.0, 1.6]
-CalibRace.CLOCKS[] = (Exponential(1 / EXP_TRUTH[1]), Exponential(1 / EXP_TRUTH[2]))
-const EXP_LOG = simulate_log(N_EXP_STEPS; seed=SEED_EXP_LOG)
+const EXP_LOG = simulate_log(
+    () -> ExpRace.RaceBoard(1), [ExpRace.FireA, ExpRace.FireB], ExpRace.init!, EXP_TRUTH;
+    nsteps=N_EXP_STEPS, seed=SEED_EXP_LOG,
+)
 
 # Summaries of the log we will reuse: the counts and the final time.
 
@@ -170,35 +237,36 @@ exp_tN = EXP_LOG[end][1]
 
 # ## §3  One differentiable closure, four consumers
 #
-# This is the load-bearing function. `make_loglik(trace, θ_to_clocks)` returns a
-# closure `θ -> loglikelihood`: it writes the clocks derived from `θ` into the
-# module global, builds an evaluation sim whose `likelihood_eltype` matches
-# `eltype(θ)` (so `Float64` gives a `Float64` and a `Dual` vector gives a
-# `Dual`), and returns the trace log-likelihood. Every stack below consumes this
-# one closure — nothing about the optimizer or sampler leaks into the model.
+# This is the load-bearing function. `make_loglik(mk_board, events, init!, trace)`
+# returns a closure `θ -> loglikelihood`: it builds an evaluation sim whose
+# `params` is `θ` and whose `likelihood_eltype` matches `eltype(θ)` (so `Float64`
+# gives a `Float64` and a `Dual` vector gives a `Dual`), and returns the trace
+# log-likelihood. Every stack below consumes this one closure — nothing about the
+# optimizer or sampler leaks into the model, and nothing about `θ` is stored
+# outside the call.
 
-function make_loglik(trace, θ_to_clocks)
+function make_loglik(mk_board, events, init!, trace)
     return function loglik(θ)
-        CalibRace.CLOCKS[] = θ_to_clocks(θ)
         sim = SimulationFSM(
-            RaceBoard(1), [FireA, FireB];
+            mk_board(), events;
             rng=Xoshiro(7), step_likelihood=true, likelihood_eltype=eltype(θ),
-            key_type=Tuple,
+            key_type=Tuple, params=θ,
         )
-        return trace_likelihood(sim, CalibRace.init!, trace).loglikelihood
+        return trace_likelihood(sim, init!, trace).loglikelihood
     end
 end
 
-# The two parameterizations. `Exponential` in Distributions.jl takes the
-# *scale*, so in `exp_clocks` a rate λ becomes `Exponential(1/λ)`. The Weibull
-# variant (used in §5) keeps clock A memoryless and lets clock B age; note that
-# `wei_clocks` parameterizes clock A by its *scale* `θ[1]` (not a rate), so
-# `θ[1]` there and `θ[1]` above coincide only because the ground truth is 1.0.
+# For the independent semi-Markov walker in §5 we also want the θ → clock-tuple
+# maps as plain functions. They mirror the two models' `enable`s exactly:
+# `exp_clocks` reads rates, `wei_clocks` reads clock A's *scale* `θ[1]`, clock B's
+# shape `θ[2]` and scale `θ[3]`.
 
-exp_clocks(θ) = (Exponential(1 / θ[1]), Exponential(1 / θ[2]))
+exp_clocks(θ) = (Exponential(inv(θ[1])), Exponential(inv(θ[2])))
 wei_clocks(θ) = (Exponential(θ[1]), Weibull(θ[2], θ[3]))
 
-loglik_exp = make_loglik(EXP_LOG, exp_clocks)
+loglik_exp = make_loglik(
+    () -> ExpRace.RaceBoard(1), [ExpRace.FireA, ExpRace.FireB], ExpRace.init!, EXP_LOG,
+)
 
 # ### Pre-gate: the closure reproduces the closed form
 #
@@ -380,13 +448,19 @@ println("  posterior mean rates = ", round.(tur_mean; digits=3),
 # while it waits, and — because it keeps running across firings of clock A — that
 # age is carried across events. This is the semi-Markov behaviour that
 # memoryless (CTMC) tooling structurally cannot represent, and it is where a
-# GSMP framework earns its keep. Ground truth is `θ = [scaleA, shapeB, scaleB] =
-# [1.0, 1.7, 1.2]`; a shape of 1.7 > 1 means wearout.
+# GSMP framework earns its keep. The swap is just a different model module
+# (`WeiRace`), still reading its numbers from `θ`. Ground truth is
+# `θ = [scaleA, shapeB, scaleB] = [1.0, 1.7, 1.2]`; a shape of 1.7 > 1 means
+# wearout.
 
 const WEI_TRUTH = [1.0, 1.7, 1.2]
-CalibRace.CLOCKS[] = wei_clocks(WEI_TRUTH)
-const WEI_LOG = simulate_log(N_WEI_STEPS; seed=SEED_WEI_LOG)
-loglik_wei = make_loglik(WEI_LOG, wei_clocks)
+const WEI_LOG = simulate_log(
+    () -> WeiRace.RaceBoard(1), [WeiRace.FireA, WeiRace.FireB], WeiRace.init!, WEI_TRUTH;
+    nsteps=N_WEI_STEPS, seed=SEED_WEI_LOG,
+)
+loglik_wei = make_loglik(
+    () -> WeiRace.RaceBoard(1), [WeiRace.FireA, WeiRace.FireB], WeiRace.init!, WEI_LOG,
+)
 
 # ### §5(i)  An independent clock-age walker
 #
@@ -495,12 +569,12 @@ end
 # AdvancedMH and HMC chains dominate. Every sampler length is a named constant at
 # the top of the file — shrink them if you need it faster.
 #
-# **Thread-safety.** The model reads its clocks from a *module global* `Ref`, so
-# the likelihood closure is **not** thread-safe: never run these chains with
-# `MCMCThreads()`. Two chains sharing the process would race on `CalibRace.CLOCKS`.
-# Sequential chains (or separate processes) are fine, and are what the seeds
-# above assume. A thread-safe model would instead carry its parameters in a
-# field of the physical state rather than a global.
+# **Thread-safety.** With the θ seam the likelihood closure carries its
+# parameters in `sim.params` — a per-call value, not a module global — so it holds
+# no shared mutable state and is safe to run under `MCMCThreads()`. (The pre-seam
+# version read its clocks from an `Any`-typed `Ref` and was *not* thread-safe: two
+# chains sharing the process raced on that global. Threading it away is one of the
+# concrete wins of making θ an explicit argument.)
 #
 # **Where to go next.** The [trace-evaluation page](trace_evaluation.md) is the
 # narrative for `trace_likelihood` itself — feasibility verdicts, the closed-form
