@@ -49,14 +49,19 @@ end
 
 
 function _observe_macro(expr, readwrite_field)
+    # For an assignment, the place key comes from the LEFT-hand access, but the
+    # emitted expression must stay the whole assignment: rebinding `expr` to the
+    # access (the old code) recorded the address and silently discarded the
+    # right-hand side, so the write never executed — a model using
+    # `@obswrite x.f = v` ran with no state changes at all.
+    access = expr
     if isa(expr, Expr) && expr.head == :(=)
-        # Handle assignment (write)
-        expr = expr.args[1]
+        access = expr.args[1]
     end
-    placekey_expr = access_to_placekey(expr)
+    placekey_expr = access_to_placekey(access)
 
     # Extract the physical state object
-    current = expr
+    current = access
     while current isa Expr && (current.head == :. || current.head == :ref)
         if current.head == :.
             current = current.args[1]

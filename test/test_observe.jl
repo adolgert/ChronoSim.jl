@@ -64,4 +64,10 @@ end
     @test length(wrote.changes) == 2
     @test (Member(:cnt),) in wrote.changes
     @test (Member(:vals), 7, Member(:fval)) in wrote.changes
+    # The assignment must actually EXECUTE, not merely be recorded: the macro
+    # once emitted only the left-hand access, so models using the assignment
+    # form ran with zero state changes and no error (found via the landspread
+    # example in ChronoSimExamples).
+    @test physical.cnt == 12
+    @test physical.vals[7].fval == 0.125
 end

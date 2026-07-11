@@ -11,4 +11,6 @@ Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 
 [sources]
 ChronoSim = {path = ".."}
-CompetingClocks = {url = "https://github.com/adolgert/CompetingClocks.jl", rev = "main"}
+# The worldtimer-adoption branch requires CompetingClocks 0.4, which lives in the
+# sibling working tree (same source the package and test envs use).
+CompetingClocks = {path = "../../CompetingClocks.jl"}

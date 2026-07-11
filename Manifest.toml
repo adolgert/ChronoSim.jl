@@ -2,7 +2,7 @@
 
 julia_version = "1.12.5"
 manifest_format = "2.0"
-project_hash = "0c9249383bbfe974866ba7b9bb3f51fc6c0ba7b3"
+project_hash = "1dea07dc446ab25b9e290229463cfba303a85c2a"
 
 [[deps.AliasTables]]
 deps = ["PtrArrays", "Random"]
@@ -22,9 +22,7 @@ version = "0.1.0-DEV"
 
 [[deps.CompetingClocks]]
 deps = ["DataStructures", "Distributions", "Logging", "Random"]
-git-tree-sha1 = "6429c4622c835e1ec2a63d699b0ac597000ea36b"
-repo-rev = "main"
-repo-url = "https://github.com/adolgert/CompetingClocks.jl"
+path = "../CompetingClocks.jl"
 uuid = "5bb9b785-358c-4fee-af0f-b94a146244a8"
 version = "0.3.1"
 

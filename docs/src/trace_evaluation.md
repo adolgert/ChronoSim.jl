@@ -195,7 +195,8 @@ gradient is available directly from
 maximum-likelihood or Hamiltonian Monte Carlo, and the negative Hessian for the
 observed information (standard errors).
 
-The mechanics are one keyword plus one modelling rule:
+The mechanics are one keyword plus one modelling rule (both described in full
+on [Parameters and differentiation](@ref "Parameters and differentiation")):
 
 * **`likelihood_eltype=eltype(θ)`** on `SimulationFSM` is what routes
   `ForwardDiff.Dual` numbers into the likelihood accumulator. Pass it together
@@ -205,13 +206,14 @@ The mechanics are one keyword plus one modelling rule:
   `loglikelihood` (and every entry of `steploglik`) then has element type
   `eltype(θ)`: a `Float64` under plain evaluation, a `Dual` under
   differentiation, so the *same* closure serves both.
-* **The parameters must reach the events' `enable` functions
-  Dual-generically.** The derivative information rides in the distribution
-  parameters, so the `Exponential`/`Weibull`/… each step re-proposes must be
-  rebuilt from the vector ForwardDiff perturbs. Route `θ` through a `Ref` or a
-  parametric field of the physical state whose element type is not pinned to
-  `Float64` — an `Any`-typed `Ref` is the simplest — so a `Dual` fits where a
-  `Float64` did. Event *times* stay `Float64` throughout.
+* **The parameters reach the events' `enable` functions through the θ seam.**
+  The derivative information rides in the distribution parameters, so the
+  `Exponential`/`Weibull`/… each step re-proposes must be rebuilt from the
+  vector ForwardDiff perturbs. Define the four-argument
+  `enable(event, physical, θ, when)` and pass the vector with `params=θ` —
+  either to the `SimulationFSM` constructor or to `trace_likelihood` itself.
+  No module global or `Ref` is involved, so the closure holds no shared
+  mutable state. Event *times* stay `Float64` throughout.
 
 Under the hood the sampler always runs on primal `Float64` values (CompetingClocks
 strips the `Dual`s at the single boundary through which every `enable!` reaches
@@ -220,9 +222,9 @@ gradient. Sampling happens at a concrete parameter point; only the scoring is
 differentiated. This is the statistically correct split, not a compromise — see
 CompetingClocks' "Differentiating the Path Likelihood" narrative for the theory.
 
-Here is the two-clock race again, rewritten so its rates come from a module
-global `Ref` that a caller can fill with either plain numbers or `Dual`s. The
-`Ref` is `Any`-typed precisely so one closure serves both:
+Here is the two-clock race again, rewritten so its rates come from `θ` through
+the four-argument `enable`. The events read `θ[1]` and `θ[2]`; the closure
+hands each candidate vector to `trace_likelihood` with `params=θ`:
 
 ```julia
 using ChronoSim
@@ -237,11 +239,6 @@ using ChronoSim
 using ChronoSim.ObservedState
 using Distributions
 import ChronoSim: precondition, generators, enable, fire!
-
-# Rates reach enable() Dual-generically: an `Any`-typed Ref so (Float64, Float64)
-# and (Dual, Dual) tuples both fit. Exponential takes the scale, so rate λ is
-# Exponential(1/λ).
-const RATES = Ref{NTuple{2,Any}}((2.0, 3.0))
 
 @keyedby ADCell Int64 begin
     a::Int64
@@ -264,14 +261,16 @@ struct FireA <: SimEvent
     idx::Int64
 end
 @precondition precondition(evt::FireA, state) = state.cell[evt.idx].a >= 0
-enable(::FireA, state, when) = (Exponential(1 / RATES[][1]), when)
+# The θ seam: rate λA = θ[1]. Exponential takes the scale, so rate λ is
+# Exponential(inv(λ)).
+enable(::FireA, state, θ, when) = (Exponential(inv(θ[1])), when)
 fire!(evt::FireA, state, when, rng) = (state.cell[evt.idx].a += 1; nothing)
 
 struct FireB <: SimEvent
     idx::Int64
 end
 @precondition precondition(evt::FireB, state) = state.cell[evt.idx].b >= 0
-enable(::FireB, state, when) = (Exponential(1 / RATES[][2]), when)
+enable(::FireB, state, θ, when) = (Exponential(inv(θ[2])), when)
 fire!(evt::FireB, state, when, rng) = (state.cell[evt.idx].b += 1; nothing)
 
 function init!(state, when, rng)
@@ -281,19 +280,18 @@ function init!(state, when, rng)
 end
 end # module
 
-using .ADRace: ADBoard, RATES
+using .ADRace: ADBoard
 
 # A fixed trace: FireA fires at 0.3 and 1.1, FireB at 0.7.
 trace = Tuple{Float64,Tuple}[(0.3, (:FireA, 1)), (0.7, (:FireB, 1)), (1.1, (:FireA, 1))]
 
-# The differentiable closure: push θ into RATES, build an evaluation sim whose
-# likelihood eltype matches θ, and return the trace log-likelihood.
+# The differentiable closure: build a fresh evaluation sim whose likelihood
+# eltype matches θ, and evaluate the trace at θ through the params= seam.
 function loglik(θ)
-    RATES[] = (θ[1], θ[2])
     sim = SimulationFSM(ADBoard(1), [ADRace.FireA, ADRace.FireB];
         rng=Xoshiro(7), step_likelihood=true, likelihood_eltype=eltype(θ),
         key_type=Tuple)
-    return trace_likelihood(sim, ADRace.init!, trace).loglikelihood
+    return trace_likelihood(sim, ADRace.init!, trace; params=θ).loglikelihood
 end
 
 score = ForwardDiff.gradient(loglik, [2.0, 3.0])      # the score s(θ) = ∇ log L
@@ -320,6 +318,68 @@ differentiates a genuinely semi-Markov race. Any distribution whose
 Infeasibility survives differentiation: an infeasible trace still produces
 `feasible == false` and a `loglikelihood` of `-Inf`, converted to the
 `Dual` element type when `θ` carries `Dual`s.
+
+## Scoring over a finite horizon
+
+`trace_likelihood` stops at the last recorded event: its log-likelihood is that of
+a trajectory that *ends* at its final firing. A trajectory *observed over a fixed
+window* `[0, horizon]` has one more contribution — the probability that no enabled
+clock fired between the last event and `horizon`. That censoring survival term is
+[`censoring_loglikelihood(sim, horizon)`](@ref): the log-survival of every
+still-enabled clock from `sim.when` (the last evaluated time) to `horizon`. It
+reuses CompetingClocks' `steploglikelihood` — the same primitive that scores each
+trace step — called with `which = nothing` so every enabled clock takes the
+survival branch, and the generic likelihood eltype — and therefore
+`ForwardDiff` — flows through it. Add it to the trace result, or, when
+evaluating a [`MinimalRecord`](@ref) (which carries its own `horizon`), opt in with
+`trace_likelihood(sim, init, rec; censor=true)`.
+
+For the always-enabled exponential race the effect is exactly the change from
+`n_k/λ_k − t_N` to `n_k/λ_k − T`: the horizon replaces the last event time in the
+score, which is why a horizon functional's score is wrong without it. Censoring is
+opt-in, never default, so the pure-replay effect check (below) stays symmetric.
+
+## The three G1 verification tiers
+
+Trace evaluation is the shared substrate for guarantee G1's defense in depth — one
+interface checked three ways, each stricter than the last:
+
+* **Declarations** — a derived event's `derivation_spec` is the set of place
+  addresses it reacts to, and the engine prunes by it. This is the production
+  interface; it is fast and always on.
+* **Dynamic read capture** — `with_read_verification() do … end` (see
+  [`enable_read_verification!`](@ref)) asserts, at every precondition evaluation,
+  that the declaration covers every address the precondition actually read. An
+  uncovered read raises a `DerivationCoverageError` naming the event and the place,
+  turning silent under-declaration into a loud per-evaluation error. Run it around a
+  representative trajectory in CI.
+* **Pure replay** — [`effect_check`](@ref) replays a recorded trajectory and
+  asserts its log-likelihood reproduces the forward run's to the last bit. Drift is
+  an incrementalization bug; this is the exact-equality check that caught a
+  34-standard-error under-declaration bias downstream.
+
+**When to run which tier.** Declarations are always on — they are the interface,
+not a check. Turn on read verification (`with_read_verification`) around one
+representative trajectory in CI, and any time you edit a `@precondition` body,
+hand-write a generator, or change what an event reads: it localizes an
+under-declaration to the exact evaluation, which the downstream tiers cannot.
+Run [`effect_check`](@ref) wherever a recorded trajectory feeds an estimator —
+it is cheap (one replay per record), needs no toggle, and catches whatever
+residual drift the audit tier's coverage missed. The two dynamic tiers are
+complementary, not redundant: read verification is per-read and loud at the
+source; the effect check is whole-trajectory and exact at the output. See
+[Records, replay, and the effect check](@ref "Records, replay, and the effect check")
+for the record machinery behind the third tier.
+
+**Score/IPA pairing (G8).** These tiers guard the *evaluator*; a second,
+statistical validation guards the *estimators built on it*. A score estimator and a
+pathwise (IPA) estimator read the *same* recorded trajectory but differ in what they
+assume: the score differentiates the fixed-order path likelihood this page
+describes, while IPA differentiates through event ordering. When both are unbiased
+they agree; a statistically significant difference between them *estimates IPA's
+event-order bias* — the term IPA drops when a parameter perturbation would reorder
+events. Pairing the two is thus a validation mode, not redundancy. (The estimators
+themselves live outside this package; see `knowledge/simulation_design.tex`.)
 
 ## Reading an infeasible verdict
 
@@ -389,6 +449,12 @@ without that flag. Add `step_likelihood=true` as shown above.
 
 ## Related
 
+* [Parameters and differentiation](@ref "Parameters and differentiation") — the
+  θ seam in full: the four-argument `enable`, `params=`, and the `DistRecipe`
+  layer behind it.
+* [Records, replay, and the effect check](@ref "Records, replay, and the effect check")
+  — the [`MinimalRecord`](@ref) schema this evaluator consumes, and the
+  exact-equality effect check.
 * [Calibrating from an Event Log](@ref "Calibrating a model from an event log") —
   turns this differentiable log-likelihood into MLE, Metropolis, NUTS, and Turing
   fits that recover clock parameters from an observed trace.

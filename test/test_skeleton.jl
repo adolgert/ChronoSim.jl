@@ -140,19 +140,27 @@ end
     @test skel.init.when == 0.0
 end
 
-@testset "skeleton rng state is pre-init" begin
+# Re-pinned for milestone 4: the skeleton records the master seed (a UInt64), not
+# a pre-init Xoshiro snapshot, because randomness ownership moved into the sampler
+# and the FSM's keyed fire streams, both derived from this one seed. `_race_run`
+# supplies the seed as `rng=Xoshiro(4211)`, so the master seed the FSM derives is
+# `rand(Xoshiro(4211), UInt64)` -- a deterministic function of the passed rng.
+@testset "skeleton records the master seed" begin
     rec, _ = _race_run(10; seed=4211)
-    @test recorded_skeleton(rec).rng_state == Xoshiro(4211)
+    @test recorded_skeleton(rec).seed == rand(Xoshiro(4211), UInt64)
 end
 
-@testset "skeleton rng replays exactly" begin
+@testset "skeleton seed replays exactly" begin
     rec, obs1 = _race_run(20; seed=4242)
     skel = recorded_skeleton(rec)
     obs2 = Tuple{Tuple,Float64}[]
     observer = (p, when, evt, changed) -> push!(obs2, (clock_key(evt), when))
+    # Re-pinned for milestone 4: reconstructing a fresh sim from the recorded
+    # master seed (not from an Xoshiro snapshot) reproduces the trajectory, because
+    # every per-clock and per-event stream reseeds deterministically from the seed.
     sim = SimulationFSM(
         SkeletonRace.RaceBoard(1), [SkeletonRace.FireA, SkeletonRace.FireB];
-        rng=copy(skel.rng_state), sampler=NextReactionMethod(), key_type=Tuple,
+        seed=skel.seed, sampler=NextReactionMethod(), key_type=Tuple,
         observer=observer,
     )
     stop = (p, i, e, w) -> i > 20

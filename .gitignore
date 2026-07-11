@@ -9,3 +9,4 @@
 *.local.md
 .claude/
 /t
+.DS_Store

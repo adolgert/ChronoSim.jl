@@ -33,5 +33,6 @@ include("observed_dict.jl")
 include("observed_set.jl")
 include("keyed.jl")
 include("observe_macro.jl")
+include("clone.jl")
 
 end

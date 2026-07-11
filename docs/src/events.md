@@ -82,13 +82,31 @@ rate that depends on how many repair crews are free, say — forward it to
 `enable` so the distribution is recomputed:
 
 ```julia
-reenable(evt::Repair, state, _, when) = enable(evt, state, when)
+reenable(evt::Repair, state, first_enabled, when) =
+    (first(enable(evt, state, when)), first_enabled)
 ```
+
+Return `first_enabled` (the clock's original anchor), not `when`, unless you
+mean to restart the clock's age from the moment of the state change: the
+returned time is the origin the new distribution is measured from. What the
+sampler does with the clock's in-flight draw when the distribution is
+replaced — redraw it or carry it — is a construction-time property of the
+sampler, chosen via `NextReactionMethod(coupling=...)` /
+`FirstToFireMethod(coupling=...)` and described with the disable/re-enable
+memory declaration ([`memory_policy`](@ref)) in
+[Declarations: coupling and memory](@ref "Declarations: coupling and memory").
 
 This treatment of long-lived clocks with state-dependent rates follows the
 generalized semi-Markov process view of discrete-event systems, and readers
 who want the theory can start with Glynn's 1989 survey of the GSMP
 formalism.
+
+Both functions also have parameterized forms, `enable(event, state, θ, when)`
+and `reenable(event, state, θ, first_enabled, when)`, which the engine calls
+with the simulation's parameter vector (`params=` on `SimulationFSM`). Define
+these when a rate is a model parameter you will fit or differentiate; the
+three-argument forms above remain fully supported. See
+[Parameters and differentiation](@ref "Parameters and differentiation").
 
 ## `fire!`
 
