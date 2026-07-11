@@ -131,6 +131,20 @@ The base path itself never branches, and the base path's record is untouched by
 forcing — clones are estimator-internal, and their functionals are read from
 state, not from records.
 
+The same clone/force/rekey verbs also drive the ClockGradients package's
+smoothed-perturbation-analysis estimator (`spa_gradient`), which weights each
+possible event-order swap by a hazard and estimates the swap's effect with one
+coupled clone pair fired in the two orders at the same instant. Running it over
+a ChronoSim simulation needs one extra ingredient the branching estimator does
+not: a **pure model twin** — a five-function ClockGradients model
+(`initial_state`/`enabled`/`clock_distribution`/`fire`, all pure functions,
+clock keys matching `clock_key`) implementing the same law as the ChronoSim
+model, on which the estimator replays records and speculatively fires event
+pairs. The estimator audits the twin against the live simulation's enabled set
+at every step and stops with a named error on the first disagreement, so a
+drifted twin cannot silently bias the estimate. See the ClockGradients manual
+("Choosing an estimator") for when SPA beats branching and what it requires.
+
 ## Related
 
 * [Randomness and reproducibility](@ref "Randomness and reproducibility") — the
