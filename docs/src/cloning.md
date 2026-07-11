@@ -23,8 +23,7 @@ only *reads* is shared:
 * **Copied** — the physical state (with the address protocol restored, below);
   the sampler context *with its live clock and stream state*; the per-event
   fire streams (state-carrying, so `fire!` draws reproduce); the dependency
-  network; the enabled-event, enabling-time, and banked-age tables; the set of
-  couplings that ran.
+  network; the enabled-event, enabling-time, and banked-age tables.
 * **Shared** — the model-side generator searches, the parameter vector `θ`
   (read-only by the seam contract), the observer, and the policy. A policy that
   accumulates mutable per-run state should be re-attached by the caller if the

@@ -3,7 +3,7 @@ import CompetingClocks: fire!
 
 export SimEvent, InitializeEvent, isimmediate, clock_key, key_clock
 export precondition, enable, reenable, fire!
-export reevaluation_coupling, memory_policy
+export memory_policy
 
 """
   SimEvent
@@ -97,8 +97,10 @@ reenable(e::MyEvent, phys, firstenabled, t) = (first(enable(e, phys, t)), firste
 
 Returning the current time `t` instead of `firstenabled` re-anchors the clock —
 its age restarts at the state change — which also breaks the `:carry`
-re-evaluation coupling's no-op property (see [`reevaluation_coupling`](@ref)):
-even a carried draw shifts when its origin moves.
+re-evaluation coupling's no-op property (the pathwise coupling is a sampler
+construction-time property, chosen via `NextReactionMethod(coupling=...)` or
+`FirstToFireMethod(coupling=...)`): even a carried draw shifts when its origin
+moves.
 
 # The θ (parameter) seam
 
@@ -149,41 +151,6 @@ struct InitializeEvent <: SimEvent end
 An immediate event should return true for this function.
 """
 isimmediate(::Type{<:SimEvent}) = false
-
-"""
-    reevaluation_coupling(EventType)::Symbol
-
-Declare, on the event TYPE, which pathwise coupling the engine must use when this
-event is still enabled and its rate dependencies change so that `reenable`
-supplies a fresh distribution. Guarantee G6 (per-event coupling declaration).
-
-Two values are defined:
-
-  * `:redraw` (the DEFAULT) — the sampler discards the clock's in-flight draw and
-    draws the remaining lifetime fresh at the current age. This is correct for
-    likelihood work but is NOT differentiable in a distribution parameter: an
-    infinitesimal change of the rate produces a discontinuous jump in the firing
-    time, because a brand-new uniform is consumed. (Note the default is NOT the
-    old backend behavior: historically `CombinedNextReaction` silently carried a
-    re-enabled key's draw. No shipped model observed the difference, but a model
-    newly opting into rate re-evaluation gets `:redraw` unless it declares
-    otherwise.)
-
-  * `:carry` — the sampler maps the clock's retained draw through the distribution
-    change by matching conditional survival, consuming NO fresh randomness. This is
-    the ONLY re-evaluation coupling that is IPA-safe: it is the one coupling under
-    which a firing time moves *continuously* in a distribution parameter, which is
-    exactly what infinitesimal perturbation analysis (pathwise) derivatives need.
-    For an unchanged distribution `:carry` leaves the schedule bit-for-bit intact.
-
-Not every sampler can carry a mid-flight draw. `:carry` requires a backend whose
-`CompetingClocks.supports_carry` trait is `true` (`CombinedNextReaction`, the
-default `NextReactionMethod` backend, and `FirstToFire` qualify); declaring
-`:carry` against a sampler that cannot carry raises a descriptive error at the
-re-evaluation call site.
-"""
-reevaluation_coupling(::Type{<:SimEvent}) = :redraw
-reevaluation_coupling(event::SimEvent) = reevaluation_coupling(typeof(event))
 
 """
     memory_policy(EventType)::Symbol

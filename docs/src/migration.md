@@ -76,25 +76,30 @@ Consequences:
   consumed for one draw that becomes the master seed. `sim.rng` no longer feeds
   any draw.
 
-## The `:redraw` default versus the historical silent carry
+## The re-evaluation coupling is a sampler construction choice, defaulting to carry
 
-The re-evaluation coupling declaration defaults to `:redraw`, but the
-historical behavior of the default backend (`CombinedNextReaction`) when a
-still-enabled key was re-enabled was, in fact, deterministic *carry* — silently.
-No shipped model returned a schedule-changing `reenable`, so nothing observable
-changed at adoption time. The hazard is prospective: **a model that newly opts
-into rate re-evaluation without declaring a coupling gets `:redraw`**, i.e. a
-fresh draw at the current age — not the old silent carry, and not the IPA-safe
-choice. If you want re-evaluation that preserves the retained draw (required
-for pathwise derivatives, and the closest analogue of the old backend
-behavior), declare it:
+How a still-enabled clock's in-flight draw is reconciled with a mid-flight
+distribution change — the re-evaluation *coupling* — is chosen once, when the
+sampler is constructed, not per event and not per call:
 
 ```julia
-reevaluation_coupling(::Type{MyEvent}) = :carry
+sim = SimulationFSM(physical, events;
+    sampler=NextReactionMethod(coupling=:redraw), key_type=Tuple)
 ```
 
-and have `reenable` return `firstenabled`, not `when` (see
+The default is `:carry`, which maps the retained draw through the change by
+matching conditional survival — deterministic, consuming no randomness, the
+only IPA-safe coupling, and exactly the historical silent behavior of the
+default backend (`CombinedNextReaction`) when a still-enabled key was
+re-enabled. A default-built simulation therefore preserves the old behavior. A
+run that wants fresh redraws on re-evaluation (`:redraw`, a fresh draw of the
+remaining lifetime conditioned on age) must ask for them at construction.
+There was briefly a per-event-type coupling declaration, which defaulted to
+`:redraw`; it is gone, and its default with it. For carry to be a no-op on an
+unchanged distribution, `reenable` must return `firstenabled`, not `when` (see
 [Declarations: coupling and memory](@ref "Declarations: coupling and memory")).
+Requesting `coupling=:carry` from a sampler that cannot carry
+(`CompetingClocks.supports_carry` false) errors at construction.
 
 ## Checklist
 
@@ -105,5 +110,6 @@ and have `reenable` return `firstenabled`, not `when` (see
 3. Uses of `skel.rng_state`: replace with `skel.seed`; re-record archived
    skeletons.
 4. Tests pinning exact seeded trajectories: re-pin literals once.
-5. Models adding state-dependent rates: declare `reevaluation_coupling` (and
-   `memory_policy` if clocks are preempted and resumed) explicitly.
+5. Models adding state-dependent rates: choose the sampler's re-evaluation
+   coupling at construction (`NextReactionMethod(coupling=...)`), and declare
+   `memory_policy` if clocks are preempted and resumed.

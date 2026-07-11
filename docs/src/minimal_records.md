@@ -30,12 +30,14 @@ nothing more:
   back; it never interprets it.
 * `firings` — the firing sequence as `(clock_key, when)` pairs in firing order.
 * `horizon` — the trajectory's end time (defaults to the last firing's time).
-* `coupling` — an honest per-run label of which *re-evaluation coupling*
-  actually ran: `:redraw`, `:carry`, or `:mixed` when both did. A coupling is
-  the rule the sampler applies when a still-enabled clock's distribution is
-  replaced mid-flight; the label matters because the formula that recovers a
-  firing's underlying uniform draw from the record differs per coupling, so an
-  unlabeled trace is underdetermined for pathwise work. See
+* `coupling` — the *re-evaluation coupling* of the sampler that produced the
+  run: `:redraw` or `:carry`. A coupling is the rule the sampler applies when a
+  still-enabled clock's distribution is replaced mid-flight; it is a
+  construction-time property of the sampler, so one run has exactly one and the
+  record reads it from the sampler (`CompetingClocks.coupling`). The label
+  matters because the formula that recovers a firing's underlying uniform draw
+  from the record differs per coupling, so an unlabeled trace is
+  underdetermined for pathwise work. See
   [Declarations: coupling and memory](@ref "Declarations: coupling and memory").
 * `fire_random` — `true` if any firing drew randomness (see the tiers below).
   Consumers of a fire-random record warn.

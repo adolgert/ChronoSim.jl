@@ -6,11 +6,12 @@
 #  * A PINNED MINIMAL RECORD SCHEMA (`MinimalRecord`): the least state a
 #    record-derived derivative estimator needs to reconstruct a trajectory --
 #    the initial condition's identity, the firing sequence `(clock_key, when)`,
-#    the horizon, plus two provenance flags: an honest summary of which
-#    re-evaluation coupling ran (`coupling`, guarantee G6 -- :redraw / :carry /
-#    :mixed, derived from the couplings that actually ran) and whether any firing
-#    drew randomness (`fire_random`, guarantee G3). The richer `TrajectorySkeleton`
-#    stays; `minimal_record(::TrajectorySkeleton)` projects it down to the schema.
+#    the horizon, plus two provenance flags: the re-evaluation coupling the run's
+#    sampler was constructed with (`coupling`, guarantee G6 -- :redraw or :carry;
+#    the coupling is a sampler construction-time property, so one run has exactly
+#    one) and whether any firing drew randomness (`fire_random`, guarantee G3).
+#    The richer `TrajectorySkeleton` stays; `minimal_record(::TrajectorySkeleton)`
+#    projects it down to the schema.
 #
 #  * THE PURE-REPLAY EFFECT CHECK (`effect_check`): for a draw-free model,
 #    `trace_likelihood` of the engine's OWN trace must reproduce the
@@ -49,14 +50,13 @@ record-derived derivative estimator needs and nothing more.
     internal.)
   * `horizon::Float64` — the trajectory's end time. Defaults to the last firing's
     time when not given explicitly.
-  * `coupling::Symbol` — an HONEST per-run summary of which re-evaluation coupling
-    (guarantee G6) actually ran during the run: `:redraw` when every re-evaluation
-    that ran used `:redraw` (and, by convention, when NO re-evaluation ran at all,
-    since `:redraw` is the coupling any hypothetical re-evaluation would have used),
-    `:carry` when every one used `:carry`, and `:mixed` when both couplings ran.
-    A uniform-recovery estimator (see `proto_derived_draws.md`) needs the trace
-    labeled with the coupling that produced it; `:mixed` is honest and simply marks
-    per-event coupling labeling as a future refinement.
+  * `coupling::Symbol` — the re-evaluation coupling (guarantee G6) of the sampler
+    that produced the run: `:redraw` or `:carry`. The coupling is a construction-
+    time property of the sampler (chosen via `NextReactionMethod(coupling=...)` /
+    `FirstToFireMethod(coupling=...)`), so every re-evaluation in a run uses the
+    same coupling and a single label describes the whole trajectory. A
+    uniform-recovery estimator (see `proto_derived_draws.md`) needs the trace
+    labeled with the coupling that produced it.
   * `fire_random::Bool` — `true` if any firing drew randomness (detected by the
     framework's [`CountingRNG`](@ref)). When `true`, the firing sequence is not a
     deterministic function of the initial condition, so record-derived estimators
@@ -102,32 +102,11 @@ mutable struct _MinimalRecorder{CK,L}
     firings::Vector{Tuple{CK,Float64}}
     forward_steploglik::Vector{L}
     fire_random::Bool
-    # G6: the set of re-evaluation couplings that actually RAN during the run,
-    # unioned from `sim.couplings_ran` after each firing. Projected into the record's
-    # honest `coupling` summary (:redraw / :carry / :mixed) by `_coupling_label`.
-    couplings::Set{Symbol}
-end
-
-"""
-    _coupling_label(couplings::Set{Symbol}) -> Symbol
-
-Project the set of re-evaluation couplings that RAN into the record's honest
-per-run summary (guarantee G6): `:redraw` when the set is empty (no re-evaluation
-ran, so the default coupling any hypothetical re-evaluation would have used) or
-contains only `:redraw`, `:carry` when it contains only `:carry`, and `:mixed`
-when both ran.
-"""
-function _coupling_label(couplings::Set{Symbol})
-    has_carry = :carry in couplings
-    has_redraw = :redraw in couplings
-    if has_carry && has_redraw
-        return :mixed
-    elseif has_carry
-        return :carry
-    else
-        # Empty set (no re-evaluation ran) or only :redraw both label :redraw.
-        return :redraw
-    end
+    # G6: the re-evaluation coupling of the sampler that drives the run, read once
+    # at on_preinit via `CompetingClocks.coupling(sim.sampler)`. The coupling is a
+    # sampler construction-time property, so one run has exactly one coupling and
+    # the record's label is the sampler's, not a per-firing tally.
+    coupling::Symbol
 end
 
 """
@@ -142,8 +121,9 @@ nothing. `initializer` is stored in the produced record's `initializer` field as
 the identity of the initial condition. After `run` returns, project the schema
 with [`minimal_record`](@ref) and read the forward log-likelihood with
 [`forward_loglikelihood`](@ref); [`effect_check`](@ref) consumes the policy
-directly. The produced record's `coupling` summary (guarantee G6) is derived from
-the re-evaluation couplings that actually ran during the run, not a constant.
+directly. The produced record's `coupling` label (guarantee G6) is read from the
+sampler the run was built with (`CompetingClocks.coupling`), because the coupling
+is a sampler construction-time property and one run has exactly one.
 
 ```julia
 pol = RecordMinimal(; initializer=MyInit())
@@ -162,21 +142,23 @@ RecordMinimal(; initializer=nothing) = RecordMinimal(initializer, nothing)
 function on_preinit(p::RecordMinimal, sim)
     CK = keytype(sim.enabled_events)      # CompetingClocks extends Base.keytype
     L = sim.likelihood_eltype
-    p.recorder = _MinimalRecorder{CK,L}(Tuple{CK,Float64}[], L[], false, Set{Symbol}())
+    # The coupling is a construction-time property of the sim's sampler, so it is
+    # known here, before any firing, and cannot change during the run.
+    p.recorder = _MinimalRecorder{CK,L}(
+        Tuple{CK,Float64}[], L[], false, CompetingClocks.coupling(sim.sampler))
     return nothing
 end
 
 # on_prefire: identical sampler state to the trace evaluator's per-step gate.
 on_prefire(p::RecordMinimal, sim, clock, event, when) =
     _rec_min_prefire(p.recorder, sim, clock, when)
-# on_postfire: the firing is sealed, sim.fire_random reflects this firing, and
-# sim.couplings_ran holds every re-evaluation coupling that ran up to here.
+# on_postfire: the firing is sealed and sim.fire_random reflects this firing.
 on_postfire(p::RecordMinimal, sim, clock, event, when, changed) =
-    _rec_min_postfire(p.recorder, clock, when, sim.fire_random, sim.couplings_ran)
+    _rec_min_postfire(p.recorder, clock, when, sim.fire_random)
 
 # Guards: a hook before on_preinit (impossible through run) is a silent no-op.
 _rec_min_prefire(::Nothing, sim, clock, when) = nothing
-_rec_min_postfire(::Nothing, clock, when, fr, couplings) = nothing
+_rec_min_postfire(::Nothing, clock, when, fr) = nothing
 
 function _rec_min_prefire(r::_MinimalRecorder{CK,L}, sim, clock, when) where {CK,L}
     # Only accumulate when the sampler records step likelihoods; otherwise the
@@ -186,13 +168,9 @@ function _rec_min_prefire(r::_MinimalRecorder{CK,L}, sim, clock, when) where {CK
     end
     return nothing
 end
-function _rec_min_postfire(r::_MinimalRecorder{CK,L}, clock, when, fr::Bool,
-                           couplings::Set{Symbol}) where {CK,L}
+function _rec_min_postfire(r::_MinimalRecorder{CK,L}, clock, when, fr::Bool) where {CK,L}
     push!(r.firings, (clock, when))
     r.fire_random |= fr
-    # Track which couplings actually RAN (not a static scan) so the record can be
-    # labeled with the coupling that produced it.
-    union!(r.couplings, couplings)
     return nothing
 end
 
@@ -213,12 +191,11 @@ that has observed a forward run. `horizon` defaults to the last firing's time.
 function minimal_record(p::RecordMinimal; horizon::Union{Nothing,Real}=nothing)
     r = _require_recorder(p)
     h = _resolve_horizon(horizon, r.firings, 0.0)
-    return MinimalRecord(p.initializer, copy(r.firings), h, _coupling_label(r.couplings),
-        r.fire_random)
+    return MinimalRecord(p.initializer, copy(r.firings), h, r.coupling, r.fire_random)
 end
 
 """
-    minimal_record(skel::TrajectorySkeleton; horizon=nothing, coupling=:redraw,
+    minimal_record(skel::TrajectorySkeleton; horizon=nothing, coupling=:carry,
                    initializer=nothing, fire_random=false) -> MinimalRecord
 
 Project a rich [`TrajectorySkeleton`](@ref) down to the pinned
@@ -226,13 +203,16 @@ Project a rich [`TrajectorySkeleton`](@ref) down to the pinned
 for each recorded step. `horizon` defaults to the last step's time. The skeleton
 carries no fire-randomness flag, so pass `fire_random` if known (a skeleton
 recorded alongside the framework's detector can supply it). A `TrajectorySkeleton`
-does not observe which re-evaluation couplings ran, so `coupling` is a caller-
-supplied label; it defaults to `:redraw`, the same convention `RecordMinimal`
-applies to a run in which no re-evaluation ran (guarantee G6).
+does not record its sampler's re-evaluation coupling, so `coupling` is a caller-
+supplied label; it defaults to `:carry`, the construction-time default of the
+scheduling samplers (`NextReactionMethod()`, `FirstToFireMethod()`), so a skeleton
+recorded with a default-constructed simulation labels the same way `RecordMinimal`
+would (guarantee G6). Pass `coupling=:redraw` when the run's sampler was built
+with that coupling.
 """
 function minimal_record(
     skel::TrajectorySkeleton{CK}; horizon::Union{Nothing,Real}=nothing,
-    coupling::Symbol=:redraw, initializer=nothing, fire_random::Bool=false,
+    coupling::Symbol=:carry, initializer=nothing, fire_random::Bool=false,
 ) where {CK}
     firings = Tuple{CK,Float64}[(s.clock, s.when) for s in skel.steps]
     h = _resolve_horizon(horizon, firings, skel.init.when)

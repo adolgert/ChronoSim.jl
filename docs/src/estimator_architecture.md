@@ -32,7 +32,7 @@ graph TD
 **The model** is what a user writes: event types with `precondition`,
 `enable(event, physical, θ, when)`, and `fire!`, plus optional
 [`DistRecipe`](@ref) declarations and the per-event
-[coupling and memory declarations](@ref "Declarations: coupling and memory").
+[memory declaration](@ref "Declarations: coupling and memory").
 The model owns everything a trajectory only *reads*: transition structure,
 distribution builders, policies. It never touches a sampler and never sees an
 estimator.
@@ -67,8 +67,10 @@ validate against exact CTMC oracles.
   (`enable`/`reenable`), and state mutations (`fire!`). The framework captures
   reads and writes as it calls; that capture *is* the dependency information.
 * **Framework → sampler:** verbs with realized distributions and relative
-  enabling times — `enable!`, `reenable!(…, coupling)`, `disable!`, `fire!`,
-  `force_fire!`. No θ, no state, no model objects cross this seam.
+  enabling times — `enable!`, `reenable!`, `disable!`, `fire!`,
+  `force_fire!`. No θ, no state, no model objects cross this seam; the
+  re-evaluation coupling is fixed on the sampler at construction, not passed
+  per call.
 * **Sampler → framework:** `next(ctx)` (the race winner), `steploglikelihood`
   (the per-step likelihood primitive, which with `which=nothing` doubles as the
   censoring survival), and `enabled_ages` (the competing set with ages, for
@@ -112,7 +114,7 @@ unrepresentable.
 | G3 deterministic firing, detection of fire-randomness | ChronoSim ([`CountingRNG`](@ref), `fire_random`) |
 | G4 the θ seam and the recipe | the model publishes it; ChronoSim threads `params` |
 | G5 minimal record + replay-is-the-same-loop | ChronoSim ([`MinimalRecord`](@ref), shared step loop) |
-| G6 coupling + memory declarations | declared in the model, plumbed by ChronoSim, executed by CompetingClocks (`reenable!` with coupling, `supports_carry`) |
+| G6 coupling + memory | memory declared in the model and plumbed by ChronoSim; the re-evaluation coupling chosen at sampler construction and executed by CompetingClocks (`NextReactionMethod(coupling=...)`, `reenable!`, `supports_carry`) |
 | G7 canonical keyed streams | CompetingClocks (`KeyedStreams`) + ChronoSim (master seed, fire streams) |
 | G8 functional lowering + score/IPA pairing | the estimator layer; ChronoSim supplies the censored, differentiable likelihood |
 

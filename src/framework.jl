@@ -4,7 +4,7 @@ import CompetingClocks
 import CompetingClocks: clone, force_fire!, rekey_streams!
 using CompetingClocks:
     SamplingContext, SamplerBuilder, NextReactionMethod, enable!, disable!, next,
-    reenable!, supports_carry,
+    reenable!,
     keytype, steploglikelihood, KeyedStreams, stream_for!,
     copy_clocks!
 
@@ -39,13 +39,6 @@ mutable struct SimulationFSM{State,Sampler<:SamplingContext,CK,P<:ExecutionPolic
     # keeps an empty bank and its behavior is unchanged. `initialize!` clears it, and
     # firing a clock clears that clock's entry (the draw is consumed).
     banked_age::Dict{CK,Float64}
-    # Milestone 5 (guarantee G6): the set of re-evaluation couplings that ACTUALLY
-    # RAN during the current run -- every `reenable!` records the coupling it used
-    # here. A record-derived estimator needs the trace labeled with the coupling that
-    # produced it; a recorder projects this into the honest per-run summary
-    # (:redraw / :carry / :mixed). Empty when no re-evaluation ran. `initialize!`
-    # clears it.
-    couplings_ran::Set{Symbol}
     observer                    # untouched: untyped, backward compatible
     policy::P                   # NEW, last field
     step_likelihood::Bool       # opt-in trace-likelihood capability
@@ -232,7 +225,6 @@ function SimulationFSM(
         Dict{ClockKey,SimEvent}(),
         Dict{ClockKey,Float64}(),
         Dict{ClockKey,Float64}(),   # banked_age (G6 memory policy); empty for :fresh-only models
-        Set{Symbol}(),              # couplings_ran (G6); empty until a re-evaluation runs
         observer,
         policy,
         sim_step_likelihood,
@@ -387,27 +379,17 @@ function sim_event_reenable(event::SimEvent, event_key, sim)
     end
     if !isnothing(reads_result.result)
         (dist, enable_time) = reads_result.result
-        # Re-evaluation coupling (G6): which pathwise coupling the sampler must use
-        # when a still-enabled clock's distribution is replaced is declared PER EVENT
-        # TYPE, not decided silently by the backend. `:carry` maps the retained draw
-        # through the change (the only IPA-safe coupling); `:redraw` (the default)
-        # draws the remaining lifetime fresh at the current age.
-        coupling = reevaluation_coupling(typeof(event))
-        if coupling === :carry && !supports_carry(sim.sampler.sampler)
-            error("""Event $(event_key) declares reevaluation_coupling == :carry, but \
-                the configured sampler $(typeof(sim.sampler.sampler)) cannot carry a \
-                mid-flight draw (CompetingClocks.supports_carry is false for it). \
-                :carry is the only IPA-safe re-evaluation coupling; either declare \
-                :redraw for this event's type, or build the SimulationFSM with a \
-                carry-capable sampler such as NextReactionMethod() (its \
-                CombinedNextReaction backend supports carry) or FirstToFireMethod() \
-                (FirstToFire rebases its stored schedule).""")
-        end
+        # Re-evaluation coupling (G6): which pathwise coupling realizes a mid-flight
+        # distribution change (`:carry` maps the retained draw through the change,
+        # the only IPA-safe coupling; `:redraw` draws the remaining lifetime fresh
+        # at the current age) is a construction-time property of the sampler, chosen
+        # via `NextReactionMethod(coupling=...)` / `FirstToFireMethod(coupling=...)`.
+        # A sampler that cannot honor the requested coupling already errored when
+        # the SimulationFSM was built, so no capability guard is needed here.
         # Absolute `enable_time` → relative shift; `sim.when == time(ctx)` here. The
-        # relative-te computation is unchanged; only the verb (reenable! with an
-        # explicit coupling) differs from the historical plain enable!.
-        reenable!(sim.sampler, event_key, dist, enable_time - sim.when, coupling)
-        push!(sim.couplings_ran, coupling)
+        # relative-te computation is unchanged; only the verb (reenable!) differs
+        # from the historical plain enable!.
+        reenable!(sim.sampler, event_key, dist, enable_time - sim.when)
         on_enable(sim.policy, sim, event_key, event, dist, enable_time)
     end
     return reads_result.reads
@@ -692,7 +674,7 @@ sampler's and fire streams' state at the clone point but no mutable object:
     re-pointed to a fire stream at every firing anyway).
   * `event_dependency` copies the trajectory-state dependency network and SHARES
     the model-side generator search.
-  * `enabled_events`, `enabling_times`, `banked_age`, `couplings_ran` are copied
+  * `enabled_events`, `enabling_times`, `banked_age` are copied
     (event values are immutable clock-keyed structs, so a shallow dict/set copy
     is a full copy of the mutable trajectory state).
   * `immediategen` (model-side generator search), `params` (read-only by the θ
@@ -716,7 +698,6 @@ function clone(sim::SimulationFSM{State,Sampler,CK,P}) where {State,Sampler,CK,P
         copy(sim.enabled_events),
         copy(sim.enabling_times),
         copy(sim.banked_age),
-        copy(sim.couplings_ran),
         sim.observer,                           # shared: user callback
         sim.policy,                             # shared: see docstring
         sim.step_likelihood,
@@ -761,9 +742,8 @@ function initialize!(init_evt, callback::Function, sim::SimulationFSM)
     # initial condition exactly.
     sim.fire_random = false
     reset_count!(sim.counting_rng)
-    # G6: a fresh trajectory carries no banked age and has run no re-evaluation yet.
+    # G6: a fresh trajectory carries no banked age.
     empty!(sim.banked_age)
-    empty!(sim.couplings_ran)
     on_preinit(sim.policy, sim)
     init_rng = stream_for!(sim.fire_streams, _INIT_STREAM_KEY)
     changes_result = capture_state_changes(sim.physical) do

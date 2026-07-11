@@ -91,21 +91,26 @@ coupling label), not stored.
 *Pinned by:* `test/test_minimal_record.jl` (forward log-likelihood equals
 replay exactly; skeleton projection equals the policy's record).
 
-### G6 — Memory policy and re-evaluation coupling are explicit per-event declarations
+### G6 — Memory policy and re-evaluation coupling are explicit choices, each in its proper place
 
-*Invariant:* what happens to an in-flight draw on re-evaluation (`:redraw` /
-`:carry`) and to accumulated age across a disable/re-enable (`:fresh` /
-`:resume`) are declared on the event type, not decided silently by the backend;
-only `:carry` is IPA-safe; records are labeled with the coupling that actually
-ran.
-*API:* [`reevaluation_coupling`](@ref), [`memory_policy`](@ref), the banked-age
-lifecycle inside the framework, `MinimalRecord.coupling`, the early error for
-`:carry` on a carry-less sampler. See
+*Invariant:* what happens to accumulated age across a disable/re-enable
+(`:fresh` / `:resume`) is declared on the event type, because it is a
+distributional statement about the model; what happens to an in-flight draw on
+re-evaluation (`:carry`, the default, or `:redraw`) is a construction-time
+property of the sampler, chosen via `NextReactionMethod(coupling=...)` /
+`FirstToFireMethod(coupling=...)`, because both couplings produce the same law
+and only *how the sampler generates its numbers* differs; only `:carry` is
+IPA-safe; records are labeled with the sampler's coupling.
+*API:* [`memory_policy`](@ref), the banked-age lifecycle inside the framework,
+the `coupling` keyword of the scheduling sampler specs,
+`CompetingClocks.coupling`, `MinimalRecord.coupling`, the construction-time
+error for `coupling=:carry` on a carry-less sampler. See
 [Declarations: coupling and memory](@ref "Declarations: coupling and memory").
 *Pinned by:* `test/test_declarations.jl` (defaults reproduce the pre-change
-trajectory exactly; carry with an unchanged distribution moves nothing;
-resume/fresh each match their own quadrature oracle and differ; the record
-labels redraw/carry/mixed).
+trajectory exactly, and a default-constructed FSM is bit-identical to an
+explicit coupling=:carry one; carry with an unchanged distribution moves
+nothing; resume/fresh each match their own quadrature oracle and differ; the
+record labels the sampler's coupling).
 
 ### G7 — Random streams have canonical names
 
@@ -185,11 +190,12 @@ mechanically checked somewhere; all of them bite silently when broken.
   that motivated the three-tier defense. Over-proposing generators can *mask*
   under-declaration (the model stays correct in law while the declaration is
   wrong), which is exactly why the audit tier exists.
-* **The `:redraw` default is not the old silent carry.** The historical
-  `CombinedNextReaction` behavior on re-enabling an enabled key was
-  deterministic carry; the declaration default is `:redraw`. A model newly
-  opting into rate re-evaluation must declare `:carry` explicitly if it wants
-  the old behavior (or IPA safety). See the
+* **The coupling default is `:carry`, the old silent behavior made explicit.**
+  The historical `CombinedNextReaction` behavior on re-enabling an enabled key
+  was deterministic carry, and the sampler's construction-time `coupling`
+  keyword defaults to exactly that, so a default-built simulation preserves
+  it. A run that wants fresh redraws on re-evaluation must ask for them at
+  construction: `NextReactionMethod(coupling=:redraw)`. See the
   [migration notes](@ref "Migration notes").
 
 ## Related

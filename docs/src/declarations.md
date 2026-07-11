@@ -8,17 +8,18 @@ Two behaviors of a clock used to be silent properties of whichever sampler
 backend you happened to run: what happens to a clock's in-flight draw when its
 distribution is re-evaluated while it stays enabled, and what happens to a
 clock's accumulated age when its event is disabled and later re-enabled. Both
-are now explicit, per-event-type declarations (guarantee G6):
-[`reevaluation_coupling`](@ref) and [`memory_policy`](@ref). The declarations
-matter statistically — the choices are identical *in law* but inequivalent for
-*derivatives* — and they matter for model semantics: a preempted job that
-resumes is a different model than one that restarts.
-
-Both are declared on the event **type**, not the instance:
+are now explicit choices (guarantee G6), and they live in different places
+because they are different kinds of statement. The re-evaluation **coupling**
+is a property of how a *sampler* generates its numbers, so it is chosen once,
+at sampler construction. The **memory policy** is a distributional statement
+about the *model* — a preempted job that resumes is a different model than one
+that restarts — so it stays a per-event-type declaration,
+[`memory_policy`](@ref). The choices matter statistically: the two couplings
+are identical *in law* but inequivalent for *derivatives*.
 
 ```julia
-reevaluation_coupling(::Type{Worker}) = :carry    # default :redraw
-memory_policy(::Type{Complete})       = :resume   # default :fresh
+sampler = NextReactionMethod(coupling=:carry)   # default :carry
+memory_policy(::Type{Complete}) = :resume        # default :fresh
 ```
 
 ## Re-evaluation coupling: `:redraw` versus `:carry`
@@ -27,37 +28,49 @@ When a firing changes state that an enabled event's rate depends on, the
 framework calls [`reenable`](@ref); if it returns a fresh distribution, the
 sampler must reconcile the clock's existing draw with the new distribution.
 The *law* — a piecewise hazard, with the clock keeping its age — is one
-formula, but two implementations (couplings) realize it:
+formula, but two implementations (couplings) realize it. Because both produce
+the same law, the choice is not a statement about the model; it is a property
+of how the sampler generates its numbers, so it is fixed at sampler
+construction:
 
-* **`:redraw`** (the default) — the sampler discards the in-flight draw and
-  draws the remaining lifetime fresh at the current age. Correct for
-  likelihood work, but **not differentiable** in a distribution parameter: an
-  infinitesimal rate change consumes a brand-new uniform, so the firing time
-  jumps discontinuously.
-* **`:carry`** — the sampler maps the retained draw through the distribution
-  change by matching conditional survival, consuming no fresh randomness. This
-  is the only coupling under which a firing time moves *continuously* in a
-  distribution parameter, which is exactly what infinitesimal perturbation
-  analysis (IPA, the pathwise derivative estimator) needs. **Declare `:carry`
-  on any event whose derivative you intend to take pathwise.**
+```julia
+sim = SimulationFSM(physical, events;
+    sampler=NextReactionMethod(coupling=:redraw), key_type=Tuple)
+```
+
+* **`:carry`** (the default) — the sampler maps the retained draw through the
+  distribution change by matching conditional survival, consuming no fresh
+  randomness. This is the only coupling under which a firing time moves
+  *continuously* in a distribution parameter, which is exactly what
+  infinitesimal perturbation analysis (IPA, the pathwise derivative estimator)
+  needs. It is also the scheduling backends' historical silent behavior, so
+  the default preserves what a pre-declaration model always did.
+* **`:redraw`** — the sampler discards the in-flight draw and draws the
+  remaining lifetime fresh at the current age. Correct for likelihood work,
+  but **not differentiable** in a distribution parameter: an infinitesimal
+  rate change consumes a brand-new uniform, so the firing time jumps
+  discontinuously.
 
 Not every backend can carry a mid-flight draw. `:carry` requires a sampler
 whose `CompetingClocks.supports_carry` trait is `true` — `CombinedNextReaction`
-(the default `NextReactionMethod` backend) and `FirstToFire` qualify — and
-declaring `:carry` against a sampler that cannot carry raises a descriptive
-error at the re-evaluation site rather than silently redrawing.
+(the default `NextReactionMethod` backend) and `FirstToFire`
+(`FirstToFireMethod`) qualify — and requesting `coupling=:carry` from a sampler
+that cannot carry raises a descriptive error at construction, before any
+simulation is built.
 
-The couplings that actually ran during a run are tracked and stamped into the
-record: `MinimalRecord.coupling` reports `:redraw`, `:carry`, or `:mixed`, so a
-record-derived estimator knows which inversion formula describes the trace it
-holds (see [Records, replay, and the effect check](@ref "Records, replay, and the effect check")).
+A run's coupling is stamped into the record: `MinimalRecord.coupling` reports
+`:redraw` or `:carry`, read from the sampler
+(`CompetingClocks.coupling(sampler)`), so a record-derived estimator knows
+which inversion formula describes the trace it holds (see
+[Records, replay, and the effect check](@ref "Records, replay, and the effect check")).
+Because one sampler drives the whole run, one run has exactly one coupling.
 
 ### The carry no-op contract: return `firstenabled`, not `when`
 
 `:carry` with an *unchanged* distribution must leave the schedule bit-for-bit
-intact — that is the property that makes it safe to declare broadly. But the
-no-op is a **model** contract as much as a sampler one: `reenable` must return
-the clock's *original* enabling time (`firstenabled`), not the current time.
+intact — that is the property that makes it a safe default. But the no-op is a
+**model** contract as much as a sampler one: `reenable` must return the
+clock's *original* enabling time (`firstenabled`), not the current time.
 Returning `when` re-anchors the clock at the moment of re-evaluation and shifts
 the schedule even under carry. The safe idiom, from `test/test_declarations.jl`:
 
@@ -65,18 +78,7 @@ the schedule even under carry. The safe idiom, from `test/test_declarations.jl`:
 # Re-evaluate the rate from state; keep the clock anchored at its first enabling.
 reenable(e::Worker, s, θ, firstenabled, when) =
     (first(enable(e, s, θ, when)), firstenabled)
-reevaluation_coupling(::Type{Worker}) = :carry
 ```
-
-### A migration hazard worth knowing
-
-Historically, the `CombinedNextReaction` backend's behavior when an enabled
-key was re-enabled *was* deterministic carry — silently. The declaration
-default is `:redraw`. Existing models are unaffected (no shipped model returns
-a schedule-changing `reenable`), but a model that newly opts into rate
-re-evaluation without declaring a coupling gets `:redraw`, not the old silent
-carry. Declare what you mean. The
-[migration notes](@ref "Migration notes") restate this.
 
 ## Memory policy: `:fresh` versus `:resume`
 
@@ -108,8 +110,8 @@ internal to the framework:
 3. **On fire**, the draw is consumed and the bank entry deleted; a later
    re-enable starts fresh.
 
-A `:fresh` event never touches the bank, so a model with no declarations runs
-bit-for-bit as before (pinned by a golden-trajectory test).
+A `:fresh` event never touches the bank, so a model with no memory
+declarations runs bit-for-bit as before (pinned by a golden-trajectory test).
 
 `:resume` is observably different from `:fresh` only for clocks with memory:
 the memoryless exponential makes the two policies coincide, so use a Weibull or

@@ -90,9 +90,10 @@ Return `first_enabled` (the clock's original anchor), not `when`, unless you
 mean to restart the clock's age from the moment of the state change: the
 returned time is the origin the new distribution is measured from. What the
 sampler does with the clock's in-flight draw when the distribution is
-replaced — redraw it or carry it — is a per-event declaration,
-[`reevaluation_coupling`](@ref), described with the disable/re-enable memory
-declaration ([`memory_policy`](@ref)) in
+replaced — redraw it or carry it — is a construction-time property of the
+sampler, chosen via `NextReactionMethod(coupling=...)` /
+`FirstToFireMethod(coupling=...)` and described with the disable/re-enable
+memory declaration ([`memory_policy`](@ref)) in
 [Declarations: coupling and memory](@ref "Declarations: coupling and memory").
 
 This treatment of long-lived clocks with state-dependent rates follows the
