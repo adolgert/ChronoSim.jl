@@ -36,6 +36,9 @@ jobs:
           - x64
     steps:
       - uses: actions/checkout@v7
+      - name: Point CompetingClocks at its public repo for CI
+        shell: bash
+        run: .github/ci/use-public-competingclocks.sh
       - uses: julia-actions/setup-julia@v3
         with:
           version: ${{ matrix.version }}
@@ -56,6 +59,9 @@ jobs:
       statuses: write
     steps:
       - uses: actions/checkout@v7
+      - name: Point CompetingClocks at its public repo for CI
+        shell: bash
+        run: .github/ci/use-public-competingclocks.sh
       - uses: julia-actions/setup-julia@v3
         with:
           version: '1'

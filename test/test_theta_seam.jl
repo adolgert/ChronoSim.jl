@@ -239,7 +239,16 @@ end
         ThetaLegacy.Board(1), [ThetaLegacy.FireA, ThetaLegacy.FireB], ThetaLegacy.init!;
         seed=424242, nsteps=6,
     )
-    @test got == expected
+    if VERSION < v"1.13-"
+        @test got == expected
+    else
+        # The literals are a function of the seeded stream on the Julia version
+        # where they were recorded (1.12). Julia does not promise random streams
+        # stay stable across minor releases, and 1.13 changed the draws, so the
+        # exact comparison only holds on the recording version. Testset (b) below
+        # carries the seam-forwarding invariant in a version-independent form.
+        @test_skip got == expected
+    end
 end
 
 # =============================================================================
@@ -413,8 +422,19 @@ end
     na = count(t -> t[2][1] == :FireA, log_)
     nb = count(t -> t[2][1] == :FireB, log_)
     tN = log_[end][1]
-    @test na == 78
-    @test nb == 122
+    if VERSION < v"1.13-"
+        @test na == 78
+        @test nb == 122
+    else
+        # The counts are a function of the seeded stream on the Julia version
+        # where they were recorded (1.12); Julia does not promise random streams
+        # stay stable across minor releases, and 1.13 changed the draws. The
+        # design invariants below (the score vanishes at the closed-form MLE,
+        # the analytic score at the truth, the four-standard-error recovery)
+        # are computed from the actual log and stay asserted on every version.
+        @test_skip na == 78
+        @test_skip nb == 122
+    end
 
     # The closure the optimizer would drive, differentiable through `sim.params`.
     loglik(θ) = trace_likelihood(
@@ -429,7 +449,13 @@ end
     # For the always-enabled exponential race the MLE is closed-form λ̂ = n / t_N.
     mle = [na, nb] ./ tN
     # Re-pinned for milestone 4 (see the count re-pin above); still near truth [1.0, 1.6].
-    @test mle ≈ [0.9535427033678308, 1.4914385873189149] atol = 1e-3
+    if VERSION < v"1.13-"
+        @test mle ≈ [0.9535427033678308, 1.4914385873189149] atol = 1e-3
+    else
+        # Stream-dependent literal, valid only on the recording version (1.12);
+        # the four-standard-error truth-recovery check below still applies.
+        @test_skip mle ≈ [0.9535427033678308, 1.4914385873189149] atol = 1e-3
+    end
 
     # The score vanishes at the MLE — the regression the optimizer's convergence
     # rests on.

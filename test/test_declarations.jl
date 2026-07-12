@@ -335,7 +335,17 @@ const COMBINED_EVENTS = [
         rng=Xoshiro(9182734), key_type=Tuple, observer=obs,
     )
     ChronoSim.run(sim, DeclGolden.init!, (p, i, e, w) -> i > 12)
-    @test trace == expected
+    if VERSION < v"1.13-"
+        @test trace == expected
+    else
+        # The golden literals are a function of Xoshiro(9182734)'s stream on the
+        # Julia version where they were recorded (1.12). Julia does not promise
+        # random streams stay stable across minor releases, and 1.13 changed the
+        # draws, so the exact comparison is only meaningful on the recording
+        # version. The next testset carries the behavior-preservation claim in a
+        # version-independent form (default FSM == explicit :carry FSM).
+        @test_skip trace == expected
+    end
 end
 
 @testset "declare: a default-constructed FSM is bit-identical to one built with an explicit carry sampler" begin
