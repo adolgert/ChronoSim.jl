@@ -11,7 +11,7 @@ using CompetingClocks:
 using Distributions
 
 export SimulationFSM, ModelDefinitionError, TraceEvaluation, trace_likelihood,
-    censoring_loglikelihood, event_key_union
+    censoring_loglikelihood, event_key_union, advance!
 
 # Milestone 4 (guarantee G7): the reserved fire-stream key for initialization
 # draws. Init randomness precedes any firing, so it is drawn straight from this
@@ -999,6 +999,48 @@ end
 
 function run(sim::SimulationFSM, initializer::Function, stop_condition::Function)
     run(sim, InitializeEvent(), initializer, stop_condition)
+end
+
+"""
+    advance!(sim::SimulationFSM, τ::Real) -> Int
+
+Fire every event whose firing time is at or before `τ` (a tie at `τ` fires),
+through the same [`fire!`](@ref) path as [`run`](@ref), and stop with the
+sampler's next reservation intact. Returns the number of events fired. The
+simulation must already be initialized; repeated calls with increasing `τ`
+resume the SAME trajectory, so `advance!(sim, τ₁); advance!(sim, τ₂)` is
+bit-identical to `advance!(sim, τ₂)`. This is the advance-to-time verb that
+latent-state estimators (particle filters, likelihood-weighted methods) need:
+the simulation becomes a resumable latent-state object that pauses at
+observation boundaries.
+
+`sim.when` stays at the LAST FIRED event's time — it is never set to `τ` —
+because `sim.when` is written only by the firing path, in sync with the
+sampler's committed clock. [`censoring_loglikelihood`](@ref) reads `sim.when`
+for its guard while the sampler integrates survival from its own committed
+time; a faked clock would desynchronize them. The composition for
+likelihood-weighted variants is `advance!(sim, τ); censoring_loglikelihood(sim, τ)`,
+which scores exactly the interval's survival term.
+
+Requires a sampler whose context-level `next` is a NON-MUTATING reservation
+(the default `NextReactionMethod`/`CombinedNextReaction`: `next` reads the
+firing-queue minimum, consumes no randomness, and repeated calls return the
+same pair). `FirstReaction` redraws on every `next` and must not be used with
+`advance!`. Sampler exhaustion (a non-finite time or no key) stops the loop
+without error, and `τ == sim.when` is legal and fires nothing new. Throws an
+`ArgumentError` when `τ` precedes the simulation clock.
+"""
+function advance!(sim::SimulationFSM, τ::Real)
+    τ >= sim.when || throw(ArgumentError(
+        "advance! target τ=$τ precedes the simulation clock sim.when=$(sim.when)"))
+    nfired = 0
+    while true
+        (when, what) = next(sim.sampler)
+        (isfinite(when) && !isnothing(what) && when <= τ) || break
+        fire!(sim, when, what)
+        nfired += 1
+    end
+    return nfired
 end
 
 """
