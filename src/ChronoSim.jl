@@ -22,6 +22,7 @@ include("minimal_record.jl")    # Adoption 1/2: minimal record schema + effect c
 include("functionals.jl")       # Phase OB-1: path functionals + the derived state fold
 include("initial_law.jl")       # Phase OB-2: the initial law (declared time-zero state)
 include("gsmp_model.jl")        # Phase OB-3c: the model value (GsmpModel + simulate)
+include("particle_filter.jl")   # Latent-state inference: bootstrap SMC over advance!/clone/rekey
 include("policy_stack.jl")      # Phase 1d: PolicyStack + find_policy
 include("invariant.jl")         # Phase 1d: @invariant + CheckInvariants
 include("replay.jl")

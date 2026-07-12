@@ -26,7 +26,7 @@ graph TD
     S -- "next, steploglikelihood, enabled_ages" --> F
     F -- "policy hooks (observation only)" --> O
     O -- "MinimalRecord / TrajectorySkeleton" --> E
-    E -- "clone, rekey_streams!, force_fire!, trace_likelihood(…; params=θ)" --> F
+    E -- "clone, rekey_streams!, force_fire!, advance!, trace_likelihood(…; params=θ)" --> F
 ```
 
 **The model** is what a user writes: event types with `precondition`,
@@ -78,8 +78,13 @@ validate against exact CTMC oracles.
 * **Framework → observer:** hook calls carrying the firing's public facts
   (clock, event, time, changed places), from which records are built.
 * **Estimator → framework:** the estimator drives whole-world verbs — `clone`,
-  `rekey_streams!`, `force_fire!`, `trace_likelihood(…; params=θ)` — and reads
-  functionals from state or records.
+  `rekey_streams!`, `force_fire!`, `advance!` (run the world forward to a
+  chosen time and pause, holding the sampler's reservation — the verb that
+  makes a simulation a resumable latent-state object), and
+  `trace_likelihood(…; params=θ)` — and reads functionals from state or
+  records. The first shipped client of the pause-and-resume verbs is
+  [`ChronoSim.ParticleFilter`](@ref), the bootstrap particle filter over a
+  partially observed model.
 
 ## What each component must never know
 
