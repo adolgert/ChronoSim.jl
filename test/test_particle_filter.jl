@@ -125,6 +125,15 @@ const PF_N = 5
 const PF_Δ = 1.0
 const PF_TIMES = [j * PF_Δ for j in 1:8]
 
+# The oracle comparisons divide by a standard error that is itself estimated
+# from only 8–12 replicates, so a lucky-small se draw can turn a correct
+# filter into a spurious 4σ failure whenever a new Julia version reshuffles
+# the RNG stream (1.13.0-rc1 landed one grid point at z = 4.002; the same
+# point sits at z = -1.3 with 96 replicates). The floor keeps the tolerance
+# above that estimation noise while staying far below any real defect — a
+# wrong rate moves these filtering means by ~0.2, not 0.08.
+const PF_SE_FLOOR = 0.02
+
 @testset "particle_filter: the model-value constructor builds a resumable live sim whose split advance reproduces a one-shot advance bit for bit" begin
     model = PfModels.pf_model(PF_N)
     seed = UInt64(0xC0457AB1)
@@ -178,7 +187,7 @@ end
         ms = [r.stats[j] for r in results]
         se = std(ms) / sqrt(R)
         @test se < 0.08
-        @test abs(mean(ms) - marg[j]) < 4 * se
+        @test abs(mean(ms) - marg[j]) < 4 * max(se, PF_SE_FLOOR)
     end
 end
 
@@ -199,7 +208,7 @@ end
         ms = [r.stats[j] for r in results]
         se = std(ms) / sqrt(R)
         @test se < 0.08
-        @test abs(mean(ms) - oracle.means[j]) < 4 * se
+        @test abs(mean(ms) - oracle.means[j]) < 4 * max(se, PF_SE_FLOOR)
     end
     # Ẑ/Z is dimensionless and O(1); its mean over replicates is one because
     # the always-resample recursion keeps Ẑ unbiased (the pseudo-marginal
@@ -207,7 +216,7 @@ end
     ratios = [exp(r.logZ - oracle.logZ) for r in results]
     se_r = std(ratios) / sqrt(R)
     @test se_r < 0.10
-    @test abs(mean(ratios) - 1.0) < 4 * se_r
+    @test abs(mean(ratios) - 1.0) < 4 * max(se_r, PF_SE_FLOOR)
 end
 
 @testset "particle_filter: the filter refuses mismatched observation lengths and non-increasing observation times" begin
