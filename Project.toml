@@ -12,7 +12,7 @@ Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 Serialization = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
 
 [sources]
-CompetingClocks = {path = "../CompetingClocks.jl"}
+CompetingClocks = {url = "https://github.com/adolgert/CompetingClocks.jl.git"}
 
 [compat]
 CompetingClocks = "0.4"
