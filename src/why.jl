@@ -278,7 +278,7 @@ function _preemptors(skel, ck)
     for (i, s) in enumerate(skel.steps)
         fires_ck = s.clock == ck
         if isopen && !fires_ck
-            sym = s.clock[1]::Symbol
+            sym = _key_label(s.clock)
             counts[sym] = get(counts, sym, 0) + 1
         end
         # advance interval state (same rule order as _enable_intervals)
@@ -348,8 +348,11 @@ the factory surfaces as [`ReplayDivergence`](@ref).
 The result is a [`WhynotReport`](@ref); `show` prints a plain-text readout of
 at most ~30 lines.
 """
-function whynot(skel::TrajectorySkeleton, sim_factory::Function, evt::SimEvent)
-    ck = clock_key(evt)
+function whynot(skel::TrajectorySkeleton{CK}, sim_factory::Function, evt::SimEvent) where {CK}
+    # The queried event is compared against the skeleton's CK-typed clocks, so
+    # convert it under the skeleton's key representation (instance keys keep
+    # the event itself; tuple keys take clock_key).
+    ck = _event_key(CK, evt)
     fired = _fired_steps(skel, ck)
     if !isempty(fired)
         occ = length(fired) <= 6 ? [(i, skel.steps[i].when) for i in fired] :
@@ -672,7 +675,7 @@ function whyrunning(sim::SimulationFSM, skel::TrajectorySkeleton, stop_predicate
     predicate_writes = PW[]
     for i in window
         s = skel.steps[i]
-        sym = s.clock[1]::Symbol
+        sym = _key_label(s.clock)
         if !haskey(counts, sym)
             push!(order, sym)
             counts[sym] = 0

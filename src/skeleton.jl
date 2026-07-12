@@ -240,6 +240,12 @@ Base.hash(a::TrajectorySkeleton, h::UInt) =
 
 ########## Show
 
+# The event-type label of a clock key, for summaries. A tuple key carries the
+# type name as its first component; an instance key (phase OB-3a) IS the event,
+# so the label is its type's name.
+_key_label(clock::SimEvent) = nameof(typeof(clock))
+_key_label(clock) = clock[1]::Symbol       # clock_key()'s first component
+
 function Base.show(io::IO, sk::TrajectorySkeleton)
     tend = isempty(sk.steps) ? sk.init.when : sk.steps[end].when
     print(io, "TrajectorySkeleton(", length(sk.steps), " steps, t=",
@@ -249,7 +255,7 @@ end
 function Base.show(io::IO, ::MIME"text/plain", sk::TrajectorySkeleton{CK}) where {CK}
     counts = Dict{Symbol,Int}()
     for s in sk.steps
-        evt = s.clock[1]::Symbol           # clock_key()'s first component
+        evt = _key_label(s.clock)
         counts[evt] = get(counts, evt, 0) + 1
     end
     top = sort!(collect(counts); by=kv -> (-kv[2], kv[1]))   # count desc, name asc: stable

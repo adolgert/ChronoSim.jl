@@ -49,6 +49,17 @@ seed; it no longer feeds any draw.
     `Base.hash(x::E, h::UInt) = hash(Symbol(x), h)` beside the enum
     definition. (Found in practice by the elevator example's direction enum.)
 
+Every per-key seed derivation in CompetingClocks routes through one
+overloadable function, the **canonical stream-hash seam**
+`CompetingClocks.stream_hash(seed, key)` (default `hash((seed, key))`). That
+seam is what keeps a clock's stream identity attached to its *content* rather
+than its representation: when a simulation keys clocks by event instances
+instead of clock-key tuples (see [`event_key_union`](@ref)), ChronoSim
+overloads the seam to hash the instance's `clock_key` tuple, so the instance
+key draws **exactly** the stream its tuple key would have. The
+content-hash obligation above is unchanged — whatever the seam hashes, the
+event's fields must hash by content.
+
 ## The ownership property
 
 The pinned property (`test/test_streams.jl`): make one event's `fire!` draw

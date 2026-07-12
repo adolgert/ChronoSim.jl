@@ -70,6 +70,70 @@ Two rules keep the seam honest:
   CompetingClocks samples from it at concrete `Float64` values. Parameters and
   their derivatives live entirely on the model/likelihood side.
 
+## The named parameter view
+
+Indexing `θ` positionally works, but it buries the meaning of `θ[1]` in an
+`enable` body. An event family can instead read its parameters **by name**,
+through a binding declared in the model's event list.
+
+Two vocabularies meet here, and the design keeps them separate — the same
+distinction as a function's formal parameters versus the actual arguments at a
+call site:
+
+* **Formal names** belong to the event's *code*. The event author declares
+  them once, as a trait (the same defaults-by-dispatch layering as
+  [`memory_policy`](@ref)):
+
+  ```julia
+  ChronoSim.param_names(::Type{Break}) = (:shape, :scale)
+  ```
+
+* **Actual names** belong to the *model*: the components of this simulation's
+  global θ, named by the `param_names=` keyword of [`SimulationFSM`](@ref).
+
+The [`entry`](@ref) in the event list binds formals to actuals:
+
+```julia
+sim = SimulationFSM(shop,
+    (entry(Break; params=(shape=:fail_shape, scale=:fail_scale)),
+     entry(Repair; params=(rate=:repair_rate,)));
+    params=[1.6, 1.5, 0.5],
+    param_names=(:fail_shape, :fail_scale, :repair_rate), seed=1)
+```
+
+At construction the binding resolves to integer indices; at enabling time the
+engine gathers exactly the bound components and passes the event a `NamedTuple`
+view through the **same** θ seam argument:
+
+```julia
+enable(evt::Break, physical, p, when) = (Weibull(p.shape, p.scale), when)
+```
+
+`p.shape` is a compile-time field load — the symbols are wiring that exists
+only at model construction — and building the view allocates nothing. The
+view's element type follows `eltype(θ)`, so a dual-valued θ flows through a
+bound family exactly as it does through a positional one. When formal and
+actual names coincide, the binding is the identity and `entry(Break)` (or the
+bare type `Break` in the list) suffices; the formals still resolve **by name**
+against the global list, wherever those names sit in it.
+
+**The declaration enforces itself.** The event receives *only* the components
+its binding names. Reading `p.repair_rate` when the binding does not include it
+is an immediate field error at the call — not a silently wrong gradient
+sparsity discovered by a z-test later. Under-declaration is impossible rather
+than merely detectable; over-declaring an unused name costs one gathered number
+per call and is visible.
+
+**Migration is pure dispatch, again.** A family with no declared binding (an
+empty `param_names` trait and no entry `params`) receives the whole global
+vector unchanged — the very same object — so every positional model runs
+bit-for-bit as before. Declaring formals is what opts a family into the named
+view.
+
+One footnote: a `NamedTuple` also supports integer indexing, so `p[1]` works
+under a binding — but it means "my *first formal*", not "the model's first θ
+component", which is the reading one would want anyway.
+
 ## Evaluating a trace at an explicit θ
 
 [`trace_likelihood`](@ref) accepts a `params=` keyword, so a recorded trajectory

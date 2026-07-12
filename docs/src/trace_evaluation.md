@@ -339,6 +339,35 @@ For the always-enabled exponential race the effect is exactly the change from
 score, which is why a horizon functional's score is wrong without it. Censoring is
 opt-in, never default, so the pure-replay effect check (below) stays symmetric.
 
+## The initial-state term under a declared initial law
+
+When the model's time-zero state is a declared **initial law** (see "Declaring
+the initial state as a law" in Getting Started), the trajectory likelihood gains
+one more term: `log p(x₀; θ)`, the probability of the realized initial state
+under the law. The overload
+`trace_likelihood(sim, law, trace; params=θ)` initializes `sim` through the law
+path, walks the trace as usual, and adds
+`initial_logdensity(law, x₀, θ)` to a feasible trajectory's total. The rules:
+
+* a **θ-free** law (a point mass, a thunk, or an `(rng) -> state` function)
+  contributes a θ-constant — exactly zero for a point mass, omitted for the
+  density-less rng form — so every θ-derivative of the likelihood is unaffected;
+* a **θ-dependent law with a density** ([`InitialLaw`](@ref),
+  [`InitialRecipe`](@ref)) contributes the term whose θ-gradient is the
+  initial-state score — the sensitivity a fixed-initial-condition likelihood
+  silently drops;
+* a **θ-dependent law without a density** is refused with an `ArgumentError`:
+  *"the initial law is θ-dependent and has no logdensity; supply one, or express
+  the initialization as time-zero events."* Only the likelihood refuses;
+  simulation runs fine.
+
+Exactly one of the initial-density term and a scored time-zero event may
+contribute to one trajectory's likelihood; today no scored initialize-event
+mechanism exists, so the law path's term is the only source. When the law is
+random, build the evaluation sim with the **same master seed** as the recording
+run: the law path redraws x₀ from the reserved (rekey-immune) initialization
+stream, and only the same seeding reproduces the recorded x₀.
+
 ## The three G1 verification tiers
 
 Trace evaluation is the shared substrate for guarantee G1's defense in depth — one

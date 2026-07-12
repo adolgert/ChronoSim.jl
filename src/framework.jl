@@ -5,13 +5,13 @@ import CompetingClocks: clone, force_fire!, rekey_streams!
 using CompetingClocks:
     SamplingContext, SamplerBuilder, NextReactionMethod, enable!, disable!, next,
     reenable!,
-    keytype, steploglikelihood, KeyedStreams, stream_for!,
+    keytype, steploglikelihood, KeyedStreams, stream_for!, pin_stream!,
     copy_clocks!
 
 using Distributions
 
 export SimulationFSM, ModelDefinitionError, TraceEvaluation, trace_likelihood,
-    censoring_loglikelihood
+    censoring_loglikelihood, event_key_union
 
 # Milestone 4 (guarantee G7): the reserved fire-stream key for initialization
 # draws. Init randomness precedes any firing, so it is drawn straight from this
@@ -77,6 +77,22 @@ mutable struct SimulationFSM{State,Sampler<:SamplingContext,CK,P<:ExecutionPolic
     # retained only as the documented carrier of this seed (removing it is out of
     # scope for milestone 4); it no longer feeds any draw.
     seed::UInt64
+    # Phase OB-1: clock-key -> event-type resolution for the record-derived state
+    # fold (`states_at`). The running engine resolves a clock key through
+    # `sim.enabled_events`, but a fold over a FINISHED run has no enabled set for
+    # mid-trajectory steps, so the constructor records the model's event types here
+    # and the fold rebuilds each event with `key_clock`. Model-side and immutable
+    # with respect to the trajectory, so `clone` shares it.
+    event_types::Dict{Symbol,DataType}
+    # Phase OB-3b: the per-FAMILY resolved entries (design doc Section 6). Each
+    # event type in the model's event list maps to its effective memory policy
+    # (entry override, else trait) and its resolved parameter binding (nothing =
+    # whole-θ passthrough; a ResolvedBinding = the NamedTuple view over θ). The
+    # engine consults this at the enable/reenable θ seam and at the two
+    # memory-policy sites. Model-side and trajectory-immutable, so `clone` shares
+    # it. An event type absent from this table (framework-test mocks) falls back
+    # to the traits, i.e. behaves as its own all-defaults family.
+    resolved_entries::Dict{DataType,ResolvedEntry}
 end
 
 
@@ -92,15 +108,67 @@ function common_base_key_tuple(events)
     return typejoined
 end
 
+"""
+    event_key_union(events) -> Union{events...}
+
+The clock-key type that makes event INSTANCES the sampler keys (phase OB-3a):
+pass it as `key_type` to [`SimulationFSM`](@ref),
+
+```julia
+sim = SimulationFSM(shop, (Fail, Repair);
+    key_type=event_key_union((Fail, Repair)), seed=1)
+```
+
+and the engine keys every table — the enabled set, the dependency network, the
+sampler's clock table and per-clock streams — by the event struct itself
+instead of by the `clock_key` tuple `(:TypeName, fields...)`.
+
+Why choose it: when every event struct is `isbits`, the union is an
+isbits-union, which Julia's `Dict`s and `Vector`s store INLINE (no per-key heap
+box, unlike a tuple key whose leading `Symbol` forces boxing), and a model
+whose event types have different field counts keeps a CONCRETE small-union key
+where the default `common_base_key_tuple` degrades to an abstract
+`Tuple{Symbol,Vararg}`. Trajectories are IDENTICAL across the two
+representations at the same seed: the per-clock stream derivation hashes the
+instance's `clock_key` tuple (the `CompetingClocks.stream_hash` overload), and
+instances sort in their tuple keys' order (`Base.isless(::SimEvent,
+::SimEvent)`).
+
+Tuple keys remain the DEFAULT; instance keys are opt-in through this
+`key_type`. (The design plan calls this helper `keytype`, but `Base.keytype`
+and `CompetingClocks.keytype` already mean "the key type of a container", so
+the union-builder gets its own name.) Elements may be bare event types or
+[`entry`](@ref) values, matching what the event list accepts.
+"""
+event_key_union(events) = Union{(event_type(_normalize_entry(ev)) for ev in events)...}
+
 
 """
     SimulationFSM(physical_state, trans_rules; sampler, key_type, step_likelihood,
-                  likelihood_eltype, seed, rng, observer=nothing, policy=NoPolicy())
+                  likelihood_eltype, seed, rng, observer=nothing, policy=NoPolicy(),
+                  params=Float64[], param_names=nothing)
 
 Create a simulation.
 
-The `physical_state` is of type `PhysicalState`. The `trans_rules` are a list of
-type `SimEvent`. The seed is an integer seed for a `Xoshiro` random number
+The `physical_state` is of type `PhysicalState`. The `trans_rules` are a list
+of event FAMILIES: `SimEvent` subtypes and/or [`entry`](@ref) values, mixed
+freely — a bare type is the all-defaults family `entry(T)`. An entry carries
+this model's per-family declarations: a [`memory_policy`](@ref) override and a
+parameter binding (see [`entry`](@ref)). The same event type may appear only
+once; two inclusions of one type need distinct parametric types
+(`Break{:lineA}`, `Break{:lineB}`).
+
+`param_names` names the components of the global parameter vector `params`
+(θ), as a tuple or vector of Symbols, e.g.
+`param_names=(:fail_shape, :fail_scale, :repair_rate)`. It is required exactly
+when some family declares a binding (a nonempty [`param_names`](@ref) trait on
+the event type); each family's binding is resolved against it once, at
+construction, and at enabling time that family's `enable`/`reenable` receives
+a `NamedTuple` view of exactly its bound components through the θ seam
+argument. Families with no declared binding receive the whole `params` vector
+unchanged, exactly as before entries existed.
+
+The seed is an integer seed for a `Xoshiro` random number
 generator. The observer is a callback with the signature:
 
 ```
@@ -130,7 +198,12 @@ generator and builds the underlying `SamplingContext` itself.
     also be passed (the builder already carries them).
 
 The `key_type` keyword overrides the clock-key type (default
-`common_base_key_tuple` of the events). Set `step_likelihood=true` to
+`common_base_key_tuple` of the events). Passing
+`key_type=event_key_union((EventA, EventB, ...))` opts into INSTANCE keys
+(phase OB-3a): the event structs themselves key every clock table, which stores
+isbits events inline and keeps a concrete key type when event arities differ;
+trajectories are bit-identical to the tuple-keyed run at the same seed (see
+[`event_key_union`](@ref)). Set `step_likelihood=true` to
 opt in to the trace-likelihood machinery ([`trace_likelihood`](@ref)); passing a
 non-`Float64` `likelihood_eltype` (e.g. `eltype(θ)` for `ForwardDiff`)
 auto-enables it.
@@ -148,7 +221,15 @@ function SimulationFSM(
     observer=nothing, rng=nothing, seed=nothing,
     policy::ExecutionPolicy=NoPolicy(),
     params::AbstractVector=Float64[],
+    param_names=nothing,
 )
+    # Phase OB-3b: the event list holds FAMILIES (entries); a bare type is the
+    # all-defaults family. Everything downstream that wants the TYPES (key-type
+    # inference, generator derivation, the key_clock table) reads the normalized
+    # list, and the per-family declarations resolve into `resolved_entries`.
+    entries = [_normalize_entry(ev) for ev in events]
+    event_type_list = [event_type(ent) for ent in entries]
+    resolved_entries = resolve_entries(entries, _normalize_global_names(param_names))
     # Milestone 4 (guarantee G7): a single master seed drives every stream family.
     # The sampler context's per-clock streams and the FSM's fire streams both
     # derive from `master_seed`, so recording the seed alone lets a replay
@@ -188,7 +269,7 @@ function SimulationFSM(
         # A non-Float64 accumulator implies a likelihood watcher is needed.
         sim_step_likelihood = step_likelihood || likelihood_eltype !== Float64
         sim_likelihood_eltype = likelihood_eltype
-        ClockKey = key_type !== nothing ? key_type : common_base_key_tuple(events)
+        ClockKey = key_type !== nothing ? key_type : common_base_key_tuple(event_type_list)
         method = if isnothing(sampler)
             # Pin the historical default; never let the builder auto-select, which
             # would pick a different sampler and change every seeded test.
@@ -211,7 +292,7 @@ function SimulationFSM(
         @debug "Creating a sampler with clock key type $ClockKey"
     end
     ctx = SamplingContext(builder, randgen)
-    generator_searches = generators_from_events(events)
+    generator_searches = generators_from_events(event_type_list)
     if isnothing(observer)
         observer = (args...) -> nothing
     end
@@ -234,6 +315,8 @@ function SimulationFSM(
         params,                 # the θ seam vector (Milestone 2, G4)
         KeyedStreams{Tuple}(),  # fire streams; seeded by `_apply_seeds!` below
         master_seed,
+        Dict{Symbol,DataType}(nameof(evt) => evt for evt in event_type_list),
+        resolved_entries,
     )
     # Seed both stream families deterministically from the master seed. This runs
     # after construction so the same helper serves `replay`, which reconstructs the
@@ -244,7 +327,7 @@ end
 
 
 """
-    _apply_seeds!(sim, master_seed) -> sim
+    _apply_seeds!(sim, master_seed; repin=true) -> sim
 
 Derive and install every random stream family from a single `master_seed`
 (guarantee G7). Two independent seeds are drawn from `Xoshiro(master_seed)` — one
@@ -254,12 +337,24 @@ documented seed carrier, and `sim.seed` records the master seed. Both the
 constructor and [`replay`](@ref) call this, so a run and its replay reconstruct
 identical randomness from the recorded seed alone. The two seeds come from a
 `Xoshiro(master_seed)` sequence, so the sampler and fire families never share a
-stream yet both reproduce from the one recorded number.
+stream yet both reproduce from the one recorded number. The derivation ORDER is
+load-bearing: the sampler family's seed is drawn FIRST and the fire family's
+SECOND (`_fold_fire_streams` in functionals.jl re-derives the fire family by
+replaying exactly this order).
+
+With `repin=true` (the constructor and `replay`), the reserved init stream
+`_INIT_STREAM_KEY` is pinned to the fire-family seed just installed
+(`pin_stream!`), so initialization draws belong to THIS seeding. A divergence
+rekey ([`rekey_streams!`](@ref) on the sim) passes `repin=false`, which leaves
+the pin at the seeding that created the world: a rekeyed clone re-initialized
+from the same law redraws the SAME initial condition, because clones share x₀ —
+branching happens after time zero.
 """
-function _apply_seeds!(sim::SimulationFSM, master_seed::UInt64)
+function _apply_seeds!(sim::SimulationFSM, master_seed::UInt64; repin::Bool=true)
     seedgen = Xoshiro(master_seed)
     rekey_streams!(sim.sampler.sampler, rand(seedgen, UInt64))
     rekey_streams!(sim.fire_streams, rand(seedgen, UInt64))
+    repin && pin_stream!(sim.fire_streams, _INIT_STREAM_KEY)
     copy!(sim.rng, Xoshiro(master_seed))
     sim.seed = master_seed
     return sim
@@ -317,11 +412,16 @@ end
 
 
 function sim_event_enable(event::SimEvent, event_key, sim, when)
+    # Phase OB-3b: what flows through the seam's third argument is the FAMILY's
+    # parameter view -- the whole `sim.params` vector for a family with no
+    # binding (bit-for-bit the pre-entry behavior, same object), or the
+    # NamedTuple view of exactly the bound components.
+    θ_family = _family_params(sim, event)
     reads_result = capture_state_reads(sim.physical) do
         enabling_spec = invoke_user_code("enable", event) do
             # Four-argument θ seam (G4); `sim.params` defaults to Float64[] and the
             # default four-arg `enable` drops it, so pre-seam models are unchanged.
-            enable(event, sim.physical, sim.params, when)
+            enable(event, sim.physical, θ_family, when)
         end
         if length(enabling_spec) != 2
             error("""The enable() function for $event_key should return a
@@ -361,7 +461,7 @@ already carries the full history (each re-enable's shift is folded into the next
 disable's banked value), so no separate accumulation is needed here.
 """
 function _resume_shifted_te(sim::SimulationFSM, event::SimEvent, event_key, enable_time::Float64)
-    if memory_policy(typeof(event)) === :resume
+    if _effective_memory(sim, event) === :resume
         return enable_time - get(sim.banked_age, event_key, 0.0)
     else
         return enable_time
@@ -369,12 +469,46 @@ function _resume_shifted_te(sim::SimulationFSM, event::SimEvent, event_key, enab
 end
 
 
+"""
+    _family_params(sim, event)
+
+The θ the seam hands this event's FAMILY (phase OB-3b): the family's
+`param_view` -- the whole `sim.params` object for a family with no binding, or
+the NamedTuple view of exactly its bound components. An event type not in the
+model's event list (framework-test mocks) gets the whole vector, the pre-entry
+behavior. The Dict lookup plus the dynamically typed `binding` field make this
+a dynamic step, but it sits on a call path that is already dynamic over the
+abstract `SimEvent`; `param_view` itself is type-stable given concrete
+arguments.
+"""
+function _family_params(sim::SimulationFSM, event::SimEvent)
+    re = get(sim.resolved_entries, typeof(event), nothing)
+    re === nothing && return sim.params
+    return param_view(re.binding, sim.params)
+end
+
+"""
+    _effective_memory(sim, event) -> Symbol
+
+The memory policy the engine applies to this event's FAMILY (phase OB-3b): the
+entry's override when it gave one, else the type's [`memory_policy`](@ref)
+trait -- both already folded into `resolved_entries` at construction. An event
+type not in the model's event list falls back to the trait.
+"""
+function _effective_memory(sim::SimulationFSM, event::SimEvent)
+    re = get(sim.resolved_entries, typeof(event), nothing)
+    return re === nothing ? memory_policy(typeof(event)) : re.memory
+end
+
+
 function sim_event_reenable(event::SimEvent, event_key, sim)
     first_enable = sim.enabling_times[event_key]
+    # Phase OB-3b: the reenable seam carries the SAME per-family view as enable.
+    θ_family = _family_params(sim, event)
     reads_result = capture_state_reads(sim.physical) do
         invoke_user_code("reenable", event) do
             # Five-argument θ seam (G4); default five-arg `reenable` drops `sim.params`.
-            reenable(event, sim.physical, sim.params, first_enable, sim.when)
+            reenable(event, sim.physical, θ_family, first_enable, sim.when)
         end
     end
     if !isnothing(reads_result.result)
@@ -422,7 +556,9 @@ function deal_with_changes(
 
     clock_toremove = CK[]
     over_event_invariants(event_dependency, sim, fired_event_keys, changed_places) do event
-        check_clock_key = clock_key(event)
+        # _event_key, not clock_key: under instance keys (CK<:SimEvent) the
+        # event is its own key; under tuple keys this is clock_key as before.
+        check_clock_key = _event_key(CK, event)
         event_should_be_enabled, depends_places = sim_event_precondition(event, sim.physical)
         # While the current dependency network knows if it was enabled, we check it here
         # in case we use a dependency graph that doesn't depend on the current state.
@@ -467,7 +603,7 @@ function deal_with_changes(
     remove_event!(event_dependency, clock_toremove)
 
     over_event_rates(event_dependency, sim, fired_event_keys, changed_places) do event
-        rate_clock_key = clock_key(event)
+        rate_clock_key = _event_key(CK, event)
         rate_event = get(sim.enabled_events, rate_clock_key, nothing)
         if !isnothing(rate_event)
             rate_deps = getevent_rate(event_dependency, rate_clock_key)
@@ -495,7 +631,7 @@ function disable_clocks!(sim::SimulationFSM, clock_keys)
         # every cycle, an assignment rather than a running sum. A :fresh clock never
         # touches the bank, so a model with no memory declarations is unaffected.
         evt = get(sim.enabled_events, clock_done, nothing)
-        if evt !== nothing && memory_policy(typeof(evt)) === :resume
+        if evt !== nothing && _effective_memory(sim, evt) === :resume
             te_effective = get(sim.enabling_times, clock_done, sim.when)
             sim.banked_age[clock_done] = sim.when - te_effective
         end
@@ -517,6 +653,12 @@ function modify_state!(sim::SimulationFSM, fire_event)
     # sampled once around the whole firing, so immediate-event draws are included.
     crng = sim.counting_rng
     count_before = crng.count
+    # Fire streams are keyed by clock_key TUPLES regardless of the simulation's
+    # clock-key type (phase OB-3a): they carry model-level content identity, not
+    # the sampler's key representation, and the reserved `_INIT_STREAM_KEY`
+    # tuple lives in the same family. Keeping the fire family tuple-keyed makes
+    # fire-draw identity across key representations automatic (same tuple, same
+    # stream) and sidesteps a reserved-key/union type mismatch.
     crng.rng = stream_for!(sim.fire_streams, clock_key(fire_event))
     changes_result = capture_state_changes(sim.physical) do
         fire!(fire_event, sim.physical, sim.when, crng)
@@ -707,6 +849,8 @@ function clone(sim::SimulationFSM{State,Sampler,CK,P}) where {State,Sampler,CK,P
         sim.params,                             # shared: read-only θ by contract
         copy(sim.fire_streams),                 # state-carrying stream copy
         sim.seed,
+        sim.event_types,                        # shared: model-side, trajectory-immutable
+        sim.resolved_entries,                   # shared: model-side, trajectory-immutable
     )
 end
 
@@ -719,8 +863,13 @@ the FSM's fire streams alike -- reusing [`_apply_seeds!`](@ref). After this the
 clone runs an INDEPENDENT continuation; a same-`seed` clone would instead track
 the original bit-for-bit at the clone point. This is the divergence half of the
 branch coupling.
+
+One stream is exempt: the reserved initialization stream (`_INIT_STREAM_KEY`)
+stays pinned to the seeding that created the world, so a rekeyed clone
+re-initialized from the same initial law redraws the SAME time-zero state.
+Clones share x₀; branching happens after time zero.
 """
-rekey_streams!(sim::SimulationFSM, seed) = _apply_seeds!(sim, UInt64(seed))
+rekey_streams!(sim::SimulationFSM, seed) = _apply_seeds!(sim, UInt64(seed); repin=false)
 
 """
 Initialize the simulation. You could call it as a do-function.

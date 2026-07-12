@@ -1,4 +1,5 @@
 using Logging
+import CompetingClocks
 import CompetingClocks: fire!
 
 export SimEvent, InitializeEvent, isimmediate, clock_key, key_clock
@@ -55,6 +56,18 @@ enable(::MyEvent, physical, θ, when) = (Exponential(inv(θ[1])), when)
 three-argument method, so every model written against the old θ-free signature
 runs unchanged; `θ` is simply ignored. Only override the four-argument form when
 the event actually reads a parameter.
+
+**The named view (phase OB-3b).** When the event's family declares a parameter
+binding (a nonempty [`param_names`](@ref) trait, bound to global names by its
+[`entry`](@ref)), the engine passes a `NamedTuple` view of exactly the bound
+components through this same third argument, and the event reads by name:
+
+```julia
+param_names(::Type{Break}) = (:shape, :scale)
+enable(evt::Break, physical, p, when) = (Weibull(p.shape, p.scale), when)
+```
+
+A family with no binding receives the whole vector unchanged, as above.
 """
 function enable(tn::SimEvent, physical, when) end
 
@@ -217,3 +230,50 @@ function key_clock(key::Tuple, event_dict::Dict{Symbol,DataType})
     field_args = key[2:end]
     return struct_type(field_args...)
 end
+
+# Phase OB-3a (the event instance is the sampler key): under an instance-key
+# simulation the key IS the event, so key-to-event resolution is the identity.
+# Consumers written against the tuple convention (the states_at fold, replay)
+# work unchanged on instance-keyed traces through this one method.
+key_clock(key::SimEvent, event_dict::Dict{Symbol,DataType}) = key
+
+# Phase OB-3a: the engine's event-to-key conversion, dispatched on the
+# simulation's clock-key type CK. Under the default tuple keys (and any custom
+# key_type whose `clock_key` overload returns it) the key is `clock_key(event)`;
+# under instance keys (CK a Union of SimEvent subtypes, so CK <: SimEvent) the
+# event is its own key. The CK<:SimEvent method is more specific in CK, so it
+# wins exactly when the simulation opted into instance keys.
+_event_key(::Type{CK}, event::SimEvent) where {CK} = clock_key(event)
+_event_key(::Type{CK}, event::SimEvent) where {CK<:SimEvent} = event
+
+"""
+    Base.isless(a::SimEvent, b::SimEvent)
+
+A total order on event instances, needed when event instances themselves are
+the sampler's clock keys (see [`event_key_union`](@ref)): the engine sorts
+candidate keys for run-to-run reproducibility, and CompetingClocks'
+`enabled_ages` sorts sampler keys so a branching estimator can index a
+selection probability by position.
+
+MODEL-FREE ORDER: instances order exactly as their [`clock_key`](@ref) tuples
+do — `(nameof(typeof(a)), fields...) < (nameof(typeof(b)), fields...)` — so a
+trajectory is identical whether the simulation keys clocks by tuples or by
+instances, and `enabled_ages` presents the same clocks in the same positions
+under both representations. A single global `isless` cannot know any model, so
+this stays the engine's deterministic order; the FAMILY-POSITION order — by
+the event type's position in a model's declared event tuple, robust to
+renaming a type — exists as a model-derived VALUE instead:
+[`model_key_order`](@ref)`(model)` (phase OB-3c), usable anywhere an
+`Ordering` is accepted.
+"""
+Base.isless(a::SimEvent, b::SimEvent) = isless(clock_key(a), clock_key(b))
+
+# Phase OB-3a: cross-representation stream identity. Sampler-internal
+# KeyedStreams seed each key's generator through the `stream_hash` seam; a
+# struct's default hash is not its content tuple's hash, so without this
+# overload an instance-keyed run would draw different waiting times than the
+# same model tuple-keyed at the same seed. Hashing the clock_key tuple makes an
+# instance key reproduce its tuple key's stream EXACTLY. The content-hash
+# obligation on event FIELDS is unchanged: the tuple hashed here must itself
+# hash by content (an @enum field still needs a content-based Base.hash).
+CompetingClocks.stream_hash(seed::UInt64, evt::SimEvent) = hash((seed, clock_key(evt)))

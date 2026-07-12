@@ -108,6 +108,15 @@ place_patterns(gs::GeneratorSearch) = collect(keys(gs.byarray))
  * `event_keys` is a vector or set of keys.
  * `changed_places` is a vector or set of physical addresses.
 """
+# Phase OB-3a: under instance keys the fired key handed down from the engine is
+# the event itself; generator lookup is written against the tuple shape
+# (type-name head, field tail), so decompose the instance once here.
+function over_generated_events(
+    f::Function, generators::GeneratorSearch, physical, event_key::SimEvent, changed_places
+)
+    over_generated_events(f, generators, physical, clock_key(event_key), changed_places)
+end
+
 function over_generated_events(
     f::Function, generators::GeneratorSearch, physical, event_key, changed_places
 )
