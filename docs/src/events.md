@@ -24,8 +24,57 @@ identity under which an event's clock lives in the sampler. Two event values
 with equal fields are the same event, so fields should be plain values with
 sensible equality: integers, symbols, strings, enums, or tuples of these.
 
+### Event instances as keys
+
+Tuple keys are the default, but a simulation can opt into using the event
+*instances themselves* as clock keys by passing the union of its event types
+as `key_type`:
+
+```julia
+sim = SimulationFSM(shop, (Fail, Repair);
+    key_type=event_key_union((Fail, Repair)), seed=1)
+```
+
+Why: when every event struct is `isbits`, `Union{Fail,Repair}` is an
+isbits-union that Julia stores inline in `Dict` and `Vector` slots — no
+per-key heap allocation, where a tuple key's leading `Symbol` forces boxing —
+and a model whose event types have *different field counts* keeps a concrete
+small-union key where the default tuple join degrades to an abstract
+`Tuple{Symbol,Vararg}`. Trajectories are bit-identical across the two
+representations at the same seed: per-clock stream seeding hashes the
+instance's `clock_key` tuple (through the `CompetingClocks.stream_hash`
+seam), and instances sort in the same order their tuple keys do. See
+[`event_key_union`](@ref) and the
+[Randomness](@ref "Randomness and reproducibility") page.
+
 An event struct may also be empty, when the event concerns the system as a
 whole rather than any particular entity.
+
+### Event families: entries in the event list
+
+The event list a model hands to [`SimulationFSM`](@ref) names each event
+*family*: one inclusion of an event type in this model, together with this
+model's per-family declarations. A bare type is the all-defaults family; an
+[`entry`](@ref) carries a [`memory_policy`](@ref) override and a parameter
+binding that lets the event read its θ components by name:
+
+```julia
+sim = SimulationFSM(shop,
+    (entry(Break; params=(shape=:fail_shape, scale=:fail_scale)),
+     entry(Repair; memory=:resume),
+     Inspect);                    # a bare type is entry(Inspect)
+    param_names=(:fail_shape, :fail_scale, :repair_rate), ...)
+```
+
+The same event type may appear only once in the list; two inclusions of one
+type need distinct parametric types (`Break{:lineA}`, `Break{:lineB}`). See
+[Parameters and differentiation](@ref "Parameters and differentiation") for
+the parameter binding and
+[Declarations: coupling and memory](@ref "Declarations: coupling and memory")
+for the memory policy the entry can override. The same entries tuple, together
+with an initial law and the global parameter names, assembles into a
+[`GsmpModel`](@ref) — the model value — described in
+[The model value](@ref) on the getting-started page.
 
 ## `precondition`
 
@@ -160,7 +209,12 @@ The `initializer` is a function that sets up the state at time zero. Writes
 it makes are recorded exactly like the writes of a firing, and those writes
 are what propose the first candidate events, so every part of the state that
 events depend on should be written (not merely constructed) during
-initialization.
+initialization. Alternatively, pass a declared **initial law** — a state
+value wrapped by [`normalize_initial`](@ref), an [`InitialLaw`](@ref), or an
+[`InitialRecipe`](@ref) — in place of the initializer: the engine samples the
+time-zero state from the law, marks every address changed, and proposes the
+first events with no write discipline required (see "Declaring the initial
+state as a law" in Getting Started).
 
 The `stop_condition` is a function
 `(physical, step_idx, event, when) -> Bool` that is consulted with the event

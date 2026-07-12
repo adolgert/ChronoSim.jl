@@ -11,7 +11,9 @@ forward run saw. This page describes the machinery that makes a record
 trustworthy: the pinned [`MinimalRecord`](@ref) schema, the
 [`RecordMinimal`](@ref) recording policy, the [`effect_check`](@ref) that
 asserts forward and replay agree to the last bit, horizon censoring for
-fixed-window functionals, and the detector for randomness inside `fire!`.
+fixed-window functionals, the detector for randomness inside `fire!`, and the
+path functionals ([`value`](@ref) over a [`states_at`](@ref) fold) that read a
+scalar answer off a recorded trajectory.
 
 This page is about *statistical* records — the least data a likelihood or a
 derivative estimator needs. The
@@ -130,6 +132,43 @@ always-enabled exponential race it is exactly the difference between
 `n/λ − t_N` and `n/λ − T` in the score. Censoring is opt-in, never default,
 because the effect check compares against a forward accumulation that has no
 censoring term — defaulting it on would break the exact-equality symmetry.
+
+## Reading a functional off a record
+
+A likelihood scores a trajectory; an estimator also needs the *quantity being
+estimated* — the number of failures by time `T`, the integral of a queue length,
+the first time a threshold is crossed. A [`PathFunctional`](@ref) declares that
+quantity once, as an observable of states, and its smoothness class is explicit
+in its type:
+
+* [`IntegratedOccupancy`](@ref)`(g)` — the time integral `∫₀ᵀ g(x_t) dt` over
+  the piecewise-constant path.
+* [`TerminalObservable`](@ref)`(g)` — `g` at the horizon.
+* [`FirstPassageTime`](@ref)`(pred)` — the first firing time at which `pred`
+  holds.
+
+Evaluating one against a record needs the states the trajectory visited, which
+the record deliberately does not store. [`states_at`](@ref) reconstructs them:
+clone the realized initial state, apply each recorded firing's `fire!` to the
+clone (immediate cascades included, exactly as the engine applied them), and
+snapshot after every step. Randomness inside `fire!` is reproduced rather than
+forbidden — the fold rebuilds the per-clock keyed fire streams from the sim's
+master seed — and the returned [`StateFold`](@ref) carries a `fire_random` flag
+alongside the snapshots. [`value`](@ref) then evaluates the functional on the
+fold as a plain `Float64`:
+
+```julia
+fold = states_at(sim, initial_physical, rec)          # rec or (when, key) trace
+f = value(TerminalObservable(s -> ndown(s)), fold, times, horizon)
+f = value(IntegratedOccupancy(s -> ndown(s)), sim, initial_physical, rec)
+```
+
+The realized initial state is an explicit argument because a `MinimalRecord`
+records only the *identity* of its initializer, not the state it produced;
+capture it with `clone(sim.physical)` right after initialization. These types
+deliberately mirror ClockGradients' functionals of the same names: the
+dependency points ClockGradients → ChronoSim, so the shared vocabulary lives in
+both rather than being imported.
 
 ## Fire-randomness: the three tiers
 

@@ -61,6 +61,14 @@ record-derived derivative estimator needs and nothing more.
     framework's [`CountingRNG`](@ref)). When `true`, the firing sequence is not a
     deterministic function of the initial condition, so record-derived estimators
     must not trust it; consumers warn.
+  * `initial_state::Any` — the REALIZED initial state: a clone of the physical
+    state taken right after initialization (Phase OB-2), or `nothing` when the
+    record's producer did not capture one (older constructors, the
+    `TrajectorySkeleton` projection). A trajectory whose initial condition is a
+    DRAW from an initial law is not reconstructible from the initializer's
+    identity alone, so the realized state rides in the record; it is exactly
+    the `initial_physical` argument [`states_at`](@ref) needs. Provenance
+    payload, not identity: `==` ignores it.
 """
 struct MinimalRecord{CK}
     initializer::Any
@@ -68,10 +76,26 @@ struct MinimalRecord{CK}
     horizon::Float64
     coupling::Symbol
     fire_random::Bool
+    initial_state::Any
 end
-# `CK` is inferred from `firings` by the default constructor, so callers write
+# `CK` is inferred from `firings` by the outer constructors, so callers write
 # `MinimalRecord(init, firings, horizon, coupling, fire_random)` without the
-# type parameter.
+# type parameter; `initial_state` defaults to `nothing` so every pre-OB-2
+# construction keeps working.
+function MinimalRecord(
+    initializer, firings::Vector{Tuple{CK,Float64}}, horizon, coupling, fire_random,
+    initial_state=nothing,
+) where {CK}
+    return MinimalRecord{CK}(
+        initializer, firings, Float64(horizon), Symbol(coupling), Bool(fire_random),
+        initial_state,
+    )
+end
+function MinimalRecord{CK}(
+    initializer, firings, horizon, coupling, fire_random,
+) where {CK}
+    return MinimalRecord{CK}(initializer, firings, horizon, coupling, fire_random, nothing)
+end
 
 function Base.show(io::IO, rec::MinimalRecord{CK}) where {CK}
     print(io, "MinimalRecord{", CK, "}(", length(rec.firings), " firings, horizon=",
@@ -79,6 +103,10 @@ function Base.show(io::IO, rec::MinimalRecord{CK}) where {CK}
         rec.fire_random ? ", FIRE-RANDOM" : "", ")")
 end
 
+# `initial_state` is deliberately excluded: it is provenance payload (a clone of
+# the realized state, when the producer captured one), and a record projected
+# from a skeleton (no realized state) must still equal the policy-captured
+# record of the same trajectory.
 Base.:(==)(a::MinimalRecord, b::MinimalRecord) =
     isequal(a.initializer, b.initializer) && a.firings == b.firings &&
     a.horizon == b.horizon && a.coupling == b.coupling && a.fire_random == b.fire_random
@@ -107,6 +135,11 @@ mutable struct _MinimalRecorder{CK,L}
     # sampler construction-time property, so one run has exactly one coupling and
     # the record's label is the sampler's, not a per-firing tally.
     coupling::Symbol
+    # OB-2: a clone of the physical state captured at on_init — AFTER the
+    # initializer's writes (or the initial law's install), before any firing —
+    # so the record carries the REALIZED x₀ a fold or an initial-density term
+    # needs. `nothing` until on_init runs, or when the state type has no clone.
+    initial_state::Any
 end
 
 """
@@ -145,9 +178,16 @@ function on_preinit(p::RecordMinimal, sim)
     # The coupling is a construction-time property of the sim's sampler, so it is
     # known here, before any firing, and cannot change during the run.
     p.recorder = _MinimalRecorder{CK,L}(
-        Tuple{CK,Float64}[], L[], false, CompetingClocks.coupling(sim.sampler))
+        Tuple{CK,Float64}[], L[], false, CompetingClocks.coupling(sim.sampler), nothing)
     return nothing
 end
+
+# on_init: the initializer (write-to-seed callback or initial law) has run and
+# the enabled set is consistent, so the physical state IS the realized x₀; a
+# clone of it rides in the record. Cloning requires the state to support the
+# clone protocol (every ObservedPhysical does); other state types record nothing.
+on_init(p::RecordMinimal, sim, init_evt, changed_places) =
+    _rec_min_init(p.recorder, sim)
 
 # on_prefire: identical sampler state to the trace evaluator's per-step gate.
 on_prefire(p::RecordMinimal, sim, clock, event, when) =
@@ -157,8 +197,14 @@ on_postfire(p::RecordMinimal, sim, clock, event, when, changed) =
     _rec_min_postfire(p.recorder, clock, when, sim.fire_random)
 
 # Guards: a hook before on_preinit (impossible through run) is a silent no-op.
+_rec_min_init(::Nothing, sim) = nothing
 _rec_min_prefire(::Nothing, sim, clock, when) = nothing
 _rec_min_postfire(::Nothing, clock, when, fr) = nothing
+
+function _rec_min_init(r::_MinimalRecorder, sim)
+    r.initial_state = applicable(clone, sim.physical) ? clone(sim.physical) : nothing
+    return nothing
+end
 
 function _rec_min_prefire(r::_MinimalRecorder{CK,L}, sim, clock, when) where {CK,L}
     # Only accumulate when the sampler records step likelihoods; otherwise the
@@ -187,11 +233,14 @@ end
 
 Project the pinned [`MinimalRecord`](@ref) schema out of a `RecordMinimal` policy
 that has observed a forward run. `horizon` defaults to the last firing's time.
+The record carries the realized initial state the policy cloned at `on_init`.
 """
 function minimal_record(p::RecordMinimal; horizon::Union{Nothing,Real}=nothing)
     r = _require_recorder(p)
     h = _resolve_horizon(horizon, r.firings, 0.0)
-    return MinimalRecord(p.initializer, copy(r.firings), h, r.coupling, r.fire_random)
+    return MinimalRecord(
+        p.initializer, copy(r.firings), h, r.coupling, r.fire_random, r.initial_state,
+    )
 end
 
 """
@@ -208,7 +257,8 @@ supplied label; it defaults to `:carry`, the construction-time default of the
 scheduling samplers (`NextReactionMethod()`, `FirstToFireMethod()`), so a skeleton
 recorded with a default-constructed simulation labels the same way `RecordMinimal`
 would (guarantee G6). Pass `coupling=:redraw` when the run's sampler was built
-with that coupling.
+with that coupling. A skeleton carries no realized initial state, so the
+projected record's `initial_state` is `nothing`.
 """
 function minimal_record(
     skel::TrajectorySkeleton{CK}; horizon::Union{Nothing,Real}=nothing,

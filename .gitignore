@@ -10,3 +10,5 @@
 .claude/
 /t
 .DS_Store
+test/ElevatorTrace.*
+test/Elevator_trace.txt

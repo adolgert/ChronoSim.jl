@@ -105,6 +105,8 @@ nothing #hide
 # them, because it is these initial writes that propose the first candidate
 # events. Here, writing every machine's status proposes a `Break` for every
 # machine, each precondition passes, and five failure clocks start running.
+# (If you would rather *declare* the time-zero state than write it, see
+# [Declaring the initial state as a law](@ref) below.)
 
 start_all_working(factory, when, rng) =
     for i in eachindex(factory.machines)
@@ -123,6 +125,42 @@ trajectory
 # Each entry is the fired event's clock key and its firing time. Machines
 # break, repairs follow, and the two event types alternate per machine, at
 # irregular continuous times.
+#
+# ## Declaring the initial state as a law
+#
+# The initializer above works by *writing*: its writes are what propose the
+# first events, so it must touch every relevant address. The additive
+# alternative is to declare the **initial law** — the probability
+# distribution of the time-zero state — and let the engine build the state
+# from it, mark every address changed, and run the standard generator
+# reaction once. No write discipline remains:
+#
+# ```julia
+# ChronoSim.run(sim, normalize_initial(make_factory(5)), stopping)
+# ```
+#
+# The accepted forms are a ladder, and the *form* is the declaration:
+#
+# 1. a state value — a point mass;
+# 2. a zero-argument thunk `() -> state` — a point mass, built lazily;
+# 3. `(rng) -> state` — random but θ-free, proved by arity: the function
+#    never receives the parameter vector θ, so anything it captures is a
+#    model constant. Its likelihood term is a θ-constant with zero
+#    derivative, so score gradients are correct with no density at all;
+# 4. [`InitialLaw`](@ref)`(sample, logdensity)` — the full θ-dependent law,
+#    with `sample(rng, θ) -> state` and `logdensity(state, θ) -> Real`;
+# 5. [`InitialRecipe`](@ref) — per-address distributions built from θ over a
+#    base state, from which both the sampler and the density derive, so they
+#    cannot disagree.
+#
+# A bare `(rng, θ) -> state` sampler without a density also simulates fine,
+# but [`trace_likelihood`](@ref) refuses it by name: *"the initial law is
+# θ-dependent and has no logdensity; supply one, or express the
+# initialization as time-zero events."* Simulation itself never refuses a
+# law. Hand-written `InitialLaw` pairs can be checked with
+# [`audit_initial_law`](@ref); the draw uses the same reserved
+# initialization random stream as the write-to-seed path, so a same-seed
+# run reproduces the initial condition exactly.
 #
 # ## What the derivation did
 #

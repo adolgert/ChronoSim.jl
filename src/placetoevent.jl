@@ -20,8 +20,8 @@ end
 
 
 function over_event_invariants(
-    cb::Function, dependency::EventDependency, sim, fired_event_keys, changed_places
-)
+    cb::Function, dependency::EventDependency{CK}, sim, fired_event_keys, changed_places
+) where {CK}
     enabled_events = sim.enabled_events
     empty!(dependency.seen)
     @assert !isempty(changed_places)
@@ -44,7 +44,9 @@ function over_event_invariants(
     over_generated_events(
         dependency.eventgen, sim.physical, fired_event_keys, changed_places
     ) do newevent
-        newevent_key = clock_key(newevent)
+        # _event_key: `seen` is Set{CK}, so under instance keys the dedup key is
+        # the event itself; under tuple keys this is clock_key as before.
+        newevent_key = _event_key(CK, newevent)
         if !in(newevent_key, dependency.seen)
             # A generator yielded a candidate that survives dedup: this is a
             # "proposed" event for the over-approximation metric.
