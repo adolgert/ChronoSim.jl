@@ -26,6 +26,17 @@ infrastructure that the manual pages mention in passing.
 Modules = [ChronoSim]
 ```
 
+## ChronoSim.ParticleFilter
+
+Latent-state inference over a partially observed model: the bootstrap
+particle filter, built entirely on the public verbs `advance!`, `clone`, and
+`rekey_streams!`. See the module docstring for the design and the usage
+sketch.
+
+```@autodocs
+Modules = [ChronoSim.ParticleFilter]
+```
+
 ## ChronoSim.ObservedState
 
 ```@autodocs

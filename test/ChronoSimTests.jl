@@ -6,6 +6,7 @@ using ReTest
 continuous_integration() = get(ENV, "CI", "false") == "true"
 
 # Include test files directly at module level so @testset blocks are properly registered
+include("test_advance.jl")
 include("test_container_fuzz.jl")
 include("test_coverage.jl")
 include("test_declarations.jl")
@@ -36,6 +37,7 @@ include("test_observed_dict.jl")
 include("test_observed_physical.jl")
 include("test_observed_set.jl")
 include("test_observed_state.jl")
+include("test_particle_filter.jl")
 include("test_physical_interface.jl")
 include("test_policy.jl")
 include("test_policy_stack.jl")

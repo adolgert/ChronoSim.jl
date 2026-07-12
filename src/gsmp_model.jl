@@ -242,8 +242,67 @@ function Base.Order.lt(o::ModelKeyOrder, a::SimEvent, b::SimEvent)
 end
 
 # ---------------------------------------------------------------------------
-# simulate: the model-value front door.
+# The model-value-native constructor and simulate, the front door.
 # ---------------------------------------------------------------------------
+
+# Shared θ validation: positional read against the model's declared names.
+function _check_model_theta(model::GsmpModel, θ::AbstractVector)
+    if !isempty(model.params) && length(θ) != length(model.params)
+        throw(ArgumentError(
+            "θ has $(length(θ)) components but the model names " *
+            "$(length(model.params)) parameters $(model.params); θ is read " *
+            "positionally against those names"))
+    end
+    return nothing
+end
+
+"""
+    SimulationFSM(model::GsmpModel, θ::AbstractVector; seed,
+                  sampler=nothing, observer=nothing, policy=NoPolicy(),
+                  step_likelihood=false, likelihood_eltype=Float64)
+        -> SimulationFSM
+
+A LIVE simulation built from the model value at parameter vector `θ` — the
+model-value-native constructor. The base constructor needs a physical state
+up front because the state's concrete type parameterizes the sim, so this
+method samples a throwaway TEMPLATE from the initial law with a private
+`Xoshiro(seed)`; the template's drawn values are discarded (only its concrete
+type matters), and the realized x₀ comes from the law-path initialization,
+which depends only on the master seed.
+
+The returned sim is NOT yet initialized. Follow with
+`initialize!(sim, model_initial(model))` for a resumable simulation you drive
+yourself (e.g. with [`advance!`](@ref) — the [`ParticleFilter`](@ref
+ChronoSim.ParticleFilter) submodule's particles are built exactly this way),
+or hand the law to `run(sim, model_initial(model), stop)` as usual.
+
+`θ` is positional against [`model_params`](@ref); its length must match when
+the model declares global names. Run concerns (`sampler`, `observer`,
+`policy`, `step_likelihood`, `likelihood_eltype`) are keywords, exactly as in
+the base [`SimulationFSM`](@ref) constructor; `seed` is the run's master seed
+(a same-seed twin reproduces the trajectory byte for byte).
+"""
+function SimulationFSM(
+    model::GsmpModel, θ::AbstractVector;
+    seed, sampler=nothing, observer=nothing, policy::ExecutionPolicy=NoPolicy(),
+    step_likelihood::Bool=false, likelihood_eltype::DataType=Float64,
+)
+    _check_model_theta(model, θ)
+    law = model_initial(model)
+    template = sample_initial(law, Xoshiro(UInt64(seed)), θ)
+    return SimulationFSM(
+        template, model_events(model);
+        seed=UInt64(seed),
+        key_type=model_keytype(model),
+        params=θ,
+        param_names=isempty(model.params) ? nothing : model.params,
+        sampler=sampler,
+        observer=observer,
+        policy=policy,
+        step_likelihood=step_likelihood,
+        likelihood_eltype=likelihood_eltype,
+    )
+end
 
 """
     simulate(rng::AbstractRNG, model::GsmpModel, θ::AbstractVector;
@@ -288,27 +347,16 @@ function simulate(
     step_likelihood::Bool=false, likelihood_eltype::DataType=Float64,
 )
     horizon >= 0 || throw(ArgumentError("simulate needs horizon >= 0; got $horizon"))
-    if !isempty(model.params) && length(θ) != length(model.params)
-        throw(ArgumentError(
-            "θ has $(length(θ)) components but the model names " *
-            "$(length(model.params)) parameters $(model.params); θ is read " *
-            "positionally against those names"))
-    end
     # The ONE draw from the caller's rng: the master seed. Everything random in
     # the run derives from it, so a hand-built twin sim given this seed is
-    # byte-identical.
+    # byte-identical. Construction (and the throwaway template; see the
+    # model-value constructor's docstring) is shared with the constructor.
     seed = rand(rng, UInt64)
     law = model_initial(model)
-    # Throwaway template; see the docstring. The private Xoshiro(seed) never
-    # touches the engine's stream families.
-    template = sample_initial(law, Xoshiro(seed), θ)
     policy = RecordMinimal(; initializer=law)
     sim = SimulationFSM(
-        template, model_events(model);
+        model, θ;
         seed=seed,
-        key_type=model_keytype(model),
-        params=θ,
-        param_names=isempty(model.params) ? nothing : model.params,
         policy=policy,
         sampler=sampler,
         observer=observer,
